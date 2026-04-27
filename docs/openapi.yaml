@@ -1,0 +1,190 @@
+openapi: 3.1.0
+info:
+  title: SocialSplitApp MVP API
+  version: 0.1.0
+servers:
+  - url: http://localhost:3000
+paths:
+  /health:
+    get:
+      summary: Health check
+      responses:
+        "200":
+          description: OK
+  /auth/request-otp:
+    post:
+      summary: Request development OTP
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [phone]
+              properties:
+                phone:
+                  type: string
+      responses:
+        "200":
+          description: OTP requested
+  /auth/verify-otp:
+    post:
+      summary: Verify OTP and create or return user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [phone, otp]
+              properties:
+                phone:
+                  type: string
+                otp:
+                  type: string
+      responses:
+        "200":
+          description: Authenticated
+  /me:
+    get:
+      summary: Current user profile
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: User
+    patch:
+      summary: Update current profile
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: User
+  /friends:
+    get:
+      summary: List friends
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Friends
+  /friends/invite:
+    post:
+      summary: Invite friend by phone
+      security:
+        - bearerAuth: []
+      responses:
+        "201":
+          description: Friendship invitation
+  /groups:
+    get:
+      summary: List groups
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Groups
+    post:
+      summary: Create group
+      security:
+        - bearerAuth: []
+      responses:
+        "201":
+          description: Group
+  /collections:
+    get:
+      summary: List collections
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Collections
+    post:
+      summary: Create collection
+      security:
+        - bearerAuth: []
+      responses:
+        "201":
+          description: Collection
+  /collections/{id}/participants:
+    get:
+      summary: List collection participants
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/CollectionId"
+      responses:
+        "200":
+          description: Participants
+    post:
+      summary: Add participant
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/CollectionId"
+      responses:
+        "201":
+          description: Participant
+  /collections/{id}/participants/add-guest:
+    post:
+      summary: Add guest participant
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/CollectionId"
+      responses:
+        "201":
+          description: Guest participant
+  /collections/{id}/participants/add-child:
+    post:
+      summary: Add child participant with default 0.5 weight
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/CollectionId"
+      responses:
+        "201":
+          description: Child participant
+  /collections/{id}/calculate:
+    post:
+      summary: Calculate collection and persist calculation version
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/CollectionId"
+      responses:
+        "201":
+          description: Calculation version
+  /collections/{id}/calculations/latest:
+    get:
+      summary: Latest calculation version
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/CollectionId"
+      responses:
+        "200":
+          description: Calculation version
+  /collections/{id}/transfer-plan:
+    get:
+      summary: Latest transfer plan
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/CollectionId"
+      responses:
+        "200":
+          description: Transfer plan
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+  parameters:
+    CollectionId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+

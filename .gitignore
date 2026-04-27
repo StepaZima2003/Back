@@ -1,0 +1,11 @@
+node_modules/
+dist/
+coverage/
+.env
+.env.*
+!.env.example
+npm-debug.log*
+pnpm-debug.log*
+yarn-error.log*
+*.tsbuildinfo
+.codex-api.*.log

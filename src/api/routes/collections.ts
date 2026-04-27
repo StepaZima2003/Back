@@ -77,6 +77,32 @@ const addShareRuleSchema = z.object({
   reason: z.string().nullable().optional()
 });
 
+const createDisputeSchema = z.object({
+  participantId: z.string(),
+  targetParticipantId: z.string().nullable().optional(),
+  type: z.enum(["not_eat", "not_drink", "partial_time", "already_paid", "bought_something", "absent", "guest_absent", "payer_changed", "other"]),
+  message: z.string().min(1).max(1000)
+});
+
+const disputeResolutionSchema = z.object({
+  resolutionComment: z.string().nullable().optional()
+});
+
+const markManualPaymentSchema = z.object({
+  payerParticipantId: z.string().nullable().optional(),
+  receiverParticipantId: z.string().nullable().optional(),
+  amountMinor: z.number().int().positive(),
+  method: z.enum(["sbp", "cash", "card", "other"]),
+  comment: z.string().nullable().optional(),
+  proofUrl: z.string().url().nullable().optional(),
+  transferPlanId: z.string().nullable().optional()
+});
+
+const uploadManualPaymentProofSchema = z.object({
+  proofUrl: z.string().url().nullable().optional(),
+  comment: z.string().nullable().optional()
+});
+
 export function registerCollectionRoutes(app: FastifyInstance, store: InMemoryStore): void {
   app.get("/collections", async (request) => {
     const user = requireUser(request, store);
@@ -138,6 +164,12 @@ export function registerCollectionRoutes(app: FastifyInstance, store: InMemorySt
     return store.setResponsiblePayer(user.id, params.id, params.participantId, body.responsiblePayerParticipantId);
   });
 
+  app.post("/collections/:id/participants/:participantId/confirm-review", async (request) => {
+    const user = requireUser(request, store);
+    const params = participantParamsSchema.parse(request.params);
+    return store.confirmParticipantReview(user.id, params.id, params.participantId);
+  });
+
   app.get("/collections/:id/expenses", async (request) => {
     const user = requireUser(request, store);
     const params = idParamsSchema.parse(request.params);
@@ -191,6 +223,80 @@ export function registerCollectionRoutes(app: FastifyInstance, store: InMemorySt
     const user = requireUser(request, store);
     const params = idParamsSchema.parse(request.params);
     return store.getLatestCalculation(user.id, params.id).result.responsiblePayerCalculations;
+  });
+
+  app.post("/collections/:id/disputes", async (request, reply) => {
+    const user = requireUser(request, store);
+    const params = idParamsSchema.parse(request.params);
+    const body = createDisputeSchema.parse(request.body);
+    const dispute = store.createDispute(user.id, params.id, body);
+    reply.status(201).send(dispute);
+  });
+
+  app.get("/collections/:id/disputes", async (request) => {
+    const user = requireUser(request, store);
+    const params = idParamsSchema.parse(request.params);
+    return store.listDisputes(user.id, params.id);
+  });
+
+  app.post("/disputes/:id/accept", async (request) => {
+    const user = requireUser(request, store);
+    const params = idParamsSchema.parse(request.params);
+    const body = disputeResolutionSchema.parse(request.body ?? {});
+    return store.acceptDispute(user.id, params.id, body.resolutionComment);
+  });
+
+  app.post("/disputes/:id/reject", async (request) => {
+    const user = requireUser(request, store);
+    const params = idParamsSchema.parse(request.params);
+    const body = disputeResolutionSchema.parse(request.body ?? {});
+    return store.rejectDispute(user.id, params.id, body.resolutionComment);
+  });
+
+  app.post("/disputes/:id/resolve", async (request) => {
+    const user = requireUser(request, store);
+    const params = idParamsSchema.parse(request.params);
+    const body = disputeResolutionSchema.parse(request.body ?? {});
+    return store.resolveDispute(user.id, params.id, body.resolutionComment);
+  });
+
+  app.post("/collections/:id/manual-payments/mark-paid", async (request, reply) => {
+    const user = requireUser(request, store);
+    const params = idParamsSchema.parse(request.params);
+    const body = markManualPaymentSchema.parse(request.body);
+    const proof = store.markManualPaymentPaid(user.id, params.id, body);
+    reply.status(201).send(proof);
+  });
+
+  app.get("/collections/:id/manual-payments", async (request) => {
+    const user = requireUser(request, store);
+    const params = idParamsSchema.parse(request.params);
+    return store.listManualPayments(user.id, params.id);
+  });
+
+  app.post("/manual-payments/:id/upload-proof", async (request) => {
+    const user = requireUser(request, store);
+    const params = idParamsSchema.parse(request.params);
+    const body = uploadManualPaymentProofSchema.parse(request.body);
+    return store.uploadManualPaymentProof(user.id, params.id, body);
+  });
+
+  app.post("/manual-payments/:id/confirm", async (request) => {
+    const user = requireUser(request, store);
+    const params = idParamsSchema.parse(request.params);
+    return store.confirmManualPayment(user.id, params.id);
+  });
+
+  app.post("/manual-payments/:id/reject", async (request) => {
+    const user = requireUser(request, store);
+    const params = idParamsSchema.parse(request.params);
+    return store.rejectManualPayment(user.id, params.id);
+  });
+
+  app.get("/collections/:id/audit-log", async (request) => {
+    const user = requireUser(request, store);
+    const params = idParamsSchema.parse(request.params);
+    return store.listAuditLogs(user.id, params.id);
   });
 }
 

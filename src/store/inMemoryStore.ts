@@ -2,15 +2,24 @@ import { randomUUID } from "node:crypto";
 import { calculateCollection } from "../calculation";
 import type {
   AuthResult,
+  AuditAction,
+  AuditEntityType,
+  AuditLog,
   CalculationVersion,
   Collection,
   CollectionParticipant,
+  Dispute,
+  DisputeType,
   Expense,
   ExpensePayment,
   ExpenseShareRule,
   Friendship,
   Group,
   GroupMember,
+  ManualPaymentMethod,
+  ManualPaymentProof,
+  Notification,
+  NotificationType,
   User
 } from "../domain";
 
@@ -36,6 +45,10 @@ export class InMemoryStore {
   private readonly expensePayments = new Map<string, ExpensePayment>();
   private readonly shareRules = new Map<string, ExpenseShareRule>();
   private readonly calculationVersions = new Map<string, CalculationVersion>();
+  private readonly disputes = new Map<string, Dispute>();
+  private readonly manualPaymentProofs = new Map<string, ManualPaymentProof>();
+  private readonly auditLogs = new Map<string, AuditLog>();
+  private readonly notifications = new Map<string, Notification>();
 
   requestOtp(phone: string): { phone: string; otp: string; expiresInSeconds: number } {
     const otp = "000000";
@@ -275,6 +288,14 @@ export class InMemoryStore {
     const collection = this.getOrganizerCollection(userId, collectionId);
     const updated: Collection = { ...collection, status, updatedAt: now() };
     this.collections.set(collection.id, updated);
+
+    const action: AuditAction = status === "review" ? "sent_to_review" : "updated";
+    this.addAudit(userId, "collection", collection.id, collectionId, action, { status });
+
+    if (status === "review") {
+      this.notifyCollectionParticipants(collectionId, "collection_review_requested", "Calculation sent to review", "Organizer sent the collection calculation to review.");
+    }
+
     return updated;
   }
 
@@ -524,6 +545,7 @@ export class InMemoryStore {
     };
     this.calculationVersions.set(version.id, version);
     this.markCollectionStatus(collectionId, "rules_configured");
+    this.addAudit(userId, "collection", collectionId, collectionId, "recalculated", { calculationVersionId: version.id, version: version.version });
     return version;
   }
 
@@ -534,6 +556,348 @@ export class InMemoryStore {
       throw new AppError(404, "Calculation version not found.");
     }
     return latest;
+  }
+
+  confirmParticipantReview(userId: string, collectionId: string, participantId: string): CollectionParticipant {
+    this.getCollectionForUser(userId, collectionId);
+    const participant = this.getParticipant(collectionId, participantId);
+
+    if (!this.canActForParticipant(userId, participant)) {
+      throw new AppError(403, "User cannot confirm this participant share.");
+    }
+
+    const updated: CollectionParticipant = {
+      ...participant,
+      status: "confirmed",
+      updatedAt: now()
+    };
+    this.participants.set(participant.id, updated);
+    this.addAudit(userId, "participant", participant.id, collectionId, "confirmed", { participantId });
+
+    const collection = this.getCollection(collectionId);
+    this.addNotification(collection.organizerId, collectionId, "participant_confirmed", "Participant confirmed calculation", `${updated.displayNameSnapshot} confirmed the calculation.`);
+
+    return updated;
+  }
+
+  createDispute(
+    userId: string,
+    collectionId: string,
+    data: { participantId: string; targetParticipantId?: string | null; type: DisputeType; message: string }
+  ): Dispute {
+    const collection = this.getCollectionForUser(userId, collectionId);
+    const participant = this.getParticipant(collectionId, data.participantId);
+
+    if (!this.canActForParticipant(userId, participant)) {
+      throw new AppError(403, "User cannot dispute this participant share.");
+    }
+
+    if (data.targetParticipantId) {
+      this.getParticipant(collectionId, data.targetParticipantId);
+    }
+
+    const dispute: Dispute = {
+      id: randomUUID(),
+      collectionId,
+      participantId: data.participantId,
+      createdByUserId: userId,
+      targetParticipantId: data.targetParticipantId ?? null,
+      type: data.type,
+      message: data.message,
+      status: "created",
+      resolutionComment: null,
+      createdAt: now(),
+      resolvedAt: null
+    };
+    this.disputes.set(dispute.id, dispute);
+    this.participants.set(participant.id, { ...participant, status: "disputed", paymentStatus: "disputed", updatedAt: now() });
+    this.markCollectionStatus(collectionId, "dispute_pending");
+    this.addAudit(userId, "dispute", dispute.id, collectionId, "disputed", { participantId: data.participantId, type: data.type });
+    this.addNotification(collection.organizerId, collectionId, "dispute_created", "New dispute", `${participant.displayNameSnapshot} disputed the calculation.`);
+
+    return dispute;
+  }
+
+  listDisputes(userId: string, collectionId: string): Dispute[] {
+    this.getCollectionForUser(userId, collectionId);
+    return [...this.disputes.values()].filter((dispute) => dispute.collectionId === collectionId);
+  }
+
+  acceptDispute(userId: string, disputeId: string, resolutionComment?: string | null): Dispute {
+    const dispute = this.getDispute(disputeId);
+    this.getOrganizerCollection(userId, dispute.collectionId);
+    const updated = this.updateDispute(dispute, "accepted", resolutionComment ?? null);
+    this.addAudit(userId, "dispute", dispute.id, dispute.collectionId, "accepted", { resolutionComment: updated.resolutionComment });
+    this.addNotification(dispute.createdByUserId, dispute.collectionId, "dispute_updated", "Dispute accepted", "Organizer accepted your dispute.");
+    return updated;
+  }
+
+  rejectDispute(userId: string, disputeId: string, resolutionComment?: string | null): Dispute {
+    const dispute = this.getDispute(disputeId);
+    this.getOrganizerCollection(userId, dispute.collectionId);
+    const updated = this.updateDispute(dispute, "rejected", resolutionComment ?? null);
+    const participant = this.participants.get(dispute.participantId);
+    if (participant) {
+      this.participants.set(participant.id, { ...participant, status: "active", paymentStatus: "pending", updatedAt: now() });
+    }
+    this.addAudit(userId, "dispute", dispute.id, dispute.collectionId, "rejected", { resolutionComment: updated.resolutionComment });
+    this.addNotification(dispute.createdByUserId, dispute.collectionId, "dispute_updated", "Dispute rejected", "Organizer rejected your dispute.");
+    return updated;
+  }
+
+  resolveDispute(userId: string, disputeId: string, resolutionComment?: string | null): { dispute: Dispute; calculationVersion: CalculationVersion } {
+    const dispute = this.getDispute(disputeId);
+    this.getOrganizerCollection(userId, dispute.collectionId);
+    const updated = this.updateDispute(dispute, "resolved_by_recalculation", resolutionComment ?? null);
+    const calculationVersion = this.calculateCollection(userId, dispute.collectionId);
+    this.addAudit(userId, "dispute", dispute.id, dispute.collectionId, "recalculated", { calculationVersionId: calculationVersion.id });
+    this.addNotification(dispute.createdByUserId, dispute.collectionId, "dispute_updated", "Dispute resolved", "Organizer recalculated the collection after dispute review.");
+    return { dispute: updated, calculationVersion };
+  }
+
+  markManualPaymentPaid(
+    userId: string,
+    collectionId: string,
+    data: {
+      payerParticipantId?: string | null;
+      receiverParticipantId?: string | null;
+      amountMinor: number;
+      method: ManualPaymentMethod;
+      comment?: string | null;
+      proofUrl?: string | null;
+      transferPlanId?: string | null;
+    }
+  ): ManualPaymentProof {
+    this.getCollectionForUser(userId, collectionId);
+    const payerParticipant = data.payerParticipantId ? this.getParticipant(collectionId, data.payerParticipantId) : null;
+    const receiverParticipant = data.receiverParticipantId ? this.getParticipant(collectionId, data.receiverParticipantId) : null;
+
+    if (payerParticipant && !this.canActForParticipant(userId, payerParticipant)) {
+      throw new AppError(403, "User cannot mark payment for this participant.");
+    }
+
+    const proof: ManualPaymentProof = {
+      id: randomUUID(),
+      transferPlanId: data.transferPlanId ?? null,
+      collectionId,
+      payerUserId: userId,
+      payerParticipantId: payerParticipant?.id ?? null,
+      receiverUserId: receiverParticipant?.linkedUserId ?? null,
+      receiverParticipantId: receiverParticipant?.id ?? null,
+      amountMinor: data.amountMinor,
+      method: data.method,
+      comment: data.comment ?? null,
+      proofUrl: data.proofUrl ?? null,
+      status: "submitted",
+      createdAt: now(),
+      updatedAt: now()
+    };
+    this.manualPaymentProofs.set(proof.id, proof);
+
+    if (payerParticipant) {
+      this.participants.set(payerParticipant.id, { ...payerParticipant, paymentStatus: "manual_marked_paid", updatedAt: now() });
+    }
+
+    this.markCollectionStatus(collectionId, "partially_paid");
+    this.addAudit(userId, "manual_payment", proof.id, collectionId, "paid", { amountMinor: data.amountMinor, method: data.method });
+    this.notifyManualPaymentReviewers(collectionId, proof, "manual_payment_submitted", "Manual payment submitted", "A participant marked a manual payment as paid.");
+
+    return proof;
+  }
+
+  uploadManualPaymentProof(userId: string, proofId: string, data: { proofUrl?: string | null; comment?: string | null }): ManualPaymentProof {
+    const proof = this.getManualPaymentForUser(userId, proofId);
+    const updated: ManualPaymentProof = {
+      ...proof,
+      proofUrl: data.proofUrl === undefined ? proof.proofUrl : data.proofUrl,
+      comment: data.comment === undefined ? proof.comment : data.comment,
+      updatedAt: now()
+    };
+    this.manualPaymentProofs.set(proof.id, updated);
+    this.addAudit(userId, "manual_payment", proof.id, proof.collectionId, "updated", { proofUrlChanged: data.proofUrl !== undefined });
+    return updated;
+  }
+
+  confirmManualPayment(userId: string, proofId: string): ManualPaymentProof {
+    const proof = this.getManualPaymentForReviewer(userId, proofId);
+    const updated: ManualPaymentProof = { ...proof, status: "confirmed", updatedAt: now() };
+    this.manualPaymentProofs.set(proof.id, updated);
+    this.markCollectionStatus(proof.collectionId, this.hasOnlyConfirmedManualPayments(proof.collectionId) ? "paid" : "partially_paid");
+    this.addAudit(userId, "manual_payment", proof.id, proof.collectionId, "confirmed", { amountMinor: proof.amountMinor });
+    this.addNotification(proof.payerUserId, proof.collectionId, "manual_payment_confirmed", "Manual payment confirmed", "Your manual payment was confirmed.");
+    return updated;
+  }
+
+  rejectManualPayment(userId: string, proofId: string): ManualPaymentProof {
+    const proof = this.getManualPaymentForReviewer(userId, proofId);
+    const updated: ManualPaymentProof = { ...proof, status: "rejected", updatedAt: now() };
+    this.manualPaymentProofs.set(proof.id, updated);
+    this.markCollectionStatus(proof.collectionId, "payment_pending");
+    this.addAudit(userId, "manual_payment", proof.id, proof.collectionId, "rejected", { amountMinor: proof.amountMinor });
+    this.addNotification(proof.payerUserId, proof.collectionId, "manual_payment_rejected", "Manual payment rejected", "Your manual payment proof was rejected.");
+    return updated;
+  }
+
+  listManualPayments(userId: string, collectionId: string): ManualPaymentProof[] {
+    this.getCollectionForUser(userId, collectionId);
+    return [...this.manualPaymentProofs.values()].filter((proof) => proof.collectionId === collectionId);
+  }
+
+  listAuditLogs(userId: string, collectionId: string): AuditLog[] {
+    this.getCollectionForUser(userId, collectionId);
+    return [...this.auditLogs.values()].filter((log) => log.collectionId === collectionId).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  }
+
+  listNotifications(userId: string): Notification[] {
+    this.getUser(userId);
+    return [...this.notifications.values()].filter((notification) => notification.userId === userId).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  }
+
+  markNotificationRead(userId: string, notificationId: string): Notification {
+    const notification = this.notifications.get(notificationId);
+    if (!notification || notification.userId !== userId) {
+      throw new AppError(404, "Notification not found.");
+    }
+
+    const updated: Notification = { ...notification, status: "read", readAt: now() };
+    this.notifications.set(notification.id, updated);
+    this.addAudit(userId, "notification", notification.id, notification.collectionId, "read", {});
+    return updated;
+  }
+
+  private getDispute(disputeId: string): Dispute {
+    const dispute = this.disputes.get(disputeId);
+    if (!dispute) {
+      throw new AppError(404, "Dispute not found.");
+    }
+    return dispute;
+  }
+
+  private updateDispute(dispute: Dispute, status: Dispute["status"], resolutionComment: string | null): Dispute {
+    const updated: Dispute = {
+      ...dispute,
+      status,
+      resolutionComment,
+      resolvedAt: ["accepted", "rejected", "resolved_by_recalculation", "cancelled"].includes(status) ? now() : dispute.resolvedAt
+    };
+    this.disputes.set(dispute.id, updated);
+    return updated;
+  }
+
+  private getManualPaymentForUser(userId: string, proofId: string): ManualPaymentProof {
+    const proof = this.manualPaymentProofs.get(proofId);
+    if (!proof || proof.payerUserId !== userId) {
+      throw new AppError(404, "Manual payment proof not found.");
+    }
+    return proof;
+  }
+
+  private getManualPaymentForReviewer(userId: string, proofId: string): ManualPaymentProof {
+    const proof = this.manualPaymentProofs.get(proofId);
+    if (!proof) {
+      throw new AppError(404, "Manual payment proof not found.");
+    }
+
+    const collection = this.getCollection(proof.collectionId);
+    if (collection.organizerId === userId || proof.receiverUserId === userId) {
+      return proof;
+    }
+
+    throw new AppError(403, "User cannot review this manual payment.");
+  }
+
+  private hasOnlyConfirmedManualPayments(collectionId: string): boolean {
+    const proofs = [...this.manualPaymentProofs.values()].filter((proof) => proof.collectionId === collectionId);
+    return proofs.length > 0 && proofs.every((proof) => proof.status === "confirmed");
+  }
+
+  private canActForParticipant(userId: string, participant: CollectionParticipant): boolean {
+    const collection = this.getCollection(participant.collectionId);
+    if (collection.organizerId === userId || participant.linkedUserId === userId) {
+      return true;
+    }
+
+    if (!participant.paymentResponsibleParticipantId) {
+      return false;
+    }
+
+    const responsibleParticipant = this.participants.get(participant.paymentResponsibleParticipantId);
+    return responsibleParticipant?.linkedUserId === userId;
+  }
+
+  private notifyCollectionParticipants(collectionId: string, type: NotificationType, title: string, body: string): void {
+    const collection = this.getCollection(collectionId);
+    const userIds = new Set<string>();
+    userIds.add(collection.organizerId);
+
+    for (const participant of this.getParticipants(collectionId)) {
+      if (participant.linkedUserId) {
+        userIds.add(participant.linkedUserId);
+      }
+      if (participant.paymentResponsibleParticipantId) {
+        const responsibleParticipant = this.participants.get(participant.paymentResponsibleParticipantId);
+        if (responsibleParticipant?.linkedUserId) {
+          userIds.add(responsibleParticipant.linkedUserId);
+        }
+      }
+    }
+
+    for (const targetUserId of userIds) {
+      this.addNotification(targetUserId, collectionId, type, title, body);
+    }
+  }
+
+  private notifyManualPaymentReviewers(collectionId: string, proof: ManualPaymentProof, type: NotificationType, title: string, body: string): void {
+    const collection = this.getCollection(collectionId);
+    const userIds = new Set<string>([collection.organizerId]);
+    if (proof.receiverUserId) {
+      userIds.add(proof.receiverUserId);
+    }
+    userIds.delete(proof.payerUserId);
+
+    for (const targetUserId of userIds) {
+      this.addNotification(targetUserId, collectionId, type, title, body);
+    }
+  }
+
+  private addNotification(userId: string, collectionId: string | null, type: NotificationType, title: string, body: string): Notification {
+    const notification: Notification = {
+      id: randomUUID(),
+      userId,
+      collectionId,
+      type,
+      title,
+      body,
+      status: "unread",
+      createdAt: now(),
+      readAt: null
+    };
+    this.notifications.set(notification.id, notification);
+    return notification;
+  }
+
+  private addAudit(
+    actorUserId: string | null,
+    entityType: AuditEntityType,
+    entityId: string,
+    collectionId: string | null,
+    action: AuditAction,
+    metadata: Record<string, unknown>
+  ): AuditLog {
+    const log: AuditLog = {
+      id: randomUUID(),
+      actorUserId,
+      entityType,
+      entityId,
+      collectionId,
+      action,
+      metadata,
+      ipAddress: null,
+      userAgent: null,
+      createdAt: now()
+    };
+    this.auditLogs.set(log.id, log);
+    return log;
   }
 
   private findOrCreateUserByPhone(phone: string): User {
@@ -687,4 +1051,3 @@ function parseDevToken(token: string): string | null {
     return null;
   }
 }
-

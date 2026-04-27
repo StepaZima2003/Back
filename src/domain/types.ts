@@ -26,6 +26,52 @@ export type ParticipantPaymentStatus = "not_required" | "pending" | "paid" | "fa
 export type ExpenseType = "expense" | "prepayment" | "deposit" | "refund" | "discount" | "correction" | "service_fee" | "tax" | "other";
 export type PaymentSource = "card" | "cash" | "sbp" | "bonus" | "certificate" | "other";
 export type CalculationVersionStatus = "draft" | "sent_to_review" | "final" | "superseded";
+export type DisputeStatus = "created" | "under_review" | "accepted" | "rejected" | "resolved_by_recalculation" | "cancelled";
+export type DisputeType =
+  | "not_eat"
+  | "not_drink"
+  | "partial_time"
+  | "already_paid"
+  | "bought_something"
+  | "absent"
+  | "guest_absent"
+  | "payer_changed"
+  | "other";
+export type ManualPaymentMethod = "sbp" | "cash" | "card" | "other";
+export type ManualPaymentProofStatus = "submitted" | "confirmed" | "rejected";
+export type AuditEntityType =
+  | "collection"
+  | "payment"
+  | "group"
+  | "user"
+  | "dispute"
+  | "autopay_rule"
+  | "participant"
+  | "share_rule"
+  | "manual_payment"
+  | "notification";
+export type AuditAction =
+  | "created"
+  | "updated"
+  | "deleted"
+  | "confirmed"
+  | "paid"
+  | "disputed"
+  | "blocked"
+  | "recalculated"
+  | "accepted"
+  | "rejected"
+  | "sent_to_review"
+  | "read";
+export type NotificationStatus = "unread" | "read";
+export type NotificationType =
+  | "collection_review_requested"
+  | "participant_confirmed"
+  | "dispute_created"
+  | "dispute_updated"
+  | "manual_payment_submitted"
+  | "manual_payment_confirmed"
+  | "manual_payment_rejected";
 
 export interface User {
   id: string;
@@ -142,9 +188,64 @@ export interface CalculationVersion {
   result: CalculateCollectionResult;
 }
 
+export interface Dispute {
+  id: string;
+  collectionId: string;
+  participantId: string;
+  createdByUserId: string;
+  targetParticipantId: string | null;
+  type: DisputeType;
+  message: string;
+  status: DisputeStatus;
+  resolutionComment: string | null;
+  createdAt: string;
+  resolvedAt: string | null;
+}
+
+export interface ManualPaymentProof {
+  id: string;
+  transferPlanId: string | null;
+  collectionId: string;
+  payerUserId: string;
+  payerParticipantId: string | null;
+  receiverUserId: string | null;
+  receiverParticipantId: string | null;
+  amountMinor: number;
+  method: ManualPaymentMethod;
+  comment: string | null;
+  proofUrl: string | null;
+  status: ManualPaymentProofStatus;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AuditLog {
+  id: string;
+  actorUserId: string | null;
+  entityType: AuditEntityType;
+  entityId: string;
+  collectionId: string | null;
+  action: AuditAction;
+  metadata: Record<string, unknown>;
+  ipAddress: string | null;
+  userAgent: string | null;
+  createdAt: string;
+}
+
+export interface Notification {
+  id: string;
+  userId: string;
+  collectionId: string | null;
+  type: NotificationType;
+  title: string;
+  body: string;
+  status: NotificationStatus;
+  createdAt: string;
+  readAt: string | null;
+}
+
 export interface AuthResult {
   user: User;
   accessToken: string;
   refreshToken: string;
 }
-

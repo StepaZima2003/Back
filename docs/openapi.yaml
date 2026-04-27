@@ -175,6 +175,158 @@ paths:
       responses:
         "200":
           description: Transfer plan
+  /collections/{id}/responsible-payer-summary:
+    get:
+      summary: Latest responsible payer calculation summary
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/CollectionId"
+      responses:
+        "200":
+          description: Responsible payer calculations
+  /collections/{id}/participants/{participantId}/confirm-review:
+    post:
+      summary: Confirm participant calculation review
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/CollectionId"
+        - name: participantId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Confirmed participant
+  /collections/{id}/disputes:
+    get:
+      summary: List collection disputes
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/CollectionId"
+      responses:
+        "200":
+          description: Disputes
+    post:
+      summary: Create calculation dispute
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/CollectionId"
+      responses:
+        "201":
+          description: Dispute
+  /disputes/{id}/accept:
+    post:
+      summary: Organizer accepts dispute
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          description: Accepted dispute
+  /disputes/{id}/reject:
+    post:
+      summary: Organizer rejects dispute
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          description: Rejected dispute
+  /disputes/{id}/resolve:
+    post:
+      summary: Organizer resolves dispute by recalculation
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          description: Resolved dispute and new calculation version
+  /collections/{id}/manual-payments/mark-paid:
+    post:
+      summary: Submit manual payment proof
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/CollectionId"
+      responses:
+        "201":
+          description: Manual payment proof
+  /collections/{id}/manual-payments:
+    get:
+      summary: List collection manual payments
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/CollectionId"
+      responses:
+        "200":
+          description: Manual payment proofs
+  /manual-payments/{id}/upload-proof:
+    post:
+      summary: Update manual payment proof URL or comment
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          description: Manual payment proof
+  /manual-payments/{id}/confirm:
+    post:
+      summary: Confirm manual payment
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          description: Confirmed manual payment
+  /manual-payments/{id}/reject:
+    post:
+      summary: Reject manual payment
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          description: Rejected manual payment
+  /collections/{id}/audit-log:
+    get:
+      summary: List collection audit log
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/CollectionId"
+      responses:
+        "200":
+          description: Audit log
+  /notifications:
+    get:
+      summary: List current user notifications
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Notifications
+  /notifications/{id}/read:
+    post:
+      summary: Mark notification as read
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          description: Notification
 components:
   securitySchemes:
     bearerAuth:
@@ -187,4 +339,9 @@ components:
       required: true
       schema:
         type: string
-
+    Id:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string

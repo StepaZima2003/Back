@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import type { InMemoryStore } from "../../store";
+import type { AppStore } from "../../store";
 
 const requestOtpSchema = z.object({
   phone: z.string().min(5)
@@ -11,10 +11,10 @@ const verifyOtpSchema = z.object({
   otp: z.string().min(4)
 });
 
-export function registerAuthRoutes(app: FastifyInstance, store: InMemoryStore): void {
+export function registerAuthRoutes(app: FastifyInstance, store: AppStore): void {
   app.post("/auth/request-otp", async (request, reply) => {
     const body = requestOtpSchema.parse(request.body);
-    const result = store.requestOtp(body.phone);
+    const result = await store.requestOtp(body.phone);
     reply.send({
       status: "otp_sent",
       ...result
@@ -23,8 +23,7 @@ export function registerAuthRoutes(app: FastifyInstance, store: InMemoryStore): 
 
   app.post("/auth/verify-otp", async (request, reply) => {
     const body = verifyOtpSchema.parse(request.body);
-    const result = store.verifyOtp(body.phone, body.otp);
+    const result = await store.verifyOtp(body.phone, body.otp);
     reply.send(result);
   });
 }
-

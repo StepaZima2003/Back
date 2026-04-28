@@ -30,10 +30,31 @@ npm run db:seed
 
 Use `db:migrate` while changing the schema locally. Use `db:deploy` for applying checked-in migrations.
 
+## Store Provider
+
+Default bootstrap is `STORE_PROVIDER=memory`.
+
+There is also an experimental `STORE_PROVIDER=prisma-mirror` mode:
+
+```bash
+$env:STORE_PROVIDER="prisma-mirror"
+npm run dev
+```
+
+`prisma-mirror` keeps `InMemoryStore` as the execution source of truth and dual-writes a stable slice into PostgreSQL:
+
+- users and profile updates;
+- friendships;
+- groups and group members;
+- group templates with template categories;
+- collections with organizer participant and collection categories.
+
+Expenses, calculations, disputes, manual payments, notifications, and audit logs are still memory-only in this mode.
+
 ## Persistence Roadmap
 
 1. Keep calculation logic pure and independent from Prisma.
-2. Introduce repository interfaces around users, collections, participants, expenses, disputes, manual payments, notifications, and audit logs.
-3. Add a Prisma-backed repository implementation.
-4. Run the same API smoke tests against both `InMemoryStore` and `PrismaStore`.
-5. Switch production bootstrap to `PrismaStore` behind an environment flag.
+2. Expand mirror coverage to participants, expenses, share rules, calculations, disputes, manual payments, notifications, and audit logs.
+3. Add read-side hydration from Prisma so restart no longer loses mirrored data.
+4. Run the same API smoke tests against both `InMemoryStore` and the Prisma-backed store contract.
+5. Switch production bootstrap to a full Prisma store behind an environment flag.

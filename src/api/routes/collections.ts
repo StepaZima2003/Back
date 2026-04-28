@@ -2,7 +2,7 @@ import type { FastifyInstance, FastifyRequest } from "fastify";
 import { z } from "zod";
 import { requireUser } from "../authContext";
 import type { Collection, Expense, ExpensePayment } from "../../domain";
-import type { InMemoryStore } from "../../store";
+import type { AppStore } from "../../store";
 
 const idParamsSchema = z.object({
   id: z.string()
@@ -111,36 +111,36 @@ const createCategorySchema = z.object({
   autopayAllowedByDefault: z.boolean().optional()
 });
 
-export function registerCollectionRoutes(app: FastifyInstance, store: InMemoryStore): void {
+export function registerCollectionRoutes(app: FastifyInstance, store: AppStore): void {
   app.get("/collections", async (request) => {
-    const user = requireUser(request, store);
-    return store.listCollections(user.id);
+    const user = await requireUser(request, store);
+    return await store.listCollections(user.id);
   });
 
   app.post("/collections", async (request, reply) => {
-    const user = requireUser(request, store);
+    const user = await requireUser(request, store);
     const body = createCollectionSchema.parse(request.body);
-    const result = store.createCollection(user.id, body);
+    const result = await store.createCollection(user.id, body);
     reply.status(201).send(result);
   });
 
   app.get("/collections/:id", async (request) => {
-    const user = requireUser(request, store);
+    const user = await requireUser(request, store);
     const params = idParamsSchema.parse(request.params);
-    return store.getCollectionForUser(user.id, params.id);
+    return await store.getCollectionForUser(user.id, params.id);
   });
 
   app.get("/collections/:id/categories", async (request) => {
-    const user = requireUser(request, store);
+    const user = await requireUser(request, store);
     const params = idParamsSchema.parse(request.params);
-    return store.listCategories(user.id, params.id);
+    return await store.listCategories(user.id, params.id);
   });
 
   app.post("/collections/:id/categories", async (request, reply) => {
-    const user = requireUser(request, store);
+    const user = await requireUser(request, store);
     const params = idParamsSchema.parse(request.params);
     const body = createCategorySchema.parse(request.body);
-    const category = store.createCategory(user.id, params.id, body);
+    const category = await store.createCategory(user.id, params.id, body);
     reply.status(201).send(category);
   });
 
@@ -150,180 +150,180 @@ export function registerCollectionRoutes(app: FastifyInstance, store: InMemorySt
   app.post("/collections/:id/close", async (request) => updateCollectionStatus(request, store, "closed"));
 
   app.get("/collections/:id/participants", async (request) => {
-    const user = requireUser(request, store);
+    const user = await requireUser(request, store);
     const params = idParamsSchema.parse(request.params);
-    return store.listParticipants(user.id, params.id);
+    return await store.listParticipants(user.id, params.id);
   });
 
   app.post("/collections/:id/participants", async (request, reply) => {
-    const user = requireUser(request, store);
+    const user = await requireUser(request, store);
     const params = idParamsSchema.parse(request.params);
     const body = addParticipantSchema.parse(request.body);
-    const participant = store.addParticipant(user.id, params.id, body);
+    const participant = await store.addParticipant(user.id, params.id, body);
     reply.status(201).send(participant);
   });
 
   app.post("/collections/:id/participants/add-guest", async (request, reply) => {
-    const user = requireUser(request, store);
+    const user = await requireUser(request, store);
     const params = idParamsSchema.parse(request.params);
     const body = addGuestSchema.parse(request.body);
-    const participant = store.addGuest(user.id, params.id, body);
+    const participant = await store.addGuest(user.id, params.id, body);
     reply.status(201).send(participant);
   });
 
   app.post("/collections/:id/participants/add-child", async (request, reply) => {
-    const user = requireUser(request, store);
+    const user = await requireUser(request, store);
     const params = idParamsSchema.parse(request.params);
     const body = addChildSchema.parse(request.body);
-    const participant = store.addChild(user.id, params.id, body);
+    const participant = await store.addChild(user.id, params.id, body);
     reply.status(201).send(participant);
   });
 
   app.post("/collections/:id/participants/:participantId/set-responsible-payer", async (request) => {
-    const user = requireUser(request, store);
+    const user = await requireUser(request, store);
     const params = participantParamsSchema.parse(request.params);
     const body = z.object({ responsiblePayerParticipantId: z.string().nullable() }).parse(request.body);
-    return store.setResponsiblePayer(user.id, params.id, params.participantId, body.responsiblePayerParticipantId);
+    return await store.setResponsiblePayer(user.id, params.id, params.participantId, body.responsiblePayerParticipantId);
   });
 
   app.post("/collections/:id/participants/:participantId/confirm-review", async (request) => {
-    const user = requireUser(request, store);
+    const user = await requireUser(request, store);
     const params = participantParamsSchema.parse(request.params);
-    return store.confirmParticipantReview(user.id, params.id, params.participantId);
+    return await store.confirmParticipantReview(user.id, params.id, params.participantId);
   });
 
   app.get("/collections/:id/expenses", async (request) => {
-    const user = requireUser(request, store);
+    const user = await requireUser(request, store);
     const params = idParamsSchema.parse(request.params);
-    return store.listExpenses(user.id, params.id);
+    return await store.listExpenses(user.id, params.id);
   });
 
   app.post("/collections/:id/expenses", async (request, reply) => {
-    const user = requireUser(request, store);
+    const user = await requireUser(request, store);
     const params = idParamsSchema.parse(request.params);
     const body = createExpenseSchema.parse(request.body);
-    const result = store.createExpense(user.id, params.id, body);
+    const result = await store.createExpense(user.id, params.id, body);
     reply.status(201).send(result);
   });
 
   app.post("/expenses/:id/payments", async (request, reply) => {
-    const user = requireUser(request, store);
+    const user = await requireUser(request, store);
     const params = idParamsSchema.parse(request.params);
     const body = addPaymentSchema.parse(request.body);
-    const payment = store.addExpensePayment(user.id, params.id, body);
+    const payment = await store.addExpensePayment(user.id, params.id, body);
     reply.status(201).send(payment);
   });
 
   app.post("/expenses/:id/share-rules", async (request, reply) => {
-    const user = requireUser(request, store);
+    const user = await requireUser(request, store);
     const params = idParamsSchema.parse(request.params);
     const body = addShareRuleSchema.parse(request.body);
-    const rule = store.addShareRule(user.id, params.id, body);
+    const rule = await store.addShareRule(user.id, params.id, body);
     reply.status(201).send(rule);
   });
 
   app.post("/collections/:id/calculate", async (request, reply) => {
-    const user = requireUser(request, store);
+    const user = await requireUser(request, store);
     const params = idParamsSchema.parse(request.params);
-    const version = store.calculateCollection(user.id, params.id);
+    const version = await store.calculateCollection(user.id, params.id);
     reply.status(201).send(version);
   });
 
   app.get("/collections/:id/calculations/latest", async (request) => {
-    const user = requireUser(request, store);
+    const user = await requireUser(request, store);
     const params = idParamsSchema.parse(request.params);
-    return store.getLatestCalculation(user.id, params.id);
+    return await store.getLatestCalculation(user.id, params.id);
   });
 
   app.get("/collections/:id/transfer-plan", async (request) => {
-    const user = requireUser(request, store);
+    const user = await requireUser(request, store);
     const params = idParamsSchema.parse(request.params);
-    return store.getLatestCalculation(user.id, params.id).result.transferPlan;
+    return (await store.getLatestCalculation(user.id, params.id)).result.transferPlan;
   });
 
   app.get("/collections/:id/responsible-payer-summary", async (request) => {
-    const user = requireUser(request, store);
+    const user = await requireUser(request, store);
     const params = idParamsSchema.parse(request.params);
-    return store.getLatestCalculation(user.id, params.id).result.responsiblePayerCalculations;
+    return (await store.getLatestCalculation(user.id, params.id)).result.responsiblePayerCalculations;
   });
 
   app.post("/collections/:id/disputes", async (request, reply) => {
-    const user = requireUser(request, store);
+    const user = await requireUser(request, store);
     const params = idParamsSchema.parse(request.params);
     const body = createDisputeSchema.parse(request.body);
-    const dispute = store.createDispute(user.id, params.id, body);
+    const dispute = await store.createDispute(user.id, params.id, body);
     reply.status(201).send(dispute);
   });
 
   app.get("/collections/:id/disputes", async (request) => {
-    const user = requireUser(request, store);
+    const user = await requireUser(request, store);
     const params = idParamsSchema.parse(request.params);
-    return store.listDisputes(user.id, params.id);
+    return await store.listDisputes(user.id, params.id);
   });
 
   app.post("/disputes/:id/accept", async (request) => {
-    const user = requireUser(request, store);
+    const user = await requireUser(request, store);
     const params = idParamsSchema.parse(request.params);
     const body = disputeResolutionSchema.parse(request.body ?? {});
-    return store.acceptDispute(user.id, params.id, body.resolutionComment);
+    return await store.acceptDispute(user.id, params.id, body.resolutionComment);
   });
 
   app.post("/disputes/:id/reject", async (request) => {
-    const user = requireUser(request, store);
+    const user = await requireUser(request, store);
     const params = idParamsSchema.parse(request.params);
     const body = disputeResolutionSchema.parse(request.body ?? {});
-    return store.rejectDispute(user.id, params.id, body.resolutionComment);
+    return await store.rejectDispute(user.id, params.id, body.resolutionComment);
   });
 
   app.post("/disputes/:id/resolve", async (request) => {
-    const user = requireUser(request, store);
+    const user = await requireUser(request, store);
     const params = idParamsSchema.parse(request.params);
     const body = disputeResolutionSchema.parse(request.body ?? {});
-    return store.resolveDispute(user.id, params.id, body.resolutionComment);
+    return await store.resolveDispute(user.id, params.id, body.resolutionComment);
   });
 
   app.post("/collections/:id/manual-payments/mark-paid", async (request, reply) => {
-    const user = requireUser(request, store);
+    const user = await requireUser(request, store);
     const params = idParamsSchema.parse(request.params);
     const body = markManualPaymentSchema.parse(request.body);
-    const proof = store.markManualPaymentPaid(user.id, params.id, body);
+    const proof = await store.markManualPaymentPaid(user.id, params.id, body);
     reply.status(201).send(proof);
   });
 
   app.get("/collections/:id/manual-payments", async (request) => {
-    const user = requireUser(request, store);
+    const user = await requireUser(request, store);
     const params = idParamsSchema.parse(request.params);
-    return store.listManualPayments(user.id, params.id);
+    return await store.listManualPayments(user.id, params.id);
   });
 
   app.post("/manual-payments/:id/upload-proof", async (request) => {
-    const user = requireUser(request, store);
+    const user = await requireUser(request, store);
     const params = idParamsSchema.parse(request.params);
     const body = uploadManualPaymentProofSchema.parse(request.body);
-    return store.uploadManualPaymentProof(user.id, params.id, body);
+    return await store.uploadManualPaymentProof(user.id, params.id, body);
   });
 
   app.post("/manual-payments/:id/confirm", async (request) => {
-    const user = requireUser(request, store);
+    const user = await requireUser(request, store);
     const params = idParamsSchema.parse(request.params);
-    return store.confirmManualPayment(user.id, params.id);
+    return await store.confirmManualPayment(user.id, params.id);
   });
 
   app.post("/manual-payments/:id/reject", async (request) => {
-    const user = requireUser(request, store);
+    const user = await requireUser(request, store);
     const params = idParamsSchema.parse(request.params);
-    return store.rejectManualPayment(user.id, params.id);
+    return await store.rejectManualPayment(user.id, params.id);
   });
 
   app.get("/collections/:id/audit-log", async (request) => {
-    const user = requireUser(request, store);
+    const user = await requireUser(request, store);
     const params = idParamsSchema.parse(request.params);
-    return store.listAuditLogs(user.id, params.id);
+    return await store.listAuditLogs(user.id, params.id);
   });
 }
 
-function updateCollectionStatus(request: FastifyRequest, store: InMemoryStore, status: Collection["status"]) {
-  const user = requireUser(request, store);
+async function updateCollectionStatus(request: FastifyRequest, store: AppStore, status: Collection["status"]) {
+  const user = await requireUser(request, store);
   const params = idParamsSchema.parse(request.params);
-  return store.updateCollectionStatus(user.id, params.id, status);
+  return await store.updateCollectionStatus(user.id, params.id, status);
 }

@@ -8,15 +8,15 @@ import { registerFriendRoutes } from "./routes/friends";
 import { registerGroupRoutes } from "./routes/groups";
 import { registerNotificationRoutes } from "./routes/notifications";
 import { registerUserRoutes } from "./routes/users";
-import { AppError, InMemoryStore } from "../store";
+import { AppError, createAppStoreFromEnv, type AppStore } from "../store";
 
 export interface BuildAppOptions {
-  store?: InMemoryStore;
+  store?: AppStore;
   logger?: boolean;
 }
 
 export async function buildApp(options: BuildAppOptions = {}) {
-  const store = options.store ?? new InMemoryStore();
+  const store = options.store ?? createAppStoreFromEnv();
   const app = Fastify({ logger: options.logger ?? false });
 
   app.setErrorHandler((error, _request, reply) => {

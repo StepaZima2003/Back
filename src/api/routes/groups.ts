@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { requireUser } from "../authContext";
-import { AppError, type InMemoryStore } from "../../store";
+import { AppError, type AppStore } from "../../store";
 
 const createGroupSchema = z.object({
   title: z.string().min(1).max(120),
@@ -33,23 +33,23 @@ const createTemplateSchema = z.object({
     .optional()
 });
 
-export function registerGroupRoutes(app: FastifyInstance, store: InMemoryStore): void {
+export function registerGroupRoutes(app: FastifyInstance, store: AppStore): void {
   app.get("/groups", async (request) => {
-    const user = requireUser(request, store);
-    return store.listGroups(user.id);
+    const user = await requireUser(request, store);
+    return await store.listGroups(user.id);
   });
 
   app.post("/groups", async (request, reply) => {
-    const user = requireUser(request, store);
+    const user = await requireUser(request, store);
     const body = createGroupSchema.parse(request.body);
-    const group = store.createGroup(user.id, body);
+    const group = await store.createGroup(user.id, body);
     reply.status(201).send(group);
   });
 
   app.get("/groups/:id", async (request) => {
-    const user = requireUser(request, store);
+    const user = await requireUser(request, store);
     const params = idParamsSchema.parse(request.params);
-    const group = store.listGroups(user.id).find((item) => item.id === params.id);
+    const group = (await store.listGroups(user.id)).find((item) => item.id === params.id);
     if (!group) {
       throw new AppError(404, "Group not found.");
     }
@@ -57,24 +57,24 @@ export function registerGroupRoutes(app: FastifyInstance, store: InMemoryStore):
   });
 
   app.post("/groups/:id/members", async (request, reply) => {
-    const user = requireUser(request, store);
+    const user = await requireUser(request, store);
     const params = idParamsSchema.parse(request.params);
     const body = addMemberSchema.parse(request.body);
-    const member = store.addGroupMember(user.id, params.id, body.userId);
+    const member = await store.addGroupMember(user.id, params.id, body.userId);
     reply.status(201).send(member);
   });
 
   app.get("/groups/:id/templates", async (request) => {
-    const user = requireUser(request, store);
+    const user = await requireUser(request, store);
     const params = idParamsSchema.parse(request.params);
-    return store.listGroupTemplates(user.id, params.id);
+    return await store.listGroupTemplates(user.id, params.id);
   });
 
   app.post("/groups/:id/templates", async (request, reply) => {
-    const user = requireUser(request, store);
+    const user = await requireUser(request, store);
     const params = idParamsSchema.parse(request.params);
     const body = createTemplateSchema.parse(request.body);
-    const template = store.createGroupTemplate(user.id, params.id, body);
+    const template = await store.createGroupTemplate(user.id, params.id, body);
     reply.status(201).send(template);
   });
 }

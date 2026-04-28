@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { requireUser } from "../authContext";
-import type { InMemoryStore } from "../../store";
+import type { AppStore } from "../../store";
 
 const inviteFriendSchema = z.object({
   phone: z.string().min(5)
@@ -11,37 +11,36 @@ const idParamsSchema = z.object({
   id: z.string()
 });
 
-export function registerFriendRoutes(app: FastifyInstance, store: InMemoryStore): void {
+export function registerFriendRoutes(app: FastifyInstance, store: AppStore): void {
   app.get("/friends", async (request) => {
-    const user = requireUser(request, store);
-    return store.listFriends(user.id);
+    const user = await requireUser(request, store);
+    return await store.listFriends(user.id);
   });
 
   app.post("/friends/invite", async (request, reply) => {
-    const user = requireUser(request, store);
+    const user = await requireUser(request, store);
     const body = inviteFriendSchema.parse(request.body);
-    const friendship = store.inviteFriend(user.id, body.phone);
+    const friendship = await store.inviteFriend(user.id, body.phone);
     reply.status(201).send(friendship);
   });
 
   app.post("/friends/:id/accept", async (request) => {
-    const user = requireUser(request, store);
+    const user = await requireUser(request, store);
     const params = idParamsSchema.parse(request.params);
-    return store.acceptFriendship(user.id, params.id);
+    return await store.acceptFriendship(user.id, params.id);
   });
 
   app.post("/friends/:id/decline", async (request, reply) => {
-    const user = requireUser(request, store);
+    const user = await requireUser(request, store);
     const params = idParamsSchema.parse(request.params);
-    store.declineFriendship(user.id, params.id);
+    await store.declineFriendship(user.id, params.id);
     reply.status(204).send();
   });
 
   app.delete("/friends/:id", async (request, reply) => {
-    const user = requireUser(request, store);
+    const user = await requireUser(request, store);
     const params = idParamsSchema.parse(request.params);
-    store.declineFriendship(user.id, params.id);
+    await store.declineFriendship(user.id, params.id);
     reply.status(204).send();
   });
 }
-

@@ -1,10 +1,9 @@
 import type { FastifyRequest } from "fastify";
 import type { User } from "../domain";
-import type { InMemoryStore } from "../store";
+import type { AppStore } from "../store";
 
-export function requireUser(request: FastifyRequest, store: InMemoryStore): User {
+export async function requireUser(request: FastifyRequest, store: AppStore): Promise<User> {
   const authorization = request.headers.authorization;
   const token = authorization?.startsWith("Bearer ") ? authorization.slice("Bearer ".length) : undefined;
-  return store.authenticate(token);
+  return await store.authenticate(token);
 }
-

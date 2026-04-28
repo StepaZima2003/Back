@@ -113,6 +113,20 @@ export interface GroupMember {
   joinedAt: string;
 }
 
+export interface GroupParticipantProfile {
+  id: string;
+  groupId: string;
+  ownerUserId: string;
+  linkedUserId: string | null;
+  invitedPhone: string | null;
+  participantType: ParticipantType;
+  displayName: string;
+  relationshipHint: "self" | "partner" | "child" | "guest" | "family" | "colleague" | "other";
+  defaultWeight: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface Collection {
   id: string;
   title: string;

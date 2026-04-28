@@ -17,6 +17,15 @@ const addMemberSchema = z.object({
   userId: z.string()
 });
 
+const createParticipantProfileSchema = z.object({
+  linkedUserId: z.string().nullable().optional(),
+  invitedPhone: z.string().nullable().optional(),
+  participantType: z.enum(["registered_user", "invited_phone", "guest", "child", "external_person"]).optional(),
+  displayName: z.string().min(1).max(120).optional(),
+  relationshipHint: z.enum(["self", "partner", "child", "guest", "family", "colleague", "other"]).optional(),
+  defaultWeight: z.number().positive().optional()
+});
+
 const createTemplateSchema = z.object({
   title: z.string().min(1).max(120),
   collectionType: z.enum(["picnic", "restaurant", "gift", "trip", "office", "rent", "kids", "dacha", "other"]),
@@ -62,6 +71,20 @@ export function registerGroupRoutes(app: FastifyInstance, store: AppStore): void
     const body = addMemberSchema.parse(request.body);
     const member = await store.addGroupMember(user.id, params.id, body.userId);
     reply.status(201).send(member);
+  });
+
+  app.get("/groups/:id/participant-profiles", async (request) => {
+    const user = await requireUser(request, store);
+    const params = idParamsSchema.parse(request.params);
+    return await store.listGroupParticipantProfiles(user.id, params.id);
+  });
+
+  app.post("/groups/:id/participant-profiles", async (request, reply) => {
+    const user = await requireUser(request, store);
+    const params = idParamsSchema.parse(request.params);
+    const body = createParticipantProfileSchema.parse(request.body);
+    const profile = await store.createGroupParticipantProfile(user.id, params.id, body);
+    reply.status(201).send(profile);
   });
 
   app.get("/groups/:id/templates", async (request) => {

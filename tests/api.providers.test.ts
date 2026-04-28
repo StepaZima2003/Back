@@ -294,6 +294,94 @@ describe.each<ProviderName>(["memory", "prisma"])("api provider parity: %s", (pr
     await app.close();
   });
 
+  it("supports group participant profiles and applying template categories to an existing collection", async () => {
+    const app = await buildApp({ store: await createStore(provider) });
+
+    async function auth(phone: string) {
+      await app.inject({ method: "POST", url: "/auth/request-otp", payload: { phone } });
+      const response = await app.inject({ method: "POST", url: "/auth/verify-otp", payload: { phone, otp: "000000" } });
+      const body = response.json();
+      return {
+        user: body.user,
+        authorization: `Bearer ${body.accessToken}`
+      };
+    }
+
+    const organizer = await auth("+79990010021");
+    const linkedFriend = await auth("+79990010022");
+
+    const groupResponse = await app.inject({
+      method: "POST",
+      url: "/groups",
+      headers: { authorization: organizer.authorization },
+      payload: { title: "Family", groupType: "family" }
+    });
+    const group = groupResponse.json();
+
+    const profileResponse = await app.inject({
+      method: "POST",
+      url: `/groups/${group.id}/participant-profiles`,
+      headers: { authorization: organizer.authorization },
+      payload: {
+        linkedUserId: linkedFriend.user.id,
+        relationshipHint: "family",
+        defaultWeight: 1
+      }
+    });
+    expect(profileResponse.statusCode).toBe(201);
+    const profile = profileResponse.json();
+    expect(profile.linkedUserId).toBe(linkedFriend.user.id);
+
+    const templateResponse = await app.inject({
+      method: "POST",
+      url: `/groups/${group.id}/templates`,
+      headers: { authorization: organizer.authorization },
+      payload: {
+        title: "Family preset",
+        collectionType: "picnic",
+        categories: [
+          { title: "Food" },
+          { title: "Dessert" }
+        ]
+      }
+    });
+    expect(templateResponse.statusCode).toBe(201);
+    const template = templateResponse.json();
+
+    const collectionResponse = await app.inject({
+      method: "POST",
+      url: "/collections",
+      headers: { authorization: organizer.authorization },
+      payload: {
+        title: "Weekend picnic",
+        type: "picnic",
+        groupId: group.id
+      }
+    });
+    const { collection } = collectionResponse.json();
+
+    const applyCategoriesResponse = await app.inject({
+      method: "POST",
+      url: `/collections/${collection.id}/apply-template-categories`,
+      headers: { authorization: organizer.authorization },
+      payload: { templateId: template.id }
+    });
+    expect(applyCategoriesResponse.statusCode).toBe(200);
+    const categories = applyCategoriesResponse.json();
+    expect(categories.some((category: { title: string }) => category.title === "Dessert")).toBe(true);
+
+    const participantResponse = await app.inject({
+      method: "POST",
+      url: `/collections/${collection.id}/participants/from-profile`,
+      headers: { authorization: organizer.authorization },
+      payload: { profileId: profile.id }
+    });
+    expect(participantResponse.statusCode).toBe(201);
+    expect(participantResponse.json().linkedUserId).toBe(linkedFriend.user.id);
+
+    await app.close();
+  });
+
   it("supports itemized restaurant receipts with item-scoped share rules", async () => {
     const app = await buildApp({ store: await createStore(provider) });
 

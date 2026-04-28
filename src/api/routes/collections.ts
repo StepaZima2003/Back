@@ -120,6 +120,15 @@ const createCategorySchema = z.object({
   autopayAllowedByDefault: z.boolean().optional()
 });
 
+const addParticipantFromProfileSchema = z.object({
+  profileId: z.string(),
+  responsiblePayerParticipantId: z.string().nullable().optional()
+});
+
+const applyTemplateCategoriesSchema = z.object({
+  templateId: z.string()
+});
+
 export function registerCollectionRoutes(app: FastifyInstance, store: AppStore): void {
   app.get("/collections", async (request) => {
     const user = await requireUser(request, store);
@@ -153,6 +162,13 @@ export function registerCollectionRoutes(app: FastifyInstance, store: AppStore):
     reply.status(201).send(category);
   });
 
+  app.post("/collections/:id/apply-template-categories", async (request) => {
+    const user = await requireUser(request, store);
+    const params = idParamsSchema.parse(request.params);
+    const body = applyTemplateCategoriesSchema.parse(request.body);
+    return await store.applyTemplateCategoriesToCollection(user.id, params.id, body.templateId);
+  });
+
   app.post("/collections/:id/send-to-review", async (request) => updateCollectionStatus(request, store, "review"));
   app.post("/collections/:id/finalize", async (request) => updateCollectionStatus(request, store, "finalized"));
   app.post("/collections/:id/cancel", async (request) => updateCollectionStatus(request, store, "cancelled"));
@@ -169,6 +185,14 @@ export function registerCollectionRoutes(app: FastifyInstance, store: AppStore):
     const params = idParamsSchema.parse(request.params);
     const body = addParticipantSchema.parse(request.body);
     const participant = await store.addParticipant(user.id, params.id, body);
+    reply.status(201).send(participant);
+  });
+
+  app.post("/collections/:id/participants/from-profile", async (request, reply) => {
+    const user = await requireUser(request, store);
+    const params = idParamsSchema.parse(request.params);
+    const body = addParticipantFromProfileSchema.parse(request.body);
+    const participant = await store.addParticipantFromProfile(user.id, params.id, body);
     reply.status(201).send(participant);
   });
 

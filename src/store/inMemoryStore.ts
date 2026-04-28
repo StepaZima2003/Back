@@ -20,6 +20,7 @@ import type {
   Friendship,
   Group,
   GroupMember,
+  GroupParticipantProfile,
   ManualPaymentMethod,
   ManualPaymentProof,
   Notification,
@@ -32,6 +33,7 @@ export interface InMemoryStoreSnapshot {
   friendships: Friendship[];
   groups: Group[];
   groupMembers: GroupMember[];
+  groupParticipantProfiles: GroupParticipantProfile[];
   collections: Collection[];
   participants: CollectionParticipant[];
   expenses: Expense[];
@@ -104,6 +106,7 @@ export class InMemoryStore {
   private readonly friendships = new Map<string, Friendship>();
   private readonly groups = new Map<string, Group>();
   private readonly groupMembers = new Map<string, GroupMember>();
+  private readonly groupParticipantProfiles = new Map<string, GroupParticipantProfile>();
   private readonly collections = new Map<string, Collection>();
   private readonly participants = new Map<string, CollectionParticipant>();
   private readonly expenses = new Map<string, Expense>();
@@ -277,6 +280,55 @@ export class InMemoryStore {
     return member;
   }
 
+  listGroupParticipantProfiles(userId: string, groupId: string): GroupParticipantProfile[] {
+    this.getGroupForUser(userId, groupId);
+    return [...this.groupParticipantProfiles.values()]
+      .filter((profile) => profile.groupId === groupId)
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.displayName.localeCompare(b.displayName));
+  }
+
+  createGroupParticipantProfile(
+    userId: string,
+    groupId: string,
+    data: {
+      linkedUserId?: string | null;
+      invitedPhone?: string | null;
+      participantType?: GroupParticipantProfile["participantType"];
+      displayName?: string;
+      relationshipHint?: GroupParticipantProfile["relationshipHint"];
+      defaultWeight?: number;
+    }
+  ): GroupParticipantProfile {
+    const group = this.getGroupForUser(userId, groupId);
+    if (group.ownerId !== userId) {
+      throw new AppError(403, "Only group owner can manage participant profiles in MVP.");
+    }
+
+    const linkedUser = data.linkedUserId ? this.getUser(data.linkedUserId) : null;
+    const participantType = linkedUser ? "registered_user" : data.invitedPhone ? "invited_phone" : (data.participantType ?? "external_person");
+    const displayName = data.displayName ?? linkedUser?.displayName ?? data.invitedPhone;
+    if (!displayName) {
+      throw new AppError(400, "Participant profile display name is required.");
+    }
+
+    const profile: GroupParticipantProfile = {
+      id: randomUUID(),
+      groupId,
+      ownerUserId: userId,
+      linkedUserId: linkedUser?.id ?? null,
+      invitedPhone: data.invitedPhone ?? linkedUser?.phone ?? null,
+      participantType,
+      displayName,
+      relationshipHint: data.relationshipHint ?? (participantType === "child" ? "child" : participantType === "guest" ? "guest" : "other"),
+      defaultWeight: data.defaultWeight ?? (participantType === "child" ? 0.5 : 1),
+      createdAt: now(),
+      updatedAt: now()
+    };
+    this.groupParticipantProfiles.set(profile.id, profile);
+    this.addAudit(userId, "group", profile.id, null, "created", { groupId, profileId: profile.id });
+    return profile;
+  }
+
   createCollection(
     userId: string,
     data: {
@@ -426,6 +478,45 @@ export class InMemoryStore {
     });
   }
 
+  addParticipantFromProfile(
+    userId: string,
+    collectionId: string,
+    data: { profileId: string; responsiblePayerParticipantId?: string | null }
+  ): CollectionParticipant {
+    const collection = this.getOrganizerCollection(userId, collectionId);
+    const profile = this.getGroupParticipantProfile(data.profileId);
+    if (!collection.groupId || collection.groupId !== profile.groupId) {
+      throw new AppError(400, "Participant profile group does not match collection group.");
+    }
+
+    if (profile.participantType === "child") {
+      if (!data.responsiblePayerParticipantId) {
+        throw new AppError(400, "Child participant profile requires a responsible payer.");
+      }
+      return this.addChild(userId, collectionId, {
+        displayName: profile.displayName,
+        responsiblePayerParticipantId: data.responsiblePayerParticipantId,
+        defaultWeight: profile.defaultWeight
+      });
+    }
+
+    if (profile.participantType === "guest") {
+      return this.addGuest(userId, collectionId, {
+        displayName: profile.displayName,
+        responsiblePayerParticipantId: data.responsiblePayerParticipantId ?? null,
+        defaultWeight: profile.defaultWeight
+      });
+    }
+
+    return this.addParticipant(userId, collectionId, {
+      linkedUserId: profile.linkedUserId,
+      invitedPhone: profile.invitedPhone,
+      displayName: profile.displayName,
+      defaultWeight: profile.defaultWeight,
+      responsiblePayerParticipantId: data.responsiblePayerParticipantId ?? null
+    });
+  }
+
   addGuest(
     userId: string,
     collectionId: string,
@@ -519,6 +610,33 @@ export class InMemoryStore {
     });
     this.addAudit(userId, "collection", collectionId, collectionId, "updated", { createdCategoryId: category.id });
     return category;
+  }
+
+  applyTemplateCategoriesToCollection(userId: string, collectionId: string, templateId: string): ExpenseCategory[] {
+    const collection = this.getOrganizerCollection(userId, collectionId);
+    const template = this.getCollectionTemplate(templateId);
+    if (!collection.groupId || collection.groupId !== template.groupId) {
+      throw new AppError(400, "Template group does not match collection group.");
+    }
+
+    const existingTitles = new Set(this.getCategories(collectionId).map((category) => category.title.toLowerCase()));
+    let createdCount = 0;
+    for (const category of template.categories) {
+      if (existingTitles.has(category.title.toLowerCase())) {
+        continue;
+      }
+      this.createCategoryRecord(collectionId, {
+        title: category.title,
+        emoji: category.emoji,
+        requiresManualConfirmation: category.requiresManualConfirmation,
+        autopayAllowedByDefault: category.autopayAllowedByDefault
+      });
+      existingTitles.add(category.title.toLowerCase());
+      createdCount += 1;
+    }
+
+    this.addAudit(userId, "collection", collectionId, collectionId, "updated", { templateId, appliedCategoryCount: createdCount });
+    return this.getCategories(collectionId);
   }
 
   createExpense(
@@ -1046,6 +1164,7 @@ export class InMemoryStore {
     this.friendships.clear();
     this.groups.clear();
     this.groupMembers.clear();
+    this.groupParticipantProfiles.clear();
     this.collections.clear();
     this.participants.clear();
     this.expenses.clear();
@@ -1072,6 +1191,9 @@ export class InMemoryStore {
     }
     for (const member of snapshot.groupMembers) {
       this.groupMembers.set(member.id, member);
+    }
+    for (const profile of snapshot.groupParticipantProfiles ?? []) {
+      this.groupParticipantProfiles.set(profile.id, profile);
     }
     for (const collection of snapshot.collections) {
       this.collections.set(collection.id, collection);
@@ -1421,6 +1543,14 @@ export class InMemoryStore {
       throw new AppError(404, "Collection template not found.");
     }
     return template;
+  }
+
+  private getGroupParticipantProfile(profileId: string): GroupParticipantProfile {
+    const profile = this.groupParticipantProfiles.get(profileId);
+    if (!profile) {
+      throw new AppError(404, "Participant profile not found.");
+    }
+    return profile;
   }
 
   private createCategoryRecord(

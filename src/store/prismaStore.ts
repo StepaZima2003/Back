@@ -19,6 +19,7 @@ import type {
   Friendship,
   Group,
   GroupMember,
+  GroupParticipantProfile,
   ManualPaymentProof,
   Notification,
   NotificationType,
@@ -283,6 +284,53 @@ export class PrismaStore implements AppStore {
     return mapGroupMemberRecord(created);
   }
 
+  async listGroupParticipantProfiles(userId: string, groupId: string): Promise<GroupParticipantProfile[]> {
+    await this.getGroupForUser(userId, groupId);
+    return (await this.client.groupParticipantProfile.findMany())
+      .filter((profile) => profile.groupId === groupId)
+      .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime() || a.displayName.localeCompare(b.displayName))
+      .map(mapGroupParticipantProfileRecord);
+  }
+
+  async createGroupParticipantProfile(
+    userId: string,
+    groupId: string,
+    data: Parameters<AppStore["createGroupParticipantProfile"]>[2]
+  ): Promise<GroupParticipantProfile> {
+    const group = await this.getGroupForUser(userId, groupId);
+    if (group.ownerId !== userId) {
+      throw new AppError(403, "Only group owner can manage participant profiles in MVP.");
+    }
+
+    const linkedUser = data.linkedUserId ? await this.getUser(data.linkedUserId) : null;
+    const participantType = linkedUser ? "registered_user" : data.invitedPhone ? "invited_phone" : (data.participantType ?? "external_person");
+    const displayName = data.displayName ?? linkedUser?.displayName ?? data.invitedPhone;
+    if (!displayName) {
+      throw new AppError(400, "Participant profile display name is required.");
+    }
+
+    const profile = await this.client.groupParticipantProfile.upsert({
+      where: { id: randomUUID() },
+      update: {},
+      create: {
+        id: randomUUID(),
+        groupId,
+        ownerUserId: userId,
+        linkedUserId: linkedUser?.id ?? null,
+        invitedPhone: data.invitedPhone ?? linkedUser?.phone ?? null,
+        participantType,
+        displayName,
+        relationshipHint: data.relationshipHint ?? (participantType === "child" ? "child" : participantType === "guest" ? "guest" : "other"),
+        defaultWeight: data.defaultWeight ?? (participantType === "child" ? 0.5 : 1),
+        createdAt: new Date(),
+        updatedAt: new Date()
+      }
+    });
+
+    await this.addAuditDirect(userId, "group", profile.id, null, "created", { groupId, profileId: profile.id });
+    return mapGroupParticipantProfileRecord(profile);
+  }
+
   async createCollection(
     userId: string,
     data: {
@@ -500,6 +548,45 @@ export class PrismaStore implements AppStore {
 
     await this.bumpCollectionStatus(collectionId, "participants_selected");
     return mapParticipantRecord(participant);
+  }
+
+  async addParticipantFromProfile(
+    userId: string,
+    collectionId: string,
+    data: Parameters<AppStore["addParticipantFromProfile"]>[2]
+  ): Promise<CollectionParticipant> {
+    const collection = await this.getOrganizerCollectionRecord(userId, collectionId);
+    const profile = await this.getGroupParticipantProfileRecord(data.profileId);
+    if (!collection.groupId || collection.groupId !== profile.groupId) {
+      throw new AppError(400, "Participant profile group does not match collection group.");
+    }
+
+    if (profile.participantType === "child") {
+      if (!data.responsiblePayerParticipantId) {
+        throw new AppError(400, "Child participant profile requires a responsible payer.");
+      }
+      return await this.addChild(userId, collectionId, {
+        displayName: profile.displayName,
+        responsiblePayerParticipantId: data.responsiblePayerParticipantId,
+        defaultWeight: typeof profile.defaultWeight === "number" ? profile.defaultWeight : (profile.defaultWeight.toNumber?.() ?? 0.5)
+      });
+    }
+
+    if (profile.participantType === "guest") {
+      return await this.addGuest(userId, collectionId, {
+        displayName: profile.displayName,
+        responsiblePayerParticipantId: data.responsiblePayerParticipantId ?? null,
+        defaultWeight: typeof profile.defaultWeight === "number" ? profile.defaultWeight : (profile.defaultWeight.toNumber?.() ?? 1)
+      });
+    }
+
+    return await this.addParticipant(userId, collectionId, {
+      linkedUserId: profile.linkedUserId,
+      invitedPhone: profile.invitedPhone,
+      displayName: profile.displayName,
+      defaultWeight: typeof profile.defaultWeight === "number" ? profile.defaultWeight : (profile.defaultWeight.toNumber?.() ?? 1),
+      responsiblePayerParticipantId: data.responsiblePayerParticipantId ?? null
+    });
   }
 
   async addGuest(
@@ -1406,6 +1493,40 @@ export class PrismaStore implements AppStore {
     });
   }
 
+  async applyTemplateCategoriesToCollection(userId: string, collectionId: string, templateId: string): Promise<ExpenseCategory[]> {
+    const collection = await this.getOrganizerCollectionRecord(userId, collectionId);
+    const template = await this.getCollectionTemplate(templateId);
+    if (!collection.groupId || collection.groupId !== template.groupId) {
+      throw new AppError(400, "Template group does not match collection group.");
+    }
+
+    const existingTitles = new Set((await this.listCategories(userId, collectionId)).map((category) => category.title.toLowerCase()));
+    let createdCount = 0;
+    for (const category of template.categories) {
+      if (existingTitles.has(category.title.toLowerCase())) {
+        continue;
+      }
+      await this.client.expenseCategory.upsert({
+        where: { id: randomUUID() },
+        update: {},
+        create: {
+          id: randomUUID(),
+          collectionId,
+          title: category.title,
+          emoji: category.emoji ?? null,
+          requiresManualConfirmation: category.requiresManualConfirmation,
+          autopayAllowedByDefault: category.autopayAllowedByDefault,
+          createdAt: new Date()
+        }
+      });
+      existingTitles.add(category.title.toLowerCase());
+      createdCount += 1;
+    }
+
+    await this.addAuditDirect(userId, "collection", collectionId, collectionId, "updated", { templateId, appliedCategoryCount: createdCount });
+    return await this.listCategories(userId, collectionId);
+  }
+
   async listNotifications(userId: string): Promise<Notification[]> {
     await this.getUser(userId);
     return (await this.client.notification.findMany())
@@ -1512,6 +1633,14 @@ export class PrismaStore implements AppStore {
       throw new AppError(404, "Collection template not found.");
     }
     return mapTemplateRecord(template);
+  }
+
+  private async getGroupParticipantProfileRecord(profileId: string) {
+    const profile = (await this.client.groupParticipantProfile.findMany()).find((item) => item.id === profileId);
+    if (!profile) {
+      throw new AppError(404, "Participant profile not found.");
+    }
+    return profile;
   }
 
   private async getCategoryRecord(collectionId: string, categoryId: string) {
@@ -1821,6 +1950,34 @@ function mapGroupMemberRecord(record: {
     role: record.role,
     status: record.status,
     joinedAt: record.joinedAt.toISOString()
+  };
+}
+
+function mapGroupParticipantProfileRecord(record: {
+  id: string;
+  groupId: string;
+  ownerUserId: string;
+  linkedUserId: string | null;
+  invitedPhone: string | null;
+  participantType: GroupParticipantProfile["participantType"];
+  displayName: string;
+  relationshipHint: string;
+  defaultWeight: { toNumber?: () => number } | number;
+  createdAt: Date;
+  updatedAt: Date;
+}): GroupParticipantProfile {
+  return {
+    id: record.id,
+    groupId: record.groupId,
+    ownerUserId: record.ownerUserId,
+    linkedUserId: record.linkedUserId,
+    invitedPhone: record.invitedPhone,
+    participantType: record.participantType,
+    displayName: record.displayName,
+    relationshipHint: normalizeRelationshipHint(record.relationshipHint),
+    defaultWeight: typeof record.defaultWeight === "number" ? record.defaultWeight : (record.defaultWeight.toNumber?.() ?? 1),
+    createdAt: record.createdAt.toISOString(),
+    updatedAt: record.updatedAt.toISOString()
   };
 }
 

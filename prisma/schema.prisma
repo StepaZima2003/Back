@@ -293,9 +293,11 @@ model User {
   friendshipsReceived   Friendship[]            @relation("FriendshipFriend")
   ownedGroups           Group[]
   ownedCollectionTemplates CollectionTemplate[]
+  ownedParticipantProfiles GroupParticipantProfile[] @relation("OwnedParticipantProfiles")
   groupMemberships      GroupMember[]
   organizedCollections  Collection[]
   linkedParticipants    CollectionParticipant[] @relation("LinkedParticipantUser")
+  linkedParticipantProfiles GroupParticipantProfile[] @relation("LinkedParticipantProfiles")
   invitedParticipants   CollectionParticipant[] @relation("InvitedByUser")
   calculationVersions   CalculationVersion[]
   disputesCreated       Dispute[]
@@ -357,6 +359,7 @@ model Group {
   members     GroupMember[]
   collections Collection[]
   templates   CollectionTemplate[]
+  participantProfiles GroupParticipantProfile[]
 
   @@index([ownerId])
   @@map("groups")
@@ -376,6 +379,29 @@ model GroupMember {
   @@unique([groupId, userId])
   @@index([userId])
   @@map("group_members")
+}
+
+model GroupParticipantProfile {
+  id               String          @id @default(uuid()) @db.Uuid
+  groupId          String          @map("group_id") @db.Uuid
+  ownerUserId      String          @map("owner_user_id") @db.Uuid
+  linkedUserId     String?         @map("linked_user_id") @db.Uuid
+  invitedPhone     String?         @map("invited_phone")
+  participantType  ParticipantType @map("participant_type")
+  displayName      String          @map("display_name")
+  relationshipHint String          @default("other") @map("relationship_hint")
+  defaultWeight    Decimal         @default(1.0) @map("default_weight") @db.Decimal(8, 3)
+  createdAt        DateTime        @default(now()) @map("created_at")
+  updatedAt        DateTime        @updatedAt @map("updated_at")
+
+  group      Group @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  ownerUser  User  @relation("OwnedParticipantProfiles", fields: [ownerUserId], references: [id], onDelete: Cascade)
+  linkedUser User? @relation("LinkedParticipantProfiles", fields: [linkedUserId], references: [id], onDelete: SetNull)
+
+  @@index([groupId])
+  @@index([ownerUserId])
+  @@index([linkedUserId])
+  @@map("group_participant_profiles")
 }
 
 model Collection {

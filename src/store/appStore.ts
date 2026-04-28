@@ -19,12 +19,15 @@ type AppStoreMethodName =
   | "listGroups"
   | "createGroup"
   | "addGroupMember"
+  | "listGroupParticipantProfiles"
+  | "createGroupParticipantProfile"
   | "createCollection"
   | "listCollections"
   | "getCollectionForUser"
   | "updateCollectionStatus"
   | "listParticipants"
   | "addParticipant"
+  | "addParticipantFromProfile"
   | "addGuest"
   | "addChild"
   | "setResponsiblePayer"
@@ -52,6 +55,7 @@ type AppStoreMethodName =
   | "listAuditLogs"
   | "listGroupTemplates"
   | "createGroupTemplate"
+  | "applyTemplateCategoriesToCollection"
   | "listNotifications"
   | "markNotificationRead";
 

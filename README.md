@@ -46,10 +46,13 @@ Direct Prisma write/read now covers:
 - auth user bootstrap and profile;
 - friends;
 - groups and group members;
+- group participant profiles;
 - group templates;
 - collections;
 - participants;
+- adding collection participants from saved group profiles;
 - collection categories;
+- applying template categories to an existing collection;
 - expenses and expense payments;
 - expense items and item-scoped share rules;
 - expense share rules;
@@ -61,6 +64,13 @@ Direct Prisma write/read now covers:
 - audit log.
 
 API smoke parity is now covered in tests for `memory` and `prisma` providers using the same route-level scenarios.
+
+Recent collection/group additions:
+
+- organizer-owned participant profiles at the group level for recurring members, linked users, guests, and children;
+- a collection endpoint for adding participants directly from those saved group profiles;
+- a collection endpoint for applying missing category presets from an existing group template;
+- route-level provider parity coverage for both flows.
 
 По умолчанию API стартует на `http://localhost:3000`.
 

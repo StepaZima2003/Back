@@ -9,4 +9,10 @@ Working notes for the next SocialSplitApp backend increment.
 - provider surface is reduced to `memory` and `prisma`;
 - keep contract tests for both in-memory and Prisma-backed store implementations;
 - item-level split for restaurant receipts now works through expense items and item-scoped share rules;
-- add participation profiles and group-level category presets.
+- group participation profiles now support linked users, guests, and children as reusable presets;
+- existing collections can now import missing categories from a saved group template.
+
+## Next backend step
+
+- add live integration coverage against a real PostgreSQL instance;
+- start hardening Prisma mutations with idempotency/concurrency guards for calculation and payment flows.

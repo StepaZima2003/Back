@@ -48,10 +48,13 @@ Direct Prisma read/write is already used here for the stable slice:
 - user bootstrap and profile;
 - friendships;
 - groups and members;
+- group participant profiles;
 - group templates;
 - collections;
 - participants;
+- adding participants from saved group profiles;
 - collection categories;
+- applying template categories to an existing collection;
 - expenses and expense payments;
 - expense items and item-scoped share rules;
 - expense share rules;
@@ -69,4 +72,4 @@ Route-level smoke tests now exercise the same collection flows against `memory` 
 1. Keep calculation logic pure and independent from Prisma.
 2. Add real integration coverage against a live PostgreSQL container in CI.
 3. Add idempotency and concurrency protection around calculation/payment mutations.
-4. Expand persistence coverage toward autopay and receipt itemization flows.
+4. Expand persistence coverage toward autopay and richer profile/template reuse flows.

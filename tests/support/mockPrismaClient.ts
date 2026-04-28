@@ -4,6 +4,7 @@ export function createSharedMockPrismaClient() {
     friendships: [] as Array<Record<string, unknown>>,
     groups: [] as Array<Record<string, unknown>>,
     groupMembers: [] as Array<Record<string, unknown>>,
+    groupParticipantProfiles: [] as Array<Record<string, unknown>>,
     templates: [] as Array<Record<string, unknown>>,
     collections: [] as Array<Record<string, unknown>>,
     notifications: [] as Array<Record<string, unknown>>
@@ -79,6 +80,18 @@ export function createSharedMockPrismaClient() {
           return create;
         },
         findMany: async () => state.groupMembers
+      },
+      groupParticipantProfile: {
+        upsert: async ({ where, create, update }: { where: { id: string }; create: Record<string, unknown>; update: Record<string, unknown> }) => {
+          const existing = state.groupParticipantProfiles.find((item) => item.id === where.id);
+          if (existing) {
+            Object.assign(existing, update);
+            return existing;
+          }
+          state.groupParticipantProfiles.push({ ...create });
+          return create;
+        },
+        findMany: async () => state.groupParticipantProfiles
       },
       collectionTemplate: {
         create: async ({ data }: { data: Record<string, unknown> & { categories?: { create?: Array<Record<string, unknown>> } } }) => {

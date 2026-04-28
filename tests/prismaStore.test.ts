@@ -166,9 +166,70 @@ function createSharedPrismaState() {
           return create;
         }
       },
-      expense: { upsert: async () => undefined },
-      expensePayment: { upsert: async () => undefined },
-      expenseShareRule: { upsert: async () => undefined },
+      expense: {
+        upsert: async ({ where, create, update }: { where: { id: string }; create: Record<string, unknown>; update: Record<string, unknown> }) => {
+          const collection =
+            state.collections.find((item) => item.id === create.collectionId) ??
+            state.collections.find((item) => (item.expenses as Array<Record<string, unknown>>).some((expense) => expense.id === where.id));
+          if (!collection) {
+            return create;
+          }
+          const expenses = (collection.expenses as Array<Record<string, unknown>>) ?? [];
+          const existing = expenses.find((item) => item.id === where.id);
+          if (existing) {
+            Object.assign(existing, update);
+            collection.expenses = expenses;
+            return existing;
+          }
+          expenses.push({ ...create, payments: [], shareRules: [] });
+          collection.expenses = expenses;
+          return create;
+        }
+      },
+      expensePayment: {
+        upsert: async ({ where, create, update }: { where: { id: string }; create: Record<string, unknown>; update: Record<string, unknown> }) => {
+          for (const collection of state.collections) {
+            const expenses = (collection.expenses as Array<Record<string, unknown>>) ?? [];
+            const expense = expenses.find((item) => item.id === create.expenseId || item.id === update.expenseId);
+            if (!expense) {
+              continue;
+            }
+            const payments = (expense.payments as Array<Record<string, unknown>>) ?? [];
+            const existing = payments.find((item) => item.id === where.id);
+            if (existing) {
+              Object.assign(existing, update);
+              expense.payments = payments;
+              return existing;
+            }
+            payments.push({ ...create });
+            expense.payments = payments;
+            return create;
+          }
+          return create;
+        }
+      },
+      expenseShareRule: {
+        upsert: async ({ where, create, update }: { where: { id: string }; create: Record<string, unknown>; update: Record<string, unknown> }) => {
+          for (const collection of state.collections) {
+            const expenses = (collection.expenses as Array<Record<string, unknown>>) ?? [];
+            const expense = expenses.find((item) => item.id === create.expenseId || item.id === update.expenseId);
+            if (!expense) {
+              continue;
+            }
+            const shareRules = (expense.shareRules as Array<Record<string, unknown>>) ?? [];
+            const existing = shareRules.find((item) => item.id === where.id);
+            if (existing) {
+              Object.assign(existing, update);
+              expense.shareRules = shareRules;
+              return existing;
+            }
+            shareRules.push({ ...create });
+            expense.shareRules = shareRules;
+            return create;
+          }
+          return create;
+        }
+      },
       calculationVersion: { upsert: async () => undefined },
       participantCalculation: { deleteMany: async () => ({ count: 0 }), createMany: async () => ({ count: 0 }) },
       responsiblePayerCalculation: { deleteMany: async () => ({ count: 0 }), createMany: async () => ({ count: 0 }) },
@@ -216,5 +277,49 @@ describe("PrismaStore", () => {
     const collections = await reader.listCollections(auth.user.id);
     expect(collections).toHaveLength(1);
     expect(collections[0]?.title).toBe("Trip");
+  });
+
+  it("persists expenses and share rules through direct Prisma path", async () => {
+    const shared = createSharedPrismaState();
+    const writer = await PrismaStore.create(shared.client as never);
+    const reader = await PrismaStore.create(shared.client as never);
+
+    writer.requestOtp("+79990000311");
+    const auth = await writer.verifyOtp("+79990000311", "000000");
+    const group = await writer.createGroup(auth.user.id, {
+      title: "Trip",
+      groupType: "trip"
+    });
+    const collectionResult = await writer.createCollection(auth.user.id, {
+      title: "Trip",
+      groupId: group.id,
+      type: "trip"
+    });
+
+    const category = await writer.createCategory(auth.user.id, collectionResult.collection.id, {
+      title: "Stay"
+    });
+
+    const expenseResult = await writer.createExpense(auth.user.id, collectionResult.collection.id, {
+      title: "Hotel",
+      amountMinor: 10000,
+      categoryId: category.id,
+      payments: [{ paidByParticipantId: collectionResult.organizerParticipant.id, amountMinor: 10000, paymentSource: "card" }]
+    });
+
+    const rule = await writer.addShareRule(auth.user.id, expenseResult.expense.id, {
+      participantId: collectionResult.organizerParticipant.id,
+      splitMode: "equal"
+    });
+
+    const expenses = await reader.listExpenses(auth.user.id, collectionResult.collection.id);
+    expect(expenses).toHaveLength(1);
+    expect(expenses[0]?.title).toBe("Hotel");
+
+    const storedCollection = shared.state.collections[0];
+    const storedExpense = (storedCollection?.expenses as Array<Record<string, unknown>> | undefined)?.[0];
+    expect(storedExpense?.id).toBe(expenseResult.expense.id);
+    expect((storedExpense?.payments as Array<Record<string, unknown>> | undefined)?.length).toBe(1);
+    expect((storedExpense?.shareRules as Array<Record<string, unknown>> | undefined)?.[0]?.id).toBe(rule.id);
   });
 });

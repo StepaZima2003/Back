@@ -59,9 +59,11 @@ Direct Prisma write/read now covers:
 - collections;
 - participants;
 - collection categories;
+- expenses and expense payments;
+- expense share rules;
 - collection review notifications.
 
-Expenses, calculations, disputes, manual payments, audit log, and related review flows still go through the current fallback store path.
+Calculations, disputes, manual payments, audit log, and related review flows still go through the current fallback store path.
 
 По умолчанию API стартует на `http://localhost:3000`.
 

@@ -75,13 +75,15 @@ Direct Prisma read/write is already used here for the stable slice:
 - collections;
 - participants;
 - collection categories;
+- expenses and expense payments;
+- expense share rules;
 - collection review notifications.
 
-Expenses, calculations, disputes, manual payments, notifications outside that slice, and audit-heavy flows still use the fallback path.
+Calculations, disputes, manual payments, notifications outside that slice, and audit-heavy flows still use the fallback path.
 
 ## Persistence Roadmap
 
 1. Keep calculation logic pure and independent from Prisma.
-2. Move expenses, calculations, disputes, manual payments, notifications, and audit flows onto direct Prisma mutations.
+2. Move calculations, disputes, manual payments, notifications, and audit flows onto direct Prisma mutations.
 3. Run the same API smoke tests against `memory`, `prisma-mirror`, and `prisma` providers.
 4. Remove the mirror transitional layer after the full Prisma store owns writes directly.

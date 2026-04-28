@@ -4,8 +4,7 @@
 
 ## Следующий слой MVP
 
-- категории сборов;
-- дефолтные категории по типу сбора;
-- шаблоны сборов;
-- обновление OpenAPI;
-- тесты сценариев с алкоголем, ребёнком 0.5 и гостем.
+- перевод store с in-memory на Prisma-backed implementation;
+- contract tests для in-memory и Prisma store;
+- item-level split для ресторанных чеков;
+- участие по профилям и category presets на уровне группы.

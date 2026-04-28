@@ -209,4 +209,78 @@ describe("api smoke flow", () => {
 
     await app.close();
   });
+
+  it("creates group templates and copies template categories into a collection", async () => {
+    const app = await buildApp();
+
+    await app.inject({
+      method: "POST",
+      url: "/auth/request-otp",
+      payload: { phone: "+79990000003" }
+    });
+    const authResponse = await app.inject({
+      method: "POST",
+      url: "/auth/verify-otp",
+      payload: { phone: "+79990000003", otp: "000000" }
+    });
+    const auth = authResponse.json();
+    const authorization = `Bearer ${auth.accessToken}`;
+
+    const groupResponse = await app.inject({
+      method: "POST",
+      url: "/groups",
+      headers: { authorization },
+      payload: { title: "Weekend", groupType: "friends" }
+    });
+    const group = groupResponse.json();
+
+    const templateResponse = await app.inject({
+      method: "POST",
+      url: `/groups/${group.id}/templates`,
+      headers: { authorization },
+      payload: {
+        title: "BBQ template",
+        collectionType: "picnic",
+        categories: [
+          { title: "Food", emoji: "🍖" },
+          { title: "Alcohol", emoji: "🍺", requiresManualConfirmation: true, autopayAllowedByDefault: false }
+        ]
+      }
+    });
+    expect(templateResponse.statusCode).toBe(201);
+    const template = templateResponse.json();
+    expect(template.categories).toHaveLength(2);
+
+    const templatesListResponse = await app.inject({
+      method: "GET",
+      url: `/groups/${group.id}/templates`,
+      headers: { authorization }
+    });
+    expect(templatesListResponse.json()).toHaveLength(1);
+
+    const collectionResponse = await app.inject({
+      method: "POST",
+      url: "/collections",
+      headers: { authorization },
+      payload: {
+        title: "Saturday BBQ",
+        groupId: group.id,
+        templateId: template.id
+      }
+    });
+    expect(collectionResponse.statusCode).toBe(201);
+    const collection = collectionResponse.json().collection;
+
+    const categoriesResponse = await app.inject({
+      method: "GET",
+      url: `/collections/${collection.id}/categories`,
+      headers: { authorization }
+    });
+    expect(categoriesResponse.statusCode).toBe(200);
+    const categories = categoriesResponse.json();
+    expect(categories).toHaveLength(2);
+    expect(categories.some((category: { title: string }) => category.title === "Alcohol")).toBe(true);
+
+    await app.close();
+  });
 });

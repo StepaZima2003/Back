@@ -91,6 +91,25 @@ paths:
       responses:
         "201":
           description: Group
+  /groups/{id}/templates:
+    get:
+      summary: List group templates
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/CollectionId"
+      responses:
+        "200":
+          description: Collection templates
+    post:
+      summary: Create group template
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/CollectionId"
+      responses:
+        "201":
+          description: Collection template
   /collections:
     get:
       summary: List collections
@@ -106,6 +125,25 @@ paths:
       responses:
         "201":
           description: Collection
+  /collections/{id}/categories:
+    get:
+      summary: List collection categories
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/CollectionId"
+      responses:
+        "200":
+          description: Categories
+    post:
+      summary: Create collection category
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/CollectionId"
+      responses:
+        "201":
+          description: Category
   /collections/{id}/participants:
     get:
       summary: List collection participants

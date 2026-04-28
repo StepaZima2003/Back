@@ -17,7 +17,8 @@ const createCollectionSchema = z.object({
   title: z.string().min(1).max(160),
   type: z.enum(["picnic", "restaurant", "gift", "trip", "office", "rent", "kids", "dacha", "other"]).optional(),
   groupId: z.string().nullable().optional(),
-  paymentMode: z.enum(["manual", "confirm_each", "auto_for_trusted", "calculation_only"]).optional()
+  paymentMode: z.enum(["manual", "confirm_each", "auto_for_trusted", "calculation_only"]).optional(),
+  templateId: z.string().nullable().optional()
 });
 
 const addParticipantSchema = z.object({
@@ -103,6 +104,13 @@ const uploadManualPaymentProofSchema = z.object({
   comment: z.string().nullable().optional()
 });
 
+const createCategorySchema = z.object({
+  title: z.string().min(1).max(80),
+  emoji: z.string().nullable().optional(),
+  requiresManualConfirmation: z.boolean().optional(),
+  autopayAllowedByDefault: z.boolean().optional()
+});
+
 export function registerCollectionRoutes(app: FastifyInstance, store: InMemoryStore): void {
   app.get("/collections", async (request) => {
     const user = requireUser(request, store);
@@ -120,6 +128,20 @@ export function registerCollectionRoutes(app: FastifyInstance, store: InMemorySt
     const user = requireUser(request, store);
     const params = idParamsSchema.parse(request.params);
     return store.getCollectionForUser(user.id, params.id);
+  });
+
+  app.get("/collections/:id/categories", async (request) => {
+    const user = requireUser(request, store);
+    const params = idParamsSchema.parse(request.params);
+    return store.listCategories(user.id, params.id);
+  });
+
+  app.post("/collections/:id/categories", async (request, reply) => {
+    const user = requireUser(request, store);
+    const params = idParamsSchema.parse(request.params);
+    const body = createCategorySchema.parse(request.body);
+    const category = store.createCategory(user.id, params.id, body);
+    reply.status(201).send(category);
   });
 
   app.post("/collections/:id/send-to-review", async (request) => updateCollectionStatus(request, store, "review"));

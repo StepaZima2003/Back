@@ -17,6 +17,22 @@ const addMemberSchema = z.object({
   userId: z.string()
 });
 
+const createTemplateSchema = z.object({
+  title: z.string().min(1).max(120),
+  collectionType: z.enum(["picnic", "restaurant", "gift", "trip", "office", "rent", "kids", "dacha", "other"]),
+  paymentMode: z.enum(["manual", "confirm_each", "auto_for_trusted", "calculation_only"]).optional(),
+  categories: z
+    .array(
+      z.object({
+        title: z.string().min(1).max(80),
+        emoji: z.string().nullable().optional(),
+        requiresManualConfirmation: z.boolean().optional(),
+        autopayAllowedByDefault: z.boolean().optional()
+      })
+    )
+    .optional()
+});
+
 export function registerGroupRoutes(app: FastifyInstance, store: InMemoryStore): void {
   app.get("/groups", async (request) => {
     const user = requireUser(request, store);
@@ -46,5 +62,19 @@ export function registerGroupRoutes(app: FastifyInstance, store: InMemoryStore):
     const body = addMemberSchema.parse(request.body);
     const member = store.addGroupMember(user.id, params.id, body.userId);
     reply.status(201).send(member);
+  });
+
+  app.get("/groups/:id/templates", async (request) => {
+    const user = requireUser(request, store);
+    const params = idParamsSchema.parse(request.params);
+    return store.listGroupTemplates(user.id, params.id);
+  });
+
+  app.post("/groups/:id/templates", async (request, reply) => {
+    const user = requireUser(request, store);
+    const params = idParamsSchema.parse(request.params);
+    const body = createTemplateSchema.parse(request.body);
+    const template = store.createGroupTemplate(user.id, params.id, body);
+    reply.status(201).send(template);
   });
 }

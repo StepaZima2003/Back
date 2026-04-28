@@ -292,6 +292,7 @@ model User {
   friendshipsStarted    Friendship[]            @relation("FriendshipUser")
   friendshipsReceived   Friendship[]            @relation("FriendshipFriend")
   ownedGroups           Group[]
+  ownedCollectionTemplates CollectionTemplate[]
   groupMemberships      GroupMember[]
   organizedCollections  Collection[]
   linkedParticipants    CollectionParticipant[] @relation("LinkedParticipantUser")
@@ -355,6 +356,7 @@ model Group {
   owner       User          @relation(fields: [ownerId], references: [id], onDelete: Restrict)
   members     GroupMember[]
   collections Collection[]
+  templates   CollectionTemplate[]
 
   @@index([ownerId])
   @@map("groups")
@@ -793,5 +795,39 @@ model Notification {
   @@index([userId, status])
   @@index([collectionId])
   @@map("notifications")
+}
+
+model CollectionTemplate {
+  id             String         @id @default(uuid()) @db.Uuid
+  groupId        String         @map("group_id") @db.Uuid
+  ownerUserId    String         @map("owner_user_id") @db.Uuid
+  title          String
+  collectionType CollectionType @map("collection_type")
+  paymentMode    PaymentMode    @default(manual) @map("payment_mode")
+  createdAt      DateTime       @default(now()) @map("created_at")
+  updatedAt      DateTime       @updatedAt @map("updated_at")
+
+  group      Group                       @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  ownerUser  User                        @relation(fields: [ownerUserId], references: [id], onDelete: Cascade)
+  categories CollectionTemplateCategory[]
+
+  @@index([groupId])
+  @@index([ownerUserId])
+  @@map("collection_templates")
+}
+
+model CollectionTemplateCategory {
+  id                         String  @id @default(uuid()) @db.Uuid
+  templateId                 String  @map("template_id") @db.Uuid
+  title                      String
+  emoji                      String?
+  requiresManualConfirmation Boolean @default(false) @map("requires_manual_confirmation")
+  autopayAllowedByDefault    Boolean @default(false) @map("autopay_allowed_by_default")
+  sortOrder                  Int     @default(0) @map("sort_order")
+
+  template CollectionTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  @@index([templateId])
+  @@map("collection_template_categories")
 }
 

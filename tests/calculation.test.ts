@@ -188,5 +188,47 @@ describe("calculation engine", () => {
     expect(friendSummary?.netBalanceMinor).toBe(200);
     expect(result.transferPlan).toEqual([expect.objectContaining({ fromResponsiblePayerId: "parent", toResponsiblePayerId: "friend", amountMinor: 200 })]);
   });
-});
 
+  it("handles alcohol exclusions with a guest and a 0.5 child in one scenario", () => {
+    const result = calculateCollection({
+      collectionId: "collection",
+      currency: "RUB",
+      participants: [
+        { id: "organizer", displayName: "Organizer" },
+        { id: "friend", displayName: "Friend" },
+        { id: "child", displayName: "Child", participantType: "child", defaultWeight: 0.5, responsiblePayerId: "organizer" },
+        { id: "guest", displayName: "Guest", participantType: "guest", responsiblePayerId: "friend" }
+      ],
+      expenses: [
+        {
+          id: "food",
+          title: "Food",
+          amountMinor: 500,
+          categoryId: "food",
+          payments: [{ participantId: "organizer", amountMinor: 500 }]
+        },
+        {
+          id: "alcohol",
+          title: "Alcohol",
+          amountMinor: 300,
+          categoryId: "alcohol",
+          payments: [{ participantId: "organizer", amountMinor: 300 }],
+          shareRules: [
+            { participantId: "child", categoryId: "alcohol", splitMode: "excluded", reason: "Child does not join alcohol category." },
+            { participantId: "guest", categoryId: "alcohol", splitMode: "excluded", reason: "Guest does not drink alcohol." }
+          ]
+        }
+      ]
+    });
+
+    expect(participantAmount(result, "organizer")).toBe(293);
+    expect(participantAmount(result, "friend")).toBe(293);
+    expect(participantAmount(result, "child")).toBe(71);
+    expect(participantAmount(result, "guest")).toBe(143);
+
+    const organizerSummary = result.responsiblePayerCalculations.find((item) => item.responsiblePayerId === "organizer");
+    const friendSummary = result.responsiblePayerCalculations.find((item) => item.responsiblePayerId === "friend");
+    expect(organizerSummary?.totalOwesAmountMinor).toBe(364);
+    expect(friendSummary?.totalOwesAmountMinor).toBe(436);
+  });
+});

@@ -8,9 +8,12 @@ import type {
   CalculationVersion,
   Collection,
   CollectionParticipant,
+  CollectionTemplate,
+  CollectionTemplateCategory,
   Dispute,
   DisputeType,
   Expense,
+  ExpenseCategory,
   ExpensePayment,
   ExpenseShareRule,
   Friendship,
@@ -32,6 +35,47 @@ export class AppError extends Error {
   }
 }
 
+const DEFAULT_COLLECTION_CATEGORIES: Record<Collection["type"], Array<Pick<ExpenseCategory, "title" | "emoji" | "requiresManualConfirmation" | "autopayAllowedByDefault">>> = {
+  picnic: [
+    { title: "Food", emoji: "🍖", requiresManualConfirmation: false, autopayAllowedByDefault: true },
+    { title: "Drinks", emoji: "🥤", requiresManualConfirmation: false, autopayAllowedByDefault: true },
+    { title: "Alcohol", emoji: "🍺", requiresManualConfirmation: true, autopayAllowedByDefault: false }
+  ],
+  restaurant: [
+    { title: "Food", emoji: "🍽️", requiresManualConfirmation: false, autopayAllowedByDefault: true },
+    { title: "Drinks", emoji: "🥤", requiresManualConfirmation: false, autopayAllowedByDefault: true },
+    { title: "Alcohol", emoji: "🍷", requiresManualConfirmation: true, autopayAllowedByDefault: false }
+  ],
+  gift: [
+    { title: "Gift", emoji: "🎁", requiresManualConfirmation: false, autopayAllowedByDefault: true },
+    { title: "Card", emoji: "✉️", requiresManualConfirmation: false, autopayAllowedByDefault: true }
+  ],
+  trip: [
+    { title: "Transport", emoji: "🚗", requiresManualConfirmation: false, autopayAllowedByDefault: true },
+    { title: "Stay", emoji: "🏨", requiresManualConfirmation: false, autopayAllowedByDefault: true },
+    { title: "Food", emoji: "🍜", requiresManualConfirmation: false, autopayAllowedByDefault: true },
+    { title: "Alcohol", emoji: "🍹", requiresManualConfirmation: true, autopayAllowedByDefault: false }
+  ],
+  office: [
+    { title: "Food", emoji: "🥐", requiresManualConfirmation: false, autopayAllowedByDefault: true },
+    { title: "Supplies", emoji: "🧻", requiresManualConfirmation: false, autopayAllowedByDefault: true }
+  ],
+  rent: [
+    { title: "Rent", emoji: "🏠", requiresManualConfirmation: false, autopayAllowedByDefault: true },
+    { title: "Utilities", emoji: "💡", requiresManualConfirmation: false, autopayAllowedByDefault: true }
+  ],
+  kids: [
+    { title: "Food", emoji: "🍼", requiresManualConfirmation: false, autopayAllowedByDefault: true },
+    { title: "Entertainment", emoji: "🎠", requiresManualConfirmation: false, autopayAllowedByDefault: true }
+  ],
+  dacha: [
+    { title: "Food", emoji: "🥗", requiresManualConfirmation: false, autopayAllowedByDefault: true },
+    { title: "Household", emoji: "🪵", requiresManualConfirmation: false, autopayAllowedByDefault: true },
+    { title: "Alcohol", emoji: "🍾", requiresManualConfirmation: true, autopayAllowedByDefault: false }
+  ],
+  other: [{ title: "General", emoji: "🧾", requiresManualConfirmation: false, autopayAllowedByDefault: true }]
+};
+
 export class InMemoryStore {
   private readonly otpRequests = new Map<string, string>();
   private readonly users = new Map<string, User>();
@@ -42,9 +86,11 @@ export class InMemoryStore {
   private readonly collections = new Map<string, Collection>();
   private readonly participants = new Map<string, CollectionParticipant>();
   private readonly expenses = new Map<string, Expense>();
+  private readonly expenseCategories = new Map<string, ExpenseCategory>();
   private readonly expensePayments = new Map<string, ExpensePayment>();
   private readonly shareRules = new Map<string, ExpenseShareRule>();
   private readonly calculationVersions = new Map<string, CalculationVersion>();
+  private readonly collectionTemplates = new Map<string, CollectionTemplate>();
   private readonly disputes = new Map<string, Dispute>();
   private readonly manualPaymentProofs = new Map<string, ManualPaymentProof>();
   private readonly auditLogs = new Map<string, AuditLog>();
@@ -211,21 +257,33 @@ export class InMemoryStore {
 
   createCollection(
     userId: string,
-    data: { title: string; type?: Collection["type"]; groupId?: string | null; paymentMode?: Collection["paymentMode"] }
+    data: {
+      title: string;
+      type?: Collection["type"];
+      groupId?: string | null;
+      paymentMode?: Collection["paymentMode"];
+      templateId?: string | null;
+    }
   ): { collection: Collection; organizerParticipant: CollectionParticipant } {
-    if (data.groupId) {
-      this.getGroupForUser(userId, data.groupId);
+    const template = data.templateId ? this.getCollectionTemplate(data.templateId) : null;
+    const targetGroupId = data.groupId ?? template?.groupId ?? null;
+
+    if (targetGroupId) {
+      this.getGroupForUser(userId, targetGroupId);
+    }
+    if (template && template.ownerUserId !== userId) {
+      throw new AppError(403, "Template is not available to this user.");
     }
 
     const collection: Collection = {
       id: randomUUID(),
       title: data.title,
-      type: data.type ?? "other",
-      groupId: data.groupId ?? null,
+      type: data.type ?? template?.collectionType ?? "other",
+      groupId: targetGroupId,
       organizerId: userId,
       currency: "RUB",
       status: "draft",
-      paymentMode: data.paymentMode ?? "manual",
+      paymentMode: data.paymentMode ?? template?.paymentMode ?? "manual",
       totalAmountMinor: 0,
       reviewDeadlineAt: null,
       paymentDeadlineAt: null,
@@ -233,6 +291,21 @@ export class InMemoryStore {
       updatedAt: now()
     };
     this.collections.set(collection.id, collection);
+
+    const categorySeeds =
+      template?.categories.map((category) => ({
+        title: category.title,
+        emoji: category.emoji,
+        requiresManualConfirmation: category.requiresManualConfirmation,
+        autopayAllowedByDefault: category.autopayAllowedByDefault
+      })) ?? DEFAULT_COLLECTION_CATEGORIES[collection.type];
+    for (const categorySeed of categorySeeds) {
+      this.createCategoryRecord(collection.id, categorySeed);
+    }
+    this.addAudit(userId, "collection", collection.id, collection.id, "created", {
+      templateId: data.templateId ?? null,
+      categoryCount: categorySeeds.length
+    });
 
     const user = this.getUser(userId);
     const organizerParticipant = this.createParticipant(collection.id, {
@@ -399,6 +472,27 @@ export class InMemoryStore {
     return this.getExpenses(collectionId);
   }
 
+  listCategories(userId: string, collectionId: string): ExpenseCategory[] {
+    this.getCollectionForUser(userId, collectionId);
+    return this.getCategories(collectionId);
+  }
+
+  createCategory(
+    userId: string,
+    collectionId: string,
+    data: { title: string; emoji?: string | null; requiresManualConfirmation?: boolean; autopayAllowedByDefault?: boolean }
+  ): ExpenseCategory {
+    this.getOrganizerCollection(userId, collectionId);
+    const category = this.createCategoryRecord(collectionId, {
+      title: data.title,
+      emoji: data.emoji ?? null,
+      requiresManualConfirmation: data.requiresManualConfirmation ?? false,
+      autopayAllowedByDefault: data.autopayAllowedByDefault ?? false
+    });
+    this.addAudit(userId, "collection", collectionId, collectionId, "updated", { createdCategoryId: category.id });
+    return category;
+  }
+
   createExpense(
     userId: string,
     collectionId: string,
@@ -412,6 +506,9 @@ export class InMemoryStore {
     }
   ): { expense: Expense; payments: ExpensePayment[] } {
     this.getOrganizerCollection(userId, collectionId);
+    if (data.categoryId) {
+      this.getCategory(collectionId, data.categoryId);
+    }
 
     const expense: Expense = {
       id: randomUUID(),
@@ -748,6 +845,51 @@ export class InMemoryStore {
     return [...this.auditLogs.values()].filter((log) => log.collectionId === collectionId).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   }
 
+  listGroupTemplates(userId: string, groupId: string): CollectionTemplate[] {
+    this.getGroupForUser(userId, groupId);
+    return [...this.collectionTemplates.values()]
+      .filter((template) => template.groupId === groupId)
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  }
+
+  createGroupTemplate(
+    userId: string,
+    groupId: string,
+    data: {
+      title: string;
+      collectionType: Collection["type"];
+      paymentMode?: Collection["paymentMode"];
+      categories?: Array<{
+        title: string;
+        emoji?: string | null;
+        requiresManualConfirmation?: boolean;
+        autopayAllowedByDefault?: boolean;
+      }>;
+    }
+  ): CollectionTemplate {
+    this.getGroupForUser(userId, groupId);
+
+    const templateId = randomUUID();
+    const categories =
+      data.categories?.map((category, index) => this.createTemplateCategoryRecord(templateId, index, category)) ??
+      DEFAULT_COLLECTION_CATEGORIES[data.collectionType].map((category, index) => this.createTemplateCategoryRecord(templateId, index, category));
+
+    const template: CollectionTemplate = {
+      id: templateId,
+      groupId,
+      ownerUserId: userId,
+      title: data.title,
+      collectionType: data.collectionType,
+      paymentMode: data.paymentMode ?? "manual",
+      createdAt: now(),
+      updatedAt: now(),
+      categories
+    };
+    this.collectionTemplates.set(template.id, template);
+    this.addAudit(userId, "group", groupId, null, "created", { templateId: template.id, categoryCount: categories.length });
+    return template;
+  }
+
   listNotifications(userId: string): Notification[] {
     this.getUser(userId);
     return [...this.notifications.values()].filter((notification) => notification.userId === userId).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
@@ -1005,6 +1147,20 @@ export class InMemoryStore {
     return [...this.expenses.values()].filter((expense) => expense.collectionId === collectionId);
   }
 
+  private getCategory(collectionId: string, categoryId: string): ExpenseCategory {
+    const category = this.expenseCategories.get(categoryId);
+    if (!category || category.collectionId !== collectionId) {
+      throw new AppError(404, "Category not found.");
+    }
+    return category;
+  }
+
+  private getCategories(collectionId: string): ExpenseCategory[] {
+    return [...this.expenseCategories.values()]
+      .filter((category) => category.collectionId === collectionId)
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.title.localeCompare(b.title));
+  }
+
   private getExpensePayments(expenseId: string): ExpensePayment[] {
     return [...this.expensePayments.values()].filter((payment) => payment.expenseId === expenseId);
   }
@@ -1017,6 +1173,52 @@ export class InMemoryStore {
     return [...this.calculationVersions.values()]
       .filter((version) => version.collectionId === collectionId)
       .sort((a, b) => a.version - b.version);
+  }
+
+  private getCollectionTemplate(templateId: string): CollectionTemplate {
+    const template = this.collectionTemplates.get(templateId);
+    if (!template) {
+      throw new AppError(404, "Collection template not found.");
+    }
+    return template;
+  }
+
+  private createCategoryRecord(
+    collectionId: string,
+    data: Pick<ExpenseCategory, "title" | "emoji" | "requiresManualConfirmation" | "autopayAllowedByDefault">
+  ): ExpenseCategory {
+    const category: ExpenseCategory = {
+      id: randomUUID(),
+      collectionId,
+      title: data.title,
+      emoji: data.emoji,
+      requiresManualConfirmation: data.requiresManualConfirmation,
+      autopayAllowedByDefault: data.autopayAllowedByDefault,
+      createdAt: now()
+    };
+    this.expenseCategories.set(category.id, category);
+    return category;
+  }
+
+  private createTemplateCategoryRecord(
+    templateId: string,
+    sortOrder: number,
+    data: {
+      title: string;
+      emoji?: string | null;
+      requiresManualConfirmation?: boolean;
+      autopayAllowedByDefault?: boolean;
+    }
+  ): CollectionTemplateCategory {
+    return {
+      id: randomUUID(),
+      templateId,
+      title: data.title,
+      emoji: data.emoji ?? null,
+      requiresManualConfirmation: data.requiresManualConfirmation ?? false,
+      autopayAllowedByDefault: data.autopayAllowedByDefault ?? false,
+      sortOrder
+    };
   }
 
   private recalculateCollectionTotal(collectionId: string): void {

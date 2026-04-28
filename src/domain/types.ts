@@ -5,6 +5,7 @@ export type VerificationLevel = "phone" | "bank_id" | "kyc";
 export type FriendshipStatus = "pending" | "accepted" | "blocked";
 export type GroupRole = "owner" | "admin" | "member";
 export type GroupMemberStatus = "active" | "invited" | "left" | "removed";
+export type CollectionType = "picnic" | "restaurant" | "gift" | "trip" | "office" | "rent" | "kids" | "dacha" | "other";
 export type CollectionStatus =
   | "draft"
   | "participants_selected"
@@ -115,7 +116,7 @@ export interface GroupMember {
 export interface Collection {
   id: string;
   title: string;
-  type: "picnic" | "restaurant" | "gift" | "trip" | "office" | "rent" | "kids" | "dacha" | "other";
+  type: CollectionType;
   groupId: string | null;
   organizerId: string;
   currency: "RUB";
@@ -158,6 +159,16 @@ export interface Expense {
   comment: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface ExpenseCategory {
+  id: string;
+  collectionId: string;
+  title: string;
+  emoji: string | null;
+  requiresManualConfirmation: boolean;
+  autopayAllowedByDefault: boolean;
+  createdAt: string;
 }
 
 export interface ExpensePayment {
@@ -242,6 +253,28 @@ export interface Notification {
   status: NotificationStatus;
   createdAt: string;
   readAt: string | null;
+}
+
+export interface CollectionTemplateCategory {
+  id: string;
+  templateId: string;
+  title: string;
+  emoji: string | null;
+  requiresManualConfirmation: boolean;
+  autopayAllowedByDefault: boolean;
+  sortOrder: number;
+}
+
+export interface CollectionTemplate {
+  id: string;
+  groupId: string;
+  ownerUserId: string;
+  title: string;
+  collectionType: CollectionType;
+  paymentMode: PaymentMode;
+  createdAt: string;
+  updatedAt: string;
+  categories: CollectionTemplateCategory[];
 }
 
 export interface AuthResult {

@@ -14,5 +14,5 @@ Working notes for the next SocialSplitApp backend increment.
 
 ## Next backend step
 
-- wire the new live PostgreSQL integration lane into CI;
 - carry the same idempotency/concurrency model into future autopay/provider payment mutations.
+- tighten GitHub Actions further with migration drift / OpenAPI artifact checks if CI time stays reasonable.

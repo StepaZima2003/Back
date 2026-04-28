@@ -75,6 +75,11 @@ npm run test:integration
 
 The integration lane deploys checked-in Prisma migrations into a dedicated `integration` schema and then runs real Fastify + Prisma scenarios against PostgreSQL.
 
+GitHub Actions now runs:
+
+- `quality`: install, Prisma generate, typecheck, provider/unit tests, build;
+- `integration`: live PostgreSQL service + checked-in migrations + `npm run test:integration`.
+
 Recent collection/group additions:
 
 - organizer-owned participant profiles at the group level for recurring members, linked users, guests, and children;

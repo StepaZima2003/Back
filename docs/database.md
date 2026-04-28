@@ -84,9 +84,13 @@ npm run test:integration
 
 `test:integration` resets a dedicated `integration` schema, applies checked-in Prisma migrations, and runs real API scenarios against `PrismaStore`.
 
+This same split now runs in GitHub Actions:
+
+- `quality` job for fast regression checks;
+- `integration` job for live PostgreSQL coverage against the checked-in migrations.
+
 ## Persistence Roadmap
 
 1. Keep calculation logic pure and independent from Prisma.
-2. Wire the live PostgreSQL integration lane into CI.
-3. Extend the same retry/concurrency discipline to future autopay/provider payment flows.
-4. Expand persistence coverage toward richer profile/template reuse flows.
+2. Extend the same retry/concurrency discipline to future autopay/provider payment flows.
+3. Expand persistence coverage toward richer profile/template reuse flows.

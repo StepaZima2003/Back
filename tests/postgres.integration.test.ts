@@ -299,4 +299,101 @@ describe("PostgreSQL integration", () => {
     );
     expect(friendCalculation?.owesAmountMinor).toBe(450);
   });
+
+  it("serializes concurrent calculate and manual payment retry flows on live PostgreSQL", async () => {
+    const organizer = await auth(app!, "+79990011021");
+    const participantUser = await auth(app!, "+79990011022");
+
+    const collectionResponse = await app!.inject({
+      method: "POST",
+      url: "/collections",
+      headers: { authorization: organizer.authorization },
+      payload: { title: "Concurrency trip", type: "trip" }
+    });
+    const { collection, organizerParticipant } = collectionResponse.json();
+
+    const participantResponse = await app!.inject({
+      method: "POST",
+      url: `/collections/${collection.id}/participants`,
+      headers: { authorization: organizer.authorization },
+      payload: { linkedUserId: participantUser.user.id, displayName: "Friend" }
+    });
+    const participant = participantResponse.json();
+
+    await app!.inject({
+      method: "POST",
+      url: `/collections/${collection.id}/expenses`,
+      headers: { authorization: organizer.authorization },
+      payload: {
+        title: "Cabin",
+        amountMinor: 14000,
+        payments: [{ paidByParticipantId: organizerParticipant.id, amountMinor: 14000, paymentSource: "card" }]
+      }
+    });
+
+    const [calculateA, calculateB] = await Promise.all([
+      app!.inject({
+        method: "POST",
+        url: `/collections/${collection.id}/calculate`,
+        headers: { authorization: organizer.authorization }
+      }),
+      app!.inject({
+        method: "POST",
+        url: `/collections/${collection.id}/calculate`,
+        headers: { authorization: organizer.authorization }
+      })
+    ]);
+
+    expect(calculateA.statusCode).toBe(201);
+    expect(calculateB.statusCode).toBe(201);
+    expect(calculateA.json().version).toBe(1);
+    expect(calculateB.json().version).toBe(1);
+
+    const [manualPaymentA, manualPaymentB] = await Promise.all([
+      app!.inject({
+        method: "POST",
+        url: `/collections/${collection.id}/manual-payments/mark-paid`,
+        headers: { authorization: participantUser.authorization },
+        payload: {
+          payerParticipantId: participant.id,
+          receiverParticipantId: organizerParticipant.id,
+          amountMinor: 7000,
+          method: "sbp",
+          comment: "Paid manually",
+          idempotencyKey: "live-retry-1"
+        }
+      }),
+      app!.inject({
+        method: "POST",
+        url: `/collections/${collection.id}/manual-payments/mark-paid`,
+        headers: { authorization: participantUser.authorization },
+        payload: {
+          payerParticipantId: participant.id,
+          receiverParticipantId: organizerParticipant.id,
+          amountMinor: 7000,
+          method: "sbp",
+          comment: "Paid manually",
+          idempotencyKey: "live-retry-1"
+        }
+      })
+    ]);
+
+    expect(manualPaymentA.statusCode).toBe(201);
+    expect(manualPaymentB.statusCode).toBe(201);
+    expect(manualPaymentA.json().id).toBe(manualPaymentB.json().id);
+
+    const latestCalculationResponse = await app!.inject({
+      method: "GET",
+      url: `/collections/${collection.id}/calculations/latest`,
+      headers: { authorization: organizer.authorization }
+    });
+    expect(latestCalculationResponse.json().version).toBe(1);
+
+    const listManualPaymentsResponse = await app!.inject({
+      method: "GET",
+      url: `/collections/${collection.id}/manual-payments`,
+      headers: { authorization: organizer.authorization }
+    });
+    expect(listManualPaymentsResponse.json()).toHaveLength(1);
+  });
 });

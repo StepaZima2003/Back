@@ -241,6 +241,7 @@ export interface Dispute {
 
 export interface ManualPaymentProof {
   id: string;
+  idempotencyKey: string | null;
   transferPlanId: string | null;
   collectionId: string;
   payerUserId: string;

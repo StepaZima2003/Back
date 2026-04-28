@@ -776,6 +776,10 @@ export class InMemoryStore {
   }
 
   calculateCollection(userId: string, collectionId: string): CalculationVersion {
+    return this.calculateCollectionInternal(userId, collectionId, false);
+  }
+
+  private calculateCollectionInternal(userId: string, collectionId: string, forceVersion: boolean): CalculationVersion {
     const collection = this.getOrganizerCollection(userId, collectionId);
     const participants = this.getParticipants(collectionId);
     const expenses = this.getExpenses(collectionId);
@@ -823,6 +827,11 @@ export class InMemoryStore {
         }))
       }))
     });
+
+    const latestVersion = previousVersions.at(-1);
+    if (!forceVersion && latestVersion && stableJson(latestVersion.result) === stableJson(result)) {
+      return latestVersion;
+    }
 
     for (const version of previousVersions) {
       this.calculationVersions.set(version.id, { ...version, status: "superseded" });
@@ -955,7 +964,7 @@ export class InMemoryStore {
     const dispute = this.getDispute(disputeId);
     this.getOrganizerCollection(userId, dispute.collectionId);
     const updated = this.updateDispute(dispute, "resolved_by_recalculation", resolutionComment ?? null);
-    const calculationVersion = this.calculateCollection(userId, dispute.collectionId);
+    const calculationVersion = this.calculateCollectionInternal(userId, dispute.collectionId, true);
     this.addAudit(userId, "dispute", dispute.id, dispute.collectionId, "recalculated", { calculationVersionId: calculationVersion.id });
     this.addNotification(dispute.createdByUserId, dispute.collectionId, "dispute_updated", "Dispute resolved", "Organizer recalculated the collection after dispute review.");
     return { dispute: updated, calculationVersion };
@@ -972,6 +981,7 @@ export class InMemoryStore {
       comment?: string | null;
       proofUrl?: string | null;
       transferPlanId?: string | null;
+      idempotencyKey?: string | null;
     }
   ): ManualPaymentProof {
     this.getCollectionForUser(userId, collectionId);
@@ -982,8 +992,18 @@ export class InMemoryStore {
       throw new AppError(403, "User cannot mark payment for this participant.");
     }
 
+    const idempotencyKey = resolveManualPaymentIdempotencyKey(userId, collectionId, data);
+    const existing = this.findManualPaymentByIdempotencyKey(collectionId, idempotencyKey);
+    if (existing) {
+      if (!isSameManualPaymentRequest(existing, userId, payerParticipant?.id ?? null, receiverParticipant?.id ?? null, data, idempotencyKey)) {
+        throw new AppError(409, "Manual payment idempotency key is already used for another request.");
+      }
+      return existing;
+    }
+
     const proof: ManualPaymentProof = {
       id: randomUUID(),
+      idempotencyKey,
       transferPlanId: data.transferPlanId ?? null,
       collectionId,
       payerUserId: userId,
@@ -1013,10 +1033,16 @@ export class InMemoryStore {
 
   uploadManualPaymentProof(userId: string, proofId: string, data: { proofUrl?: string | null; comment?: string | null }): ManualPaymentProof {
     const proof = this.getManualPaymentForUser(userId, proofId);
+    const nextProofUrl = data.proofUrl === undefined ? proof.proofUrl : data.proofUrl;
+    const nextComment = data.comment === undefined ? proof.comment : data.comment;
+    if (nextProofUrl === proof.proofUrl && nextComment === proof.comment) {
+      return proof;
+    }
+
     const updated: ManualPaymentProof = {
       ...proof,
-      proofUrl: data.proofUrl === undefined ? proof.proofUrl : data.proofUrl,
-      comment: data.comment === undefined ? proof.comment : data.comment,
+      proofUrl: nextProofUrl,
+      comment: nextComment,
       updatedAt: now()
     };
     this.manualPaymentProofs.set(proof.id, updated);
@@ -1026,6 +1052,12 @@ export class InMemoryStore {
 
   confirmManualPayment(userId: string, proofId: string): ManualPaymentProof {
     const proof = this.getManualPaymentForReviewer(userId, proofId);
+    if (proof.status === "confirmed") {
+      return proof;
+    }
+    if (proof.status === "rejected") {
+      throw new AppError(409, "Rejected manual payment cannot be confirmed.");
+    }
     const updated: ManualPaymentProof = { ...proof, status: "confirmed", updatedAt: now() };
     this.manualPaymentProofs.set(proof.id, updated);
     this.markCollectionStatus(proof.collectionId, this.hasOnlyConfirmedManualPayments(proof.collectionId) ? "paid" : "partially_paid");
@@ -1036,6 +1068,12 @@ export class InMemoryStore {
 
   rejectManualPayment(userId: string, proofId: string): ManualPaymentProof {
     const proof = this.getManualPaymentForReviewer(userId, proofId);
+    if (proof.status === "rejected") {
+      return proof;
+    }
+    if (proof.status === "confirmed") {
+      throw new AppError(409, "Confirmed manual payment cannot be rejected.");
+    }
     const updated: ManualPaymentProof = { ...proof, status: "rejected", updatedAt: now() };
     this.manualPaymentProofs.set(proof.id, updated);
     this.markCollectionStatus(proof.collectionId, "payment_pending");
@@ -1280,6 +1318,14 @@ export class InMemoryStore {
   private hasOnlyConfirmedManualPayments(collectionId: string): boolean {
     const proofs = [...this.manualPaymentProofs.values()].filter((proof) => proof.collectionId === collectionId);
     return proofs.length > 0 && proofs.every((proof) => proof.status === "confirmed");
+  }
+
+  private findManualPaymentByIdempotencyKey(collectionId: string, idempotencyKey: string): ManualPaymentProof | null {
+    return (
+      [...this.manualPaymentProofs.values()].find(
+        (proof) => proof.collectionId === collectionId && proof.idempotencyKey === idempotencyKey
+      ) ?? null
+    );
   }
 
   private canActForParticipant(userId: string, participant: CollectionParticipant): boolean {
@@ -1614,6 +1660,83 @@ export class InMemoryStore {
 
 function now(): string {
   return new Date().toISOString();
+}
+
+function stableJson(value: unknown): string {
+  return JSON.stringify(sortJsonValue(value));
+}
+
+function sortJsonValue(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map(sortJsonValue);
+  }
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([key, nestedValue]) => [key, sortJsonValue(nestedValue)])
+    );
+  }
+  return value;
+}
+
+function resolveManualPaymentIdempotencyKey(
+  userId: string,
+  collectionId: string,
+  data: {
+    payerParticipantId?: string | null;
+    receiverParticipantId?: string | null;
+    amountMinor: number;
+    method: ManualPaymentMethod;
+    comment?: string | null;
+    proofUrl?: string | null;
+    transferPlanId?: string | null;
+    idempotencyKey?: string | null;
+  }
+): string {
+  if (data.idempotencyKey?.trim()) {
+    return `manual:${collectionId}:${userId}:${data.idempotencyKey.trim()}`;
+  }
+
+  return stableJson({
+    kind: "manual-payment",
+    collectionId,
+    userId,
+    payerParticipantId: data.payerParticipantId ?? null,
+    receiverParticipantId: data.receiverParticipantId ?? null,
+    amountMinor: data.amountMinor,
+    method: data.method,
+    comment: data.comment ?? null,
+    proofUrl: data.proofUrl ?? null,
+    transferPlanId: data.transferPlanId ?? null
+  });
+}
+
+function isSameManualPaymentRequest(
+  proof: ManualPaymentProof,
+  userId: string,
+  payerParticipantId: string | null,
+  receiverParticipantId: string | null,
+  data: {
+    amountMinor: number;
+    method: ManualPaymentMethod;
+    comment?: string | null;
+    proofUrl?: string | null;
+    transferPlanId?: string | null;
+  },
+  idempotencyKey: string
+): boolean {
+  return (
+    proof.idempotencyKey === idempotencyKey &&
+    proof.payerUserId === userId &&
+    proof.payerParticipantId === payerParticipantId &&
+    proof.receiverParticipantId === receiverParticipantId &&
+    proof.amountMinor === data.amountMinor &&
+    proof.method === data.method &&
+    proof.comment === (data.comment ?? null) &&
+    proof.proofUrl === (data.proofUrl ?? null) &&
+    proof.transferPlanId === (data.transferPlanId ?? null)
+  );
 }
 
 function createDevToken(userId: string, kind = "access"): string {

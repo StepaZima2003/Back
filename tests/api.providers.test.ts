@@ -472,4 +472,115 @@ describe.each<ProviderName>(["memory", "prisma"])("api provider parity: %s", (pr
 
     await app.close();
   });
+
+  it("deduplicates repeated calculate calls and manual payment retries", async () => {
+    const app = await buildApp({ store: await createStore(provider) });
+
+    async function auth(phone: string) {
+      await app.inject({ method: "POST", url: "/auth/request-otp", payload: { phone } });
+      const response = await app.inject({ method: "POST", url: "/auth/verify-otp", payload: { phone, otp: "000000" } });
+      const body = response.json();
+      return {
+        user: body.user,
+        authorization: `Bearer ${body.accessToken}`
+      };
+    }
+
+    const organizer = await auth("+79990010031");
+    const participantUser = await auth("+79990010032");
+
+    const collectionResponse = await app.inject({
+      method: "POST",
+      url: "/collections",
+      headers: { authorization: organizer.authorization },
+      payload: { title: "Retry-safe trip", type: "trip" }
+    });
+    const { collection, organizerParticipant } = collectionResponse.json();
+
+    const participantResponse = await app.inject({
+      method: "POST",
+      url: `/collections/${collection.id}/participants`,
+      headers: { authorization: organizer.authorization },
+      payload: { linkedUserId: participantUser.user.id, displayName: "Friend" }
+    });
+    const participant = participantResponse.json();
+
+    await app.inject({
+      method: "POST",
+      url: `/collections/${collection.id}/expenses`,
+      headers: { authorization: organizer.authorization },
+      payload: {
+        title: "Stay",
+        amountMinor: 10000,
+        payments: [{ paidByParticipantId: organizerParticipant.id, amountMinor: 10000, paymentSource: "card" }]
+      }
+    });
+
+    const [calculateA, calculateB] = await Promise.all([
+      app.inject({
+        method: "POST",
+        url: `/collections/${collection.id}/calculate`,
+        headers: { authorization: organizer.authorization }
+      }),
+      app.inject({
+        method: "POST",
+        url: `/collections/${collection.id}/calculate`,
+        headers: { authorization: organizer.authorization }
+      })
+    ]);
+
+    expect(calculateA.statusCode).toBe(201);
+    expect(calculateB.statusCode).toBe(201);
+    expect(calculateA.json().version).toBe(1);
+    expect(calculateB.json().version).toBe(1);
+
+    const latestCalculationResponse = await app.inject({
+      method: "GET",
+      url: `/collections/${collection.id}/calculations/latest`,
+      headers: { authorization: organizer.authorization }
+    });
+    expect(latestCalculationResponse.json().version).toBe(1);
+
+    const [manualPaymentA, manualPaymentB] = await Promise.all([
+      app.inject({
+        method: "POST",
+        url: `/collections/${collection.id}/manual-payments/mark-paid`,
+        headers: { authorization: participantUser.authorization },
+        payload: {
+          payerParticipantId: participant.id,
+          receiverParticipantId: organizerParticipant.id,
+          amountMinor: 5000,
+          method: "sbp",
+          comment: "Paid manually",
+          idempotencyKey: "retry-1"
+        }
+      }),
+      app.inject({
+        method: "POST",
+        url: `/collections/${collection.id}/manual-payments/mark-paid`,
+        headers: { authorization: participantUser.authorization },
+        payload: {
+          payerParticipantId: participant.id,
+          receiverParticipantId: organizerParticipant.id,
+          amountMinor: 5000,
+          method: "sbp",
+          comment: "Paid manually",
+          idempotencyKey: "retry-1"
+        }
+      })
+    ]);
+
+    expect(manualPaymentA.statusCode).toBe(201);
+    expect(manualPaymentB.statusCode).toBe(201);
+    expect(manualPaymentA.json().id).toBe(manualPaymentB.json().id);
+
+    const listManualPaymentsResponse = await app.inject({
+      method: "GET",
+      url: `/collections/${collection.id}/manual-payments`,
+      headers: { authorization: organizer.authorization }
+    });
+    expect(listManualPaymentsResponse.json()).toHaveLength(1);
+
+    await app.close();
+  });
 });

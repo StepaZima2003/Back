@@ -68,6 +68,13 @@ Direct Prisma read/write is already used here for the stable slice:
 
 Route-level smoke tests now exercise the same collection flows against `memory` and `prisma` providers through a shared stateful Prisma mock.
 
+Money-flow hardening now includes:
+
+- advisory transaction locks around Prisma calculation and manual-payment mutation paths;
+- duplicate `calculate` dedup when the financial result did not change;
+- retry-safe manual payment submit via `idempotencyKey`;
+- idempotent confirm/reject behavior for terminal manual payment states.
+
 There is also a live PostgreSQL lane:
 
 ```bash
@@ -81,5 +88,5 @@ npm run test:integration
 
 1. Keep calculation logic pure and independent from Prisma.
 2. Wire the live PostgreSQL integration lane into CI.
-3. Add idempotency and concurrency protection around calculation/payment mutations.
-4. Expand persistence coverage toward autopay and richer profile/template reuse flows.
+3. Extend the same retry/concurrency discipline to future autopay/provider payment flows.
+4. Expand persistence coverage toward richer profile/template reuse flows.

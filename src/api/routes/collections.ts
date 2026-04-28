@@ -105,7 +105,8 @@ const markManualPaymentSchema = z.object({
   method: z.enum(["sbp", "cash", "card", "other"]),
   comment: z.string().nullable().optional(),
   proofUrl: z.string().url().nullable().optional(),
-  transferPlanId: z.string().nullable().optional()
+  transferPlanId: z.string().nullable().optional(),
+  idempotencyKey: z.string().min(1).max(120).nullable().optional()
 });
 
 const uploadManualPaymentProofSchema = z.object({

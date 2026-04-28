@@ -15,4 +15,4 @@ Working notes for the next SocialSplitApp backend increment.
 ## Next backend step
 
 - wire the new live PostgreSQL integration lane into CI;
-- start hardening Prisma mutations with idempotency/concurrency guards for calculation and payment flows.
+- carry the same idempotency/concurrency model into future autopay/provider payment mutations.

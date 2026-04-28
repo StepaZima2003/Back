@@ -82,6 +82,12 @@ Recent collection/group additions:
 - a collection endpoint for applying missing category presets from an existing group template;
 - route-level provider parity coverage for both flows.
 
+Retry/concurrency hardening now covers:
+
+- duplicate `calculate` requests no longer create extra versions when the result is unchanged;
+- manual payment submit supports `idempotencyKey` for safe retries;
+- Prisma store serializes calculation and manual payment critical sections on PostgreSQL advisory locks.
+
 По умолчанию API стартует на `http://localhost:3000`.
 
 ```bash

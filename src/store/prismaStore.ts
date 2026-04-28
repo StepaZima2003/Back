@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { PrismaClient, type Prisma } from "@prisma/client";
 import { calculateCollection } from "../calculation";
 import type {
@@ -28,15 +28,32 @@ import type {
 import type { AppStore } from "./appStore";
 import { AppError, DEFAULT_COLLECTION_CATEGORIES } from "./inMemoryStore";
 
-type PrismaStoreClient = PrismaClient;
+type PrismaStoreClient = PrismaClient | Prisma.TransactionClient;
 
 export class PrismaStore implements AppStore {
-  private readonly otpRequests = new Map<string, string>();
-
-  private constructor(private readonly client: PrismaStoreClient) {}
+  private constructor(
+    private readonly client: PrismaStoreClient,
+    private readonly rootClient: PrismaClient,
+    private readonly otpRequests: Map<string, string> = new Map()
+  ) {}
 
   static async create(client: PrismaStoreClient): Promise<PrismaStore> {
-    return new PrismaStore(client);
+    return new PrismaStore(client, client as PrismaClient);
+  }
+
+  private fork(client: PrismaStoreClient): PrismaStore {
+    return new PrismaStore(client, this.rootClient, this.otpRequests);
+  }
+
+  private async withAdvisoryLock<T>(key: string, callback: (store: PrismaStore) => Promise<T>): Promise<T> {
+    if (!("$transaction" in this.rootClient)) {
+      return await callback(this);
+    }
+
+    return await this.rootClient.$transaction(async (tx) => {
+      await tx.$executeRawUnsafe(`SELECT pg_advisory_xact_lock(hashtext(${toSqlLiteral(key)}))`);
+      return await callback(this.fork(tx));
+    });
   }
 
   requestOtp(phone: string) {
@@ -890,6 +907,16 @@ export class PrismaStore implements AppStore {
   }
 
   async calculateCollection(userId: string, collectionId: string): Promise<CalculationVersion> {
+    return await this.withAdvisoryLock(`collection:${collectionId}:calculate`, async (store) => {
+      return await store.calculateCollectionLocked(userId, collectionId, false);
+    });
+  }
+
+  private async calculateCollectionLocked(
+    userId: string,
+    collectionId: string,
+    forceVersion: boolean
+  ): Promise<CalculationVersion> {
     const collection = await this.getOrganizerCollectionRecord(userId, collectionId);
     const state = await this.getCollectionStateRecord(collectionId);
     const previousVersions = await this.getCalculationVersionRecords(collectionId);
@@ -937,6 +964,11 @@ export class PrismaStore implements AppStore {
         }))
       }))
     });
+
+    const latestVersion = previousVersions.at(-1);
+    if (!forceVersion && latestVersion && stableJson(latestVersion.result) === stableJson(result)) {
+      return latestVersion;
+    }
 
     for (const version of previousVersions) {
       await this.client.calculationVersion.upsert({
@@ -1249,7 +1281,9 @@ export class PrismaStore implements AppStore {
     const dispute = await this.getDisputeRecord(disputeId);
     await this.getOrganizerCollectionRecord(userId, dispute.collectionId);
     const updated = await this.updateDisputeDirect(dispute, "resolved_by_recalculation", resolutionComment ?? null);
-    const calculationVersion = await this.calculateCollection(userId, dispute.collectionId);
+    const calculationVersion = await this.withAdvisoryLock(`collection:${dispute.collectionId}:calculate`, async (store) => {
+      return await store.calculateCollectionLocked(userId, dispute.collectionId, true);
+    });
     await this.addAuditDirect(userId, "dispute", dispute.id, dispute.collectionId, "recalculated", {
       calculationVersionId: calculationVersion.id
     });
@@ -1268,6 +1302,16 @@ export class PrismaStore implements AppStore {
     collectionId: string,
     data: Parameters<AppStore["markManualPaymentPaid"]>[2]
   ): Promise<ManualPaymentProof> {
+    return await this.withAdvisoryLock(`collection:${collectionId}:manual-payment`, async (store) => {
+      return await store.markManualPaymentPaidLocked(userId, collectionId, data);
+    });
+  }
+
+  private async markManualPaymentPaidLocked(
+    userId: string,
+    collectionId: string,
+    data: Parameters<AppStore["markManualPaymentPaid"]>[2]
+  ): Promise<ManualPaymentProof> {
     await this.getCollectionForUser(userId, collectionId);
     const payerParticipant = data.payerParticipantId ? await this.getParticipantRecord(collectionId, data.payerParticipantId) : null;
     const receiverParticipant = data.receiverParticipantId ? await this.getParticipantRecord(collectionId, data.receiverParticipantId) : null;
@@ -1276,12 +1320,22 @@ export class PrismaStore implements AppStore {
       throw new AppError(403, "User cannot mark payment for this participant.");
     }
 
+    const idempotencyKey = resolveManualPaymentIdempotencyKey(userId, collectionId, data);
+    const existing = await this.findManualPaymentByIdempotencyKeyDirect(collectionId, idempotencyKey);
+    if (existing) {
+      if (!isSameManualPaymentRequest(existing, userId, payerParticipant?.id ?? null, receiverParticipant?.id ?? null, data, idempotencyKey)) {
+        throw new AppError(409, "Manual payment idempotency key is already used for another request.");
+      }
+      return existing;
+    }
+
     const now = new Date();
     const proof = await this.client.manualPaymentProof.upsert({
       where: { id: randomUUID() },
       update: {},
       create: {
         id: randomUUID(),
+        idempotencyKey,
         transferPlanId: data.transferPlanId ?? null,
         collectionId,
         payerUserId: userId,
@@ -1316,7 +1370,8 @@ export class PrismaStore implements AppStore {
     await this.bumpCollectionStatus(collectionId, "partially_paid");
     await this.addAuditDirect(userId, "manual_payment", proof.id, collectionId, "paid", {
       amountMinor: data.amountMinor,
-      method: data.method
+      method: data.method,
+      idempotencyKey
     });
     await this.notifyManualPaymentReviewersDirect(
       collectionId,
@@ -1334,17 +1389,33 @@ export class PrismaStore implements AppStore {
     proofId: string,
     data: Parameters<AppStore["uploadManualPaymentProof"]>[2]
   ): Promise<ManualPaymentProof> {
+    return await this.withAdvisoryLock(`manual-payment:${proofId}`, async (store) => {
+      return await store.uploadManualPaymentProofLocked(userId, proofId, data);
+    });
+  }
+
+  private async uploadManualPaymentProofLocked(
+    userId: string,
+    proofId: string,
+    data: Parameters<AppStore["uploadManualPaymentProof"]>[2]
+  ): Promise<ManualPaymentProof> {
     const proof = await this.getManualPaymentForUserDirect(userId, proofId);
+    const nextProofUrl = data.proofUrl === undefined ? proof.proofUrl : data.proofUrl;
+    const nextComment = data.comment === undefined ? proof.comment : data.comment;
+    if (nextProofUrl === proof.proofUrl && nextComment === proof.comment) {
+      return proof;
+    }
+
     const updated = await this.client.manualPaymentProof.upsert({
       where: { id: proof.id },
       update: {
-        proofUrl: data.proofUrl === undefined ? proof.proofUrl : data.proofUrl,
-        comment: data.comment === undefined ? proof.comment : data.comment,
+        proofUrl: nextProofUrl,
+        comment: nextComment,
         updatedAt: new Date()
       },
       create: manualPaymentCreateInputFromRecord(proof, {
-        proofUrl: data.proofUrl === undefined ? proof.proofUrl : data.proofUrl,
-        comment: data.comment === undefined ? proof.comment : data.comment,
+        proofUrl: nextProofUrl,
+        comment: nextComment,
         updatedAt: new Date()
       })
     });
@@ -1355,7 +1426,19 @@ export class PrismaStore implements AppStore {
   }
 
   async confirmManualPayment(userId: string, proofId: string): Promise<ManualPaymentProof> {
+    return await this.withAdvisoryLock(`manual-payment:${proofId}`, async (store) => {
+      return await store.confirmManualPaymentLocked(userId, proofId);
+    });
+  }
+
+  private async confirmManualPaymentLocked(userId: string, proofId: string): Promise<ManualPaymentProof> {
     const proof = await this.getManualPaymentForReviewerDirect(userId, proofId);
+    if (proof.status === "confirmed") {
+      return proof;
+    }
+    if (proof.status === "rejected") {
+      throw new AppError(409, "Rejected manual payment cannot be confirmed.");
+    }
     const updated = await this.client.manualPaymentProof.upsert({
       where: { id: proof.id },
       update: {
@@ -1383,7 +1466,19 @@ export class PrismaStore implements AppStore {
   }
 
   async rejectManualPayment(userId: string, proofId: string): Promise<ManualPaymentProof> {
+    return await this.withAdvisoryLock(`manual-payment:${proofId}`, async (store) => {
+      return await store.rejectManualPaymentLocked(userId, proofId);
+    });
+  }
+
+  private async rejectManualPaymentLocked(userId: string, proofId: string): Promise<ManualPaymentProof> {
     const proof = await this.getManualPaymentForReviewerDirect(userId, proofId);
+    if (proof.status === "rejected") {
+      return proof;
+    }
+    if (proof.status === "confirmed") {
+      throw new AppError(409, "Confirmed manual payment cannot be rejected.");
+    }
     const updated = await this.client.manualPaymentProof.upsert({
       where: { id: proof.id },
       update: {
@@ -1731,6 +1826,17 @@ export class PrismaStore implements AppStore {
   private async hasOnlyConfirmedManualPaymentsDirect(collectionId: string): Promise<boolean> {
     const proofs = (await this.client.manualPaymentProof.findMany()).filter((proof) => proof.collectionId === collectionId);
     return proofs.length > 0 && proofs.every((proof) => proof.status === "confirmed");
+  }
+
+  private async findManualPaymentByIdempotencyKeyDirect(
+    collectionId: string,
+    idempotencyKey: string
+  ): Promise<ManualPaymentProof | null> {
+    const proof = (await this.client.manualPaymentProof.findMany()).find(
+      (item) => item.collectionId === collectionId && item.idempotencyKey === idempotencyKey
+    );
+
+    return proof ? mapManualPaymentProofRecord(proof) : null;
   }
 
   private async canActForParticipant(userId: string, participant: CollectionParticipant | Awaited<ReturnType<PrismaStore["getParticipantRecord"]>>): Promise<boolean> {
@@ -2224,6 +2330,7 @@ function mapDisputeRecord(record: {
 
 function mapManualPaymentProofRecord(record: {
   id: string;
+  idempotencyKey: string | null;
   transferPlanId: string | null;
   collectionId: string;
   payerUserId: string;
@@ -2240,6 +2347,7 @@ function mapManualPaymentProofRecord(record: {
 }): ManualPaymentProof {
   return {
     id: record.id,
+    idempotencyKey: record.idempotencyKey,
     transferPlanId: record.transferPlanId,
     collectionId: record.collectionId,
     payerUserId: record.payerUserId,
@@ -2379,6 +2487,91 @@ function asJson(value: unknown): Prisma.InputJsonValue {
   return value as Prisma.InputJsonValue;
 }
 
+function stableJson(value: unknown): string {
+  return JSON.stringify(sortJsonValue(value));
+}
+
+function sortJsonValue(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map(sortJsonValue);
+  }
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([key, nestedValue]) => [key, sortJsonValue(nestedValue)])
+    );
+  }
+  return value;
+}
+
+function resolveManualPaymentIdempotencyKey(
+  userId: string,
+  collectionId: string,
+  data: {
+    payerParticipantId?: string | null;
+    receiverParticipantId?: string | null;
+    amountMinor: number;
+    method: ManualPaymentProof["method"];
+    comment?: string | null;
+    proofUrl?: string | null;
+    transferPlanId?: string | null;
+    idempotencyKey?: string | null;
+  }
+): string {
+  if (data.idempotencyKey?.trim()) {
+    return `manual:${collectionId}:${userId}:${data.idempotencyKey.trim()}`;
+  }
+
+  return createHash("sha256")
+    .update(
+      stableJson({
+        kind: "manual-payment",
+        collectionId,
+        userId,
+        payerParticipantId: data.payerParticipantId ?? null,
+        receiverParticipantId: data.receiverParticipantId ?? null,
+        amountMinor: data.amountMinor,
+        method: data.method,
+        comment: data.comment ?? null,
+        proofUrl: data.proofUrl ?? null,
+        transferPlanId: data.transferPlanId ?? null
+      })
+    )
+    .digest("hex");
+}
+
+function isSameManualPaymentRequest(
+  proof: ManualPaymentProof,
+  userId: string,
+  payerParticipantId: string | null,
+  receiverParticipantId: string | null,
+  data: {
+    amountMinor: number;
+    method: ManualPaymentProof["method"];
+    comment?: string | null;
+    proofUrl?: string | null;
+    transferPlanId?: string | null;
+  },
+  idempotencyKey: string
+): boolean {
+  return (
+    proof.idempotencyKey === idempotencyKey &&
+    proof.payerUserId === userId &&
+    proof.payerParticipantId === payerParticipantId &&
+    proof.receiverParticipantId === receiverParticipantId &&
+    proof.amountMinor === data.amountMinor &&
+    proof.method === data.method &&
+    proof.comment === (data.comment ?? null) &&
+    proof.proofUrl === (data.proofUrl ?? null) &&
+    proof.transferPlanId === (data.transferPlanId ?? null)
+  );
+}
+
+function toSqlLiteral(value: string): string {
+  return `'${value.replace(/'/g, "''")}'`;
+}
+
 function participantCreateInputFromRecord(
   participant: {
     id: string;
@@ -2476,6 +2669,7 @@ function manualPaymentCreateInputFromRecord(
 ) {
   return {
     id: proof.id,
+    idempotencyKey: proof.idempotencyKey,
     transferPlanId: proof.transferPlanId,
     collectionId: proof.collectionId,
     payerUserId: proof.payerUserId,

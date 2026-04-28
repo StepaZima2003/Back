@@ -50,6 +50,19 @@ npm run dev
 
 `prisma` reloads runtime state from PostgreSQL before each operation and then executes the current business flow through the existing store logic. This moves request-time state sourcing onto Postgres while the domain logic is still being migrated away from the in-memory core.
 
+Direct Prisma write/read now covers:
+
+- auth user bootstrap and profile;
+- friends;
+- groups and group members;
+- group templates;
+- collections;
+- participants;
+- collection categories;
+- collection review notifications.
+
+Expenses, calculations, disputes, manual payments, audit log, and related review flows still go through the current fallback store path.
+
 По умолчанию API стартует на `http://localhost:3000`.
 
 ```bash

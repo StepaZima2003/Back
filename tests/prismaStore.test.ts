@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { PrismaMirrorStore, PrismaStore } from "../src/store";
+import { PrismaStore } from "../src/store";
 
 function createSharedPrismaState() {
   const state = {
@@ -195,7 +195,7 @@ function createSharedPrismaState() {
 describe("PrismaStore", () => {
   it("reloads persisted state before operations so a second instance sees the first instance writes", async () => {
     const shared = createSharedPrismaState();
-    const writer = await PrismaMirrorStore.create(shared.client as never);
+    const writer = await PrismaStore.create(shared.client as never);
     const reader = await PrismaStore.create(shared.client as never);
 
     writer.requestOtp("+79990000301");

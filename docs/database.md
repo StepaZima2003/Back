@@ -66,9 +66,22 @@ npm run dev
 
 This mode reloads state from PostgreSQL before each operation and then runs the current business logic through the existing store layer. It is a transition step toward a full direct Prisma store: request-time state now comes from the database, but the domain mutations are still executed through the current in-memory-backed logic before being persisted.
 
+Direct Prisma read/write is already used here for the stable slice:
+
+- user bootstrap and profile;
+- friendships;
+- groups and members;
+- group templates;
+- collections;
+- participants;
+- collection categories;
+- collection review notifications.
+
+Expenses, calculations, disputes, manual payments, notifications outside that slice, and audit-heavy flows still use the fallback path.
+
 ## Persistence Roadmap
 
 1. Keep calculation logic pure and independent from Prisma.
-2. Run the same API smoke tests against `memory`, `prisma-mirror`, and `prisma` providers.
-3. Replace remaining in-memory mutation logic with direct Prisma writes inside the store implementation.
+2. Move expenses, calculations, disputes, manual payments, notifications, and audit flows onto direct Prisma mutations.
+3. Run the same API smoke tests against `memory`, `prisma-mirror`, and `prisma` providers.
 4. Remove the mirror transitional layer after the full Prisma store owns writes directly.

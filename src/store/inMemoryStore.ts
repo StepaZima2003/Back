@@ -54,7 +54,7 @@ export class AppError extends Error {
   }
 }
 
-const DEFAULT_COLLECTION_CATEGORIES: Record<Collection["type"], Array<Pick<ExpenseCategory, "title" | "emoji" | "requiresManualConfirmation" | "autopayAllowedByDefault">>> = {
+export const DEFAULT_COLLECTION_CATEGORIES: Record<Collection["type"], Array<Pick<ExpenseCategory, "title" | "emoji" | "requiresManualConfirmation" | "autopayAllowedByDefault">>> = {
   picnic: [
     { title: "Food", emoji: "🍖", requiresManualConfirmation: false, autopayAllowedByDefault: true },
     { title: "Drinks", emoji: "🥤", requiresManualConfirmation: false, autopayAllowedByDefault: true },

@@ -1,111 +1,568 @@
+import { randomUUID } from "node:crypto";
+import { PrismaClient } from "@prisma/client";
+import type {
+  AuthResult,
+  Collection,
+  CollectionParticipant,
+  CollectionTemplate,
+  ExpenseCategory,
+  Friendship,
+  Group,
+  GroupMember,
+  Notification,
+  User
+} from "../domain";
 import type { AppStore } from "./appStore";
+import { AppError, DEFAULT_COLLECTION_CATEGORIES } from "./inMemoryStore";
 import { PrismaMirrorStore } from "./prismaMirrorStore";
 
-export class PrismaStore implements AppStore {
-  private constructor(private readonly mirror: PrismaMirrorStore) {}
+type PrismaStoreClient = ConstructorParameters<typeof PrismaMirrorStore>[0];
 
-  static async create(client: ConstructorParameters<typeof PrismaMirrorStore>[0]): Promise<PrismaStore> {
+export class PrismaStore implements AppStore {
+  private readonly otpRequests = new Map<string, string>();
+
+  private constructor(
+    private readonly client: PrismaStoreClient,
+    private readonly mirror: PrismaMirrorStore
+  ) {}
+
+  static async create(client: PrismaStoreClient): Promise<PrismaStore> {
     const mirror = await PrismaMirrorStore.create(client);
-    return new PrismaStore(mirror);
+    return new PrismaStore(client, mirror);
   }
 
   requestOtp(phone: string) {
-    return this.mirror.requestOtp(phone);
+    const otp = "000000";
+    this.otpRequests.set(phone, otp);
+    return { phone, otp, expiresInSeconds: 300 };
   }
 
-  async verifyOtp(phone: string, otp: string) {
-    await this.refresh();
-    return await this.mirror.verifyOtp(phone, otp);
+  async verifyOtp(phone: string, otp: string): Promise<AuthResult> {
+    const expectedOtp = this.otpRequests.get(phone);
+    if (expectedOtp && expectedOtp !== otp) {
+      throw new AppError(401, "Invalid OTP.");
+    }
+
+    const existingUser = (await this.client.user.findMany()).find((user) => user.phone === phone);
+    const user = existingUser
+      ? mapUserRecord(existingUser)
+      : mapUserRecord(
+          await this.client.user.upsert({
+            where: { id: randomUUID() },
+            update: {},
+            create: {
+              id: randomUUID(),
+              phone,
+              displayName: `User ${phone.slice(-4)}`,
+              avatarUrl: null,
+              status: "active",
+              verificationLevel: "phone",
+              createdAt: new Date(),
+              updatedAt: new Date()
+            }
+          })
+        );
+
+    this.otpRequests.delete(phone);
+
+    return {
+      user,
+      accessToken: createDevToken(user.id),
+      refreshToken: createDevToken(user.id, "refresh")
+    };
   }
 
-  async authenticate(accessToken: string | undefined) {
-    await this.refresh();
-    return this.mirror.authenticate(accessToken);
+  async authenticate(accessToken: string | undefined): Promise<User> {
+    if (!accessToken) {
+      throw new AppError(401, "Missing bearer token.");
+    }
+
+    const userId = parseDevToken(accessToken);
+    if (!userId) {
+      throw new AppError(401, "Invalid bearer token.");
+    }
+
+    const user = await this.getUser(userId);
+    if (user.status !== "active") {
+      throw new AppError(401, "Invalid bearer token.");
+    }
+
+    return user;
   }
 
-  async getUser(userId: string) {
-    await this.refresh();
-    return this.mirror.getUser(userId);
+  async getUser(userId: string): Promise<User> {
+    const user = (await this.client.user.findMany()).find((item) => item.id === userId);
+    if (!user) {
+      throw new AppError(404, "User not found.");
+    }
+    return mapUserRecord(user);
   }
 
-  async updateUser(userId: string, patch: Parameters<AppStore["updateUser"]>[1]) {
-    await this.refresh();
-    return await this.mirror.updateUser(userId, patch);
+  async updateUser(userId: string, patch: { displayName?: string; avatarUrl?: string | null }): Promise<User> {
+    const current = await this.getUser(userId);
+    const updated = await this.client.user.upsert({
+      where: { id: userId },
+      update: {
+        displayName: patch.displayName ?? current.displayName,
+        avatarUrl: patch.avatarUrl === undefined ? current.avatarUrl : patch.avatarUrl,
+        updatedAt: new Date()
+      },
+      create: {
+        id: current.id,
+        phone: current.phone,
+        displayName: patch.displayName ?? current.displayName,
+        avatarUrl: patch.avatarUrl === undefined ? current.avatarUrl : patch.avatarUrl,
+        status: current.status,
+        verificationLevel: current.verificationLevel,
+        createdAt: new Date(current.createdAt),
+        updatedAt: new Date()
+      }
+    });
+    return mapUserRecord(updated);
   }
 
-  async listFriends(userId: string) {
-    await this.refresh();
-    return this.mirror.listFriends(userId);
+  async listFriends(userId: string): Promise<Friendship[]> {
+    await this.getUser(userId);
+    return (await this.client.friendship.findMany())
+      .filter((friendship) => friendship.userId === userId || friendship.friendId === userId)
+      .map(mapFriendshipRecord);
   }
 
-  async inviteFriend(userId: string, phone: string) {
-    await this.refresh();
-    return await this.mirror.inviteFriend(userId, phone);
+  async inviteFriend(userId: string, phone: string): Promise<Friendship> {
+    const actor = await this.getUser(userId);
+    const friend = (await this.client.user.findMany()).find((user) => user.phone === phone);
+    const friendUser =
+      friend
+        ? mapUserRecord(friend)
+        : mapUserRecord(
+            await this.client.user.upsert({
+              where: { id: randomUUID() },
+              update: {},
+              create: {
+                id: randomUUID(),
+                phone,
+                displayName: `User ${phone.slice(-4)}`,
+                avatarUrl: null,
+                status: "active",
+                verificationLevel: "phone",
+                createdAt: new Date(),
+                updatedAt: new Date()
+              }
+            })
+          );
+
+    if (friendUser.id === actor.id) {
+      throw new AppError(400, "Cannot invite yourself.");
+    }
+
+    const existing = (await this.client.friendship.findMany()).find((friendship) => {
+      const samePair =
+        (friendship.userId === userId && friendship.friendId === friendUser.id) ||
+        (friendship.userId === friendUser.id && friendship.friendId === userId);
+      return samePair && friendship.status !== "blocked";
+    });
+    if (existing) {
+      return mapFriendshipRecord(existing);
+    }
+
+    const created = await this.client.friendship.upsert({
+      where: { id: randomUUID() },
+      update: {},
+      create: {
+        id: randomUUID(),
+        userId,
+        friendId: friendUser.id,
+        status: "pending",
+        createdAt: new Date()
+      }
+    });
+    return mapFriendshipRecord(created);
   }
 
-  async acceptFriendship(userId: string, friendshipId: string) {
-    await this.refresh();
-    return await this.mirror.acceptFriendship(userId, friendshipId);
+  async acceptFriendship(userId: string, friendshipId: string): Promise<Friendship> {
+    const friendship = await this.getFriendshipForUser(userId, friendshipId);
+    const updated = await this.client.friendship.upsert({
+      where: { id: friendship.id },
+      update: { status: "accepted" },
+      create: {
+        id: friendship.id,
+        userId: friendship.userId,
+        friendId: friendship.friendId,
+        status: "accepted",
+        createdAt: new Date(friendship.createdAt)
+      }
+    });
+    return mapFriendshipRecord(updated);
   }
 
-  async declineFriendship(userId: string, friendshipId: string) {
-    await this.refresh();
-    await this.mirror.declineFriendship(userId, friendshipId);
+  async declineFriendship(userId: string, friendshipId: string): Promise<void> {
+    await this.getFriendshipForUser(userId, friendshipId);
+    await this.client.friendship.deleteMany({ where: { id: friendshipId } });
   }
 
-  async listGroups(userId: string) {
-    await this.refresh();
-    return this.mirror.listGroups(userId);
+  async listGroups(userId: string): Promise<Group[]> {
+    await this.getUser(userId);
+    const memberGroupIds = new Set(
+      (await this.client.groupMember.findMany())
+        .filter((member) => member.userId === userId && member.status === "active")
+        .map((member) => member.groupId)
+    );
+    return (await this.client.group.findMany())
+      .filter((group) => memberGroupIds.has(group.id))
+      .map(mapGroupRecord);
   }
 
-  async createGroup(userId: string, data: Parameters<AppStore["createGroup"]>[1]) {
-    await this.refresh();
-    return await this.mirror.createGroup(userId, data);
+  async createGroup(userId: string, data: { title: string; emoji?: string | null; groupType?: Group["groupType"] }): Promise<Group> {
+    await this.getUser(userId);
+    const now = new Date();
+    const groupId = randomUUID();
+    const group = await this.client.group.create({
+      data: {
+        id: groupId,
+        title: data.title,
+        emoji: data.emoji ?? null,
+        ownerId: userId,
+        visibility: "private",
+        groupType: data.groupType ?? "other",
+        createdAt: now,
+        updatedAt: now,
+        members: {
+          create: {
+            id: randomUUID(),
+            userId,
+            role: "owner",
+            status: "active",
+            joinedAt: now
+          }
+        }
+      }
+    });
+    return mapGroupRecord(group);
   }
 
-  async addGroupMember(actorUserId: string, groupId: string, userId: string) {
-    await this.refresh();
-    return await this.mirror.addGroupMember(actorUserId, groupId, userId);
+  async addGroupMember(actorUserId: string, groupId: string, userId: string): Promise<GroupMember> {
+    const group = await this.getGroupForUser(actorUserId, groupId);
+    if (group.ownerId !== actorUserId) {
+      throw new AppError(403, "Only group owner can add members in MVP.");
+    }
+    await this.getUser(userId);
+
+    const existing = (await this.client.groupMember.findMany()).find((member) => member.groupId === groupId && member.userId === userId);
+    if (existing) {
+      return mapGroupMemberRecord(existing);
+    }
+
+    const created = await this.client.groupMember.upsert({
+      where: {
+        groupId_userId: {
+          groupId,
+          userId
+        }
+      },
+      update: {
+        role: "member",
+        status: "active",
+        joinedAt: new Date()
+      },
+      create: {
+        id: randomUUID(),
+        groupId,
+        userId,
+        role: "member",
+        status: "active",
+        joinedAt: new Date()
+      }
+    });
+    return mapGroupMemberRecord(created);
   }
 
-  async createCollection(userId: string, data: Parameters<AppStore["createCollection"]>[1]) {
-    await this.refresh();
-    return await this.mirror.createCollection(userId, data);
+  async createCollection(
+    userId: string,
+    data: {
+      title: string;
+      type?: Collection["type"];
+      groupId?: string | null;
+      paymentMode?: Collection["paymentMode"];
+      templateId?: string | null;
+    }
+  ): Promise<{ collection: Collection; organizerParticipant: CollectionParticipant }> {
+    const template = data.templateId ? await this.getCollectionTemplate(data.templateId) : null;
+    const targetGroupId = data.groupId ?? template?.groupId ?? null;
+
+    if (targetGroupId) {
+      await this.getGroupForUser(userId, targetGroupId);
+    }
+    if (template && template.ownerUserId !== userId) {
+      throw new AppError(403, "Template is not available to this user.");
+    }
+
+    const createdAt = new Date();
+    const collectionId = randomUUID();
+    const collectionType = data.type ?? template?.collectionType ?? "other";
+    const paymentMode = data.paymentMode ?? template?.paymentMode ?? "manual";
+
+    const collectionRecord = await this.client.collection.upsert({
+      where: { id: collectionId },
+      update: {},
+      create: {
+        id: collectionId,
+        title: data.title,
+        type: collectionType,
+        groupId: targetGroupId,
+        organizerId: userId,
+        currency: "RUB",
+        status: "draft",
+        paymentMode,
+        totalAmountMinor: 0,
+        reviewDeadlineAt: null,
+        paymentDeadlineAt: null,
+        createdAt,
+        updatedAt: createdAt
+      }
+    });
+
+    const user = await this.getUser(userId);
+    const organizerParticipantRecord = await this.client.collectionParticipant.upsert({
+      where: { id: randomUUID() },
+      update: {},
+      create: {
+        id: randomUUID(),
+        collectionId,
+        participantType: "registered_user",
+        linkedUserId: userId,
+        invitedPhone: user.phone,
+        displayNameSnapshot: user.displayName,
+        invitedByUserId: userId,
+        paymentResponsibleParticipantId: null,
+        relationshipHint: "self",
+        defaultWeight: 1,
+        status: "active",
+        finalShareAmountMinor: 0,
+        paymentStatus: "pending",
+        createdAt,
+        updatedAt: createdAt
+      }
+    });
+
+    const categorySeeds =
+      template?.categories.map((category) => ({
+        title: category.title,
+        emoji: category.emoji,
+        requiresManualConfirmation: category.requiresManualConfirmation,
+        autopayAllowedByDefault: category.autopayAllowedByDefault
+      })) ?? DEFAULT_COLLECTION_CATEGORIES[collectionType];
+
+    for (const category of categorySeeds) {
+      await this.client.expenseCategory.upsert({
+        where: { id: randomUUID() },
+        update: {},
+        create: {
+          id: randomUUID(),
+          collectionId,
+          title: category.title,
+          emoji: category.emoji ?? null,
+          requiresManualConfirmation: category.requiresManualConfirmation,
+          autopayAllowedByDefault: category.autopayAllowedByDefault,
+          createdAt
+        }
+      });
+    }
+
+    return {
+      collection: mapCollectionRecord(collectionRecord),
+      organizerParticipant: mapParticipantRecord(organizerParticipantRecord)
+    };
   }
 
-  async listCollections(userId: string) {
-    await this.refresh();
-    return this.mirror.listCollections(userId);
+  async listCollections(userId: string): Promise<Collection[]> {
+    await this.getUser(userId);
+    const collections = await this.client.collection.findMany({
+      include: {
+        participants: true
+      }
+    });
+
+    return collections
+      .filter(
+        (collection) =>
+          collection.organizerId === userId || collection.participants.some((participant) => participant.linkedUserId === userId)
+      )
+      .map(mapCollectionRecord);
   }
 
-  async getCollectionForUser(userId: string, collectionId: string) {
-    await this.refresh();
-    return this.mirror.getCollectionForUser(userId, collectionId);
+  async getCollectionForUser(userId: string, collectionId: string): Promise<Collection> {
+    await this.getUser(userId);
+    const collection = await this.getCollectionRecord(collectionId);
+    if (collection.organizerId === userId) {
+      return mapCollectionRecord(collection);
+    }
+
+    const hasAccess = collection.participants.some((participant) => participant.linkedUserId === userId);
+    if (!hasAccess) {
+      throw new AppError(403, "Collection is not available to this user.");
+    }
+
+    return mapCollectionRecord(collection);
   }
 
-  async updateCollectionStatus(userId: string, collectionId: string, status: Parameters<AppStore["updateCollectionStatus"]>[2]) {
-    await this.refresh();
-    return await this.mirror.updateCollectionStatus(userId, collectionId, status);
+  async updateCollectionStatus(userId: string, collectionId: string, status: Collection["status"]): Promise<Collection> {
+    const collection = await this.getOrganizerCollectionRecord(userId, collectionId);
+    const updated = await this.client.collection.upsert({
+      where: { id: collectionId },
+      update: {
+        status,
+        updatedAt: new Date()
+      },
+      create: collectionCreateInputFromRecord(collection, { status, updatedAt: new Date() })
+    });
+
+    if (status === "review") {
+      const participants = await this.listParticipants(userId, collectionId);
+      const targets = new Set<string>();
+      for (const participant of participants) {
+        if (participant.linkedUserId) {
+          targets.add(participant.linkedUserId);
+        }
+      }
+
+      for (const targetUserId of targets) {
+        await this.client.notification.upsert({
+          where: { id: randomUUID() },
+          update: {},
+          create: {
+            id: randomUUID(),
+            userId: targetUserId,
+            collectionId,
+            type: "collection_review_requested",
+            title: "Calculation sent to review",
+            body: "Organizer sent the collection calculation to review.",
+            status: "unread",
+            createdAt: new Date(),
+            readAt: null
+          }
+        });
+      }
+    }
+
+    return mapCollectionRecord(updated);
   }
 
-  async listParticipants(userId: string, collectionId: string) {
-    await this.refresh();
-    return this.mirror.listParticipants(userId, collectionId);
+  async listParticipants(userId: string, collectionId: string): Promise<CollectionParticipant[]> {
+    await this.getCollectionForUser(userId, collectionId);
+    return (await this.client.collection.findMany({ include: { participants: true } }))
+      .find((collection) => collection.id === collectionId)
+      ?.participants.map(mapParticipantRecord) ?? [];
   }
 
-  async addParticipant(userId: string, collectionId: string, data: Parameters<AppStore["addParticipant"]>[2]) {
-    await this.refresh();
-    return await this.mirror.addParticipant(userId, collectionId, data);
+  async addParticipant(
+    userId: string,
+    collectionId: string,
+    data: {
+      linkedUserId?: string | null;
+      invitedPhone?: string | null;
+      displayName?: string | null;
+      defaultWeight?: number;
+      responsiblePayerParticipantId?: string | null;
+    }
+  ): Promise<CollectionParticipant> {
+    await this.getOrganizerCollectionRecord(userId, collectionId);
+    const linkedUser = data.linkedUserId ? await this.getUser(data.linkedUserId) : null;
+    const displayName = data.displayName ?? linkedUser?.displayName ?? data.invitedPhone ?? "Участник";
+
+    const participant = await this.client.collectionParticipant.upsert({
+      where: { id: randomUUID() },
+      update: {},
+      create: {
+        id: randomUUID(),
+        collectionId,
+        participantType: linkedUser ? "registered_user" : data.invitedPhone ? "invited_phone" : "external_person",
+        linkedUserId: linkedUser?.id ?? null,
+        invitedPhone: data.invitedPhone ?? linkedUser?.phone ?? null,
+        displayNameSnapshot: displayName,
+        invitedByUserId: userId,
+        paymentResponsibleParticipantId: data.responsiblePayerParticipantId ?? null,
+        relationshipHint: "other",
+        defaultWeight: data.defaultWeight ?? 1,
+        status: "active",
+        finalShareAmountMinor: 0,
+        paymentStatus: "pending",
+        createdAt: new Date(),
+        updatedAt: new Date()
+      }
+    });
+
+    await this.bumpCollectionStatus(collectionId, "participants_selected");
+    return mapParticipantRecord(participant);
   }
 
-  async addGuest(userId: string, collectionId: string, data: Parameters<AppStore["addGuest"]>[2]) {
-    await this.refresh();
-    return await this.mirror.addGuest(userId, collectionId, data);
+  async addGuest(
+    userId: string,
+    collectionId: string,
+    data: { displayName: string; responsiblePayerParticipantId?: string | null; defaultWeight?: number }
+  ): Promise<CollectionParticipant> {
+    await this.getOrganizerCollectionRecord(userId, collectionId);
+    if (data.responsiblePayerParticipantId) {
+      await this.getParticipantRecord(collectionId, data.responsiblePayerParticipantId);
+    }
+
+    const participant = await this.client.collectionParticipant.upsert({
+      where: { id: randomUUID() },
+      update: {},
+      create: {
+        id: randomUUID(),
+        collectionId,
+        participantType: "guest",
+        linkedUserId: null,
+        invitedPhone: null,
+        displayNameSnapshot: data.displayName,
+        invitedByUserId: userId,
+        paymentResponsibleParticipantId: data.responsiblePayerParticipantId ?? null,
+        relationshipHint: "guest",
+        defaultWeight: data.defaultWeight ?? 1,
+        status: "active",
+        finalShareAmountMinor: 0,
+        paymentStatus: "pending",
+        createdAt: new Date(),
+        updatedAt: new Date()
+      }
+    });
+
+    await this.bumpCollectionStatus(collectionId, "participants_selected");
+    return mapParticipantRecord(participant);
   }
 
-  async addChild(userId: string, collectionId: string, data: Parameters<AppStore["addChild"]>[2]) {
-    await this.refresh();
-    return await this.mirror.addChild(userId, collectionId, data);
+  async addChild(
+    userId: string,
+    collectionId: string,
+    data: { displayName: string; responsiblePayerParticipantId: string; defaultWeight?: number }
+  ): Promise<CollectionParticipant> {
+    await this.getOrganizerCollectionRecord(userId, collectionId);
+    await this.getParticipantRecord(collectionId, data.responsiblePayerParticipantId);
+
+    const participant = await this.client.collectionParticipant.upsert({
+      where: { id: randomUUID() },
+      update: {},
+      create: {
+        id: randomUUID(),
+        collectionId,
+        participantType: "child",
+        linkedUserId: null,
+        invitedPhone: null,
+        displayNameSnapshot: data.displayName,
+        invitedByUserId: userId,
+        paymentResponsibleParticipantId: data.responsiblePayerParticipantId,
+        relationshipHint: "child",
+        defaultWeight: data.defaultWeight ?? 0.5,
+        status: "active",
+        finalShareAmountMinor: 0,
+        paymentStatus: "pending",
+        createdAt: new Date(),
+        updatedAt: new Date()
+      }
+    });
+
+    await this.bumpCollectionStatus(collectionId, "participants_selected");
+    return mapParticipantRecord(participant);
   }
 
   async setResponsiblePayer(
@@ -113,9 +570,26 @@ export class PrismaStore implements AppStore {
     collectionId: string,
     participantId: string,
     responsiblePayerParticipantId: string | null
-  ) {
-    await this.refresh();
-    return await this.mirror.setResponsiblePayer(userId, collectionId, participantId, responsiblePayerParticipantId);
+  ): Promise<CollectionParticipant> {
+    await this.getOrganizerCollectionRecord(userId, collectionId);
+    const participant = await this.getParticipantRecord(collectionId, participantId);
+    if (responsiblePayerParticipantId) {
+      await this.getParticipantRecord(collectionId, responsiblePayerParticipantId);
+    }
+
+    const updated = await this.client.collectionParticipant.upsert({
+      where: { id: participantId },
+      update: {
+        paymentResponsibleParticipantId: responsiblePayerParticipantId,
+        updatedAt: new Date()
+      },
+      create: {
+        ...participant,
+        paymentResponsibleParticipantId: responsiblePayerParticipantId,
+        updatedAt: new Date()
+      }
+    });
+    return mapParticipantRecord(updated);
   }
 
   async listExpenses(userId: string, collectionId: string) {
@@ -123,14 +597,32 @@ export class PrismaStore implements AppStore {
     return this.mirror.listExpenses(userId, collectionId);
   }
 
-  async listCategories(userId: string, collectionId: string) {
-    await this.refresh();
-    return this.mirror.listCategories(userId, collectionId);
+  async listCategories(userId: string, collectionId: string): Promise<ExpenseCategory[]> {
+    await this.getCollectionForUser(userId, collectionId);
+    const collection = (await this.client.collection.findMany({ include: { categories: true } })).find((item) => item.id === collectionId);
+    return collection?.categories.map(mapCategoryRecord).sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.title.localeCompare(b.title)) ?? [];
   }
 
-  async createCategory(userId: string, collectionId: string, data: Parameters<AppStore["createCategory"]>[2]) {
-    await this.refresh();
-    return await this.mirror.createCategory(userId, collectionId, data);
+  async createCategory(
+    userId: string,
+    collectionId: string,
+    data: { title: string; emoji?: string | null; requiresManualConfirmation?: boolean; autopayAllowedByDefault?: boolean }
+  ): Promise<ExpenseCategory> {
+    await this.getOrganizerCollectionRecord(userId, collectionId);
+    const category = await this.client.expenseCategory.upsert({
+      where: { id: randomUUID() },
+      update: {},
+      create: {
+        id: randomUUID(),
+        collectionId,
+        title: data.title,
+        emoji: data.emoji ?? null,
+        requiresManualConfirmation: data.requiresManualConfirmation ?? false,
+        autopayAllowedByDefault: data.autopayAllowedByDefault ?? false,
+        createdAt: new Date()
+      }
+    });
+    return mapCategoryRecord(category);
   }
 
   async createExpense(userId: string, collectionId: string, data: Parameters<AppStore["createExpense"]>[2]) {
@@ -218,27 +710,475 @@ export class PrismaStore implements AppStore {
     return this.mirror.listAuditLogs(userId, collectionId);
   }
 
-  async listGroupTemplates(userId: string, groupId: string) {
-    await this.refresh();
-    return this.mirror.listGroupTemplates(userId, groupId);
+  async listGroupTemplates(userId: string, groupId: string): Promise<CollectionTemplate[]> {
+    await this.getGroupForUser(userId, groupId);
+    return (await this.client.collectionTemplate.findMany({ include: { categories: true } }))
+      .filter((template) => template.groupId === groupId)
+      .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
+      .map(mapTemplateRecord);
   }
 
-  async createGroupTemplate(userId: string, groupId: string, data: Parameters<AppStore["createGroupTemplate"]>[2]) {
-    await this.refresh();
-    return await this.mirror.createGroupTemplate(userId, groupId, data);
+  async createGroupTemplate(
+    userId: string,
+    groupId: string,
+    data: {
+      title: string;
+      collectionType: Collection["type"];
+      paymentMode?: Collection["paymentMode"];
+      categories?: Array<{
+        title: string;
+        emoji?: string | null;
+        requiresManualConfirmation?: boolean;
+        autopayAllowedByDefault?: boolean;
+      }>;
+    }
+  ): Promise<CollectionTemplate> {
+    await this.getGroupForUser(userId, groupId);
+
+    const templateId = randomUUID();
+    const seeds =
+      data.categories?.map((category, index) => ({
+        id: randomUUID(),
+        templateId,
+        title: category.title,
+        emoji: category.emoji ?? null,
+        requiresManualConfirmation: category.requiresManualConfirmation ?? false,
+        autopayAllowedByDefault: category.autopayAllowedByDefault ?? false,
+        sortOrder: index
+      })) ??
+      DEFAULT_COLLECTION_CATEGORIES[data.collectionType].map((category, index) => ({
+        id: randomUUID(),
+        templateId,
+        title: category.title,
+        emoji: category.emoji ?? null,
+        requiresManualConfirmation: category.requiresManualConfirmation,
+        autopayAllowedByDefault: category.autopayAllowedByDefault,
+        sortOrder: index
+      }));
+
+    const template = await this.client.collectionTemplate.create({
+      data: {
+        id: templateId,
+        groupId,
+        ownerUserId: userId,
+        title: data.title,
+        collectionType: data.collectionType,
+        paymentMode: data.paymentMode ?? "manual",
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        categories: {
+          create: seeds
+        }
+      }
+    });
+
+    return mapTemplateRecord({
+      ...template,
+      categories: seeds
+    });
   }
 
-  async listNotifications(userId: string) {
-    await this.refresh();
-    return this.mirror.listNotifications(userId);
+  async listNotifications(userId: string): Promise<Notification[]> {
+    await this.getUser(userId);
+    return (await this.client.notification.findMany())
+      .filter((notification) => notification.userId === userId)
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+      .map(mapNotificationRecord);
   }
 
-  async markNotificationRead(userId: string, notificationId: string) {
-    await this.refresh();
-    return await this.mirror.markNotificationRead(userId, notificationId);
+  async markNotificationRead(userId: string, notificationId: string): Promise<Notification> {
+    const notification = (await this.client.notification.findMany()).find((item) => item.id === notificationId);
+    if (!notification || notification.userId !== userId) {
+      throw new AppError(404, "Notification not found.");
+    }
+
+    const updated = await this.client.notification.upsert({
+      where: { id: notificationId },
+      update: {
+        status: "read",
+        readAt: new Date()
+      },
+      create: {
+        ...notification,
+        status: "read",
+        readAt: new Date()
+      }
+    });
+
+    return mapNotificationRecord(updated);
   }
 
   private async refresh(): Promise<void> {
     await this.mirror.hydrateFromDatabase();
   }
+
+  private async getFriendshipForUser(userId: string, friendshipId: string): Promise<Friendship> {
+    const friendship = (await this.client.friendship.findMany()).find((item) => item.id === friendshipId);
+    if (!friendship || (friendship.userId !== userId && friendship.friendId !== userId)) {
+      throw new AppError(404, "Friendship not found.");
+    }
+    return mapFriendshipRecord(friendship);
+  }
+
+  private async getGroupForUser(userId: string, groupId: string): Promise<Group> {
+    const group = (await this.client.group.findMany()).find((item) => item.id === groupId);
+    if (!group) {
+      throw new AppError(404, "Group not found.");
+    }
+
+    const isMember = (await this.client.groupMember.findMany()).some(
+      (member) => member.groupId === groupId && member.userId === userId && member.status === "active"
+    );
+    if (!isMember) {
+      throw new AppError(403, "Group is not available to this user.");
+    }
+
+    return mapGroupRecord(group);
+  }
+
+  private async getCollectionRecord(collectionId: string) {
+    const collection = (await this.client.collection.findMany({ include: { participants: true } })).find((item) => item.id === collectionId);
+    if (!collection) {
+      throw new AppError(404, "Collection not found.");
+    }
+    return collection;
+  }
+
+  private async getOrganizerCollectionRecord(userId: string, collectionId: string) {
+    const collection = await this.getCollectionRecord(collectionId);
+    if (collection.organizerId !== userId) {
+      throw new AppError(403, "Only organizer can change collection in MVP.");
+    }
+    return collection;
+  }
+
+  private async getParticipantRecord(collectionId: string, participantId: string) {
+    const collection = (await this.client.collection.findMany({ include: { participants: true } })).find((item) => item.id === collectionId);
+    const participant = collection?.participants.find((item) => item.id === participantId);
+    if (!participant) {
+      throw new AppError(404, "Participant not found.");
+    }
+    return participant;
+  }
+
+  private async getCollectionTemplate(templateId: string): Promise<CollectionTemplate> {
+    const template = (await this.client.collectionTemplate.findMany({ include: { categories: true } })).find((item) => item.id === templateId);
+    if (!template) {
+      throw new AppError(404, "Collection template not found.");
+    }
+    return mapTemplateRecord(template);
+  }
+
+  private async bumpCollectionStatus(collectionId: string, status: Collection["status"]): Promise<void> {
+    const collection = await this.getCollectionRecord(collectionId);
+    if (collection.status === "cancelled" || collection.status === "closed") {
+      return;
+    }
+    await this.client.collection.upsert({
+      where: { id: collectionId },
+      update: {
+        status,
+        updatedAt: new Date()
+      },
+      create: collectionCreateInputFromRecord(collection, { status, updatedAt: new Date() })
+    });
+  }
+}
+
+function mapUserRecord(record: {
+  id: string;
+  phone: string;
+  displayName: string;
+  avatarUrl: string | null;
+  status: User["status"];
+  verificationLevel: User["verificationLevel"];
+  createdAt: Date;
+  updatedAt: Date;
+}): User {
+  return {
+    id: record.id,
+    phone: record.phone,
+    displayName: record.displayName,
+    avatarUrl: record.avatarUrl,
+    status: record.status,
+    verificationLevel: record.verificationLevel,
+    createdAt: record.createdAt.toISOString(),
+    updatedAt: record.updatedAt.toISOString()
+  };
+}
+
+function mapFriendshipRecord(record: {
+  id: string;
+  userId: string;
+  friendId: string;
+  status: Friendship["status"];
+  createdAt: Date;
+}): Friendship {
+  return {
+    id: record.id,
+    userId: record.userId,
+    friendId: record.friendId,
+    status: record.status,
+    createdAt: record.createdAt.toISOString()
+  };
+}
+
+function mapGroupRecord(record: {
+  id: string;
+  title: string;
+  emoji: string | null;
+  ownerId: string;
+  visibility: Group["visibility"];
+  groupType: Group["groupType"];
+  createdAt: Date;
+  updatedAt: Date;
+}): Group {
+  return {
+    id: record.id,
+    title: record.title,
+    emoji: record.emoji,
+    ownerId: record.ownerId,
+    visibility: record.visibility,
+    groupType: record.groupType,
+    createdAt: record.createdAt.toISOString(),
+    updatedAt: record.updatedAt.toISOString()
+  };
+}
+
+function mapGroupMemberRecord(record: {
+  id: string;
+  groupId: string;
+  userId: string;
+  role: GroupMember["role"];
+  status: GroupMember["status"];
+  joinedAt: Date;
+}): GroupMember {
+  return {
+    id: record.id,
+    groupId: record.groupId,
+    userId: record.userId,
+    role: record.role,
+    status: record.status,
+    joinedAt: record.joinedAt.toISOString()
+  };
+}
+
+function mapCollectionRecord(record: {
+  id: string;
+  title: string;
+  type: Collection["type"];
+  groupId: string | null;
+  organizerId: string;
+  currency: string;
+  status: Collection["status"];
+  paymentMode: Collection["paymentMode"];
+  totalAmountMinor: number;
+  reviewDeadlineAt: Date | null;
+  paymentDeadlineAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+}): Collection {
+  return {
+    id: record.id,
+    title: record.title,
+    type: record.type,
+    groupId: record.groupId,
+    organizerId: record.organizerId,
+    currency: "RUB",
+    status: record.status,
+    paymentMode: record.paymentMode,
+    totalAmountMinor: record.totalAmountMinor,
+    reviewDeadlineAt: record.reviewDeadlineAt?.toISOString() ?? null,
+    paymentDeadlineAt: record.paymentDeadlineAt?.toISOString() ?? null,
+    createdAt: record.createdAt.toISOString(),
+    updatedAt: record.updatedAt.toISOString()
+  };
+}
+
+function mapParticipantRecord(record: {
+  id: string;
+  collectionId: string;
+  participantType: CollectionParticipant["participantType"];
+  linkedUserId: string | null;
+  invitedPhone: string | null;
+  displayNameSnapshot: string;
+  invitedByUserId: string | null;
+  paymentResponsibleParticipantId: string | null;
+  relationshipHint: string;
+  defaultWeight: { toNumber?: () => number } | number;
+  status: CollectionParticipant["status"];
+  finalShareAmountMinor: number;
+  paymentStatus: CollectionParticipant["paymentStatus"];
+  createdAt: Date;
+  updatedAt: Date;
+}): CollectionParticipant {
+  const defaultWeight = typeof record.defaultWeight === "number" ? record.defaultWeight : (record.defaultWeight.toNumber?.() ?? 1);
+  return {
+    id: record.id,
+    collectionId: record.collectionId,
+    participantType: record.participantType,
+    linkedUserId: record.linkedUserId,
+    invitedPhone: record.invitedPhone,
+    displayNameSnapshot: record.displayNameSnapshot,
+    invitedByUserId: record.invitedByUserId,
+    paymentResponsibleParticipantId: record.paymentResponsibleParticipantId,
+    relationshipHint: normalizeRelationshipHint(record.relationshipHint),
+    defaultWeight,
+    status: record.status,
+    finalShareAmountMinor: record.finalShareAmountMinor,
+    paymentStatus: record.paymentStatus,
+    createdAt: record.createdAt.toISOString(),
+    updatedAt: record.updatedAt.toISOString()
+  };
+}
+
+function mapCategoryRecord(record: {
+  id: string;
+  collectionId: string;
+  title: string;
+  emoji: string | null;
+  requiresManualConfirmation: boolean;
+  autopayAllowedByDefault: boolean;
+  createdAt: Date;
+}): ExpenseCategory {
+  return {
+    id: record.id,
+    collectionId: record.collectionId,
+    title: record.title,
+    emoji: record.emoji,
+    requiresManualConfirmation: record.requiresManualConfirmation,
+    autopayAllowedByDefault: record.autopayAllowedByDefault,
+    createdAt: record.createdAt.toISOString()
+  };
+}
+
+function mapTemplateRecord(record: {
+  id: string;
+  groupId: string;
+  ownerUserId: string;
+  title: string;
+  collectionType: CollectionTemplate["collectionType"];
+  paymentMode: CollectionTemplate["paymentMode"];
+  createdAt: Date;
+  updatedAt: Date;
+  categories: Array<{
+    id: string;
+    templateId: string;
+    title: string;
+    emoji: string | null;
+    requiresManualConfirmation: boolean;
+    autopayAllowedByDefault: boolean;
+    sortOrder: number;
+  }>;
+}): CollectionTemplate {
+  return {
+    id: record.id,
+    groupId: record.groupId,
+    ownerUserId: record.ownerUserId,
+    title: record.title,
+    collectionType: record.collectionType,
+    paymentMode: record.paymentMode,
+    createdAt: record.createdAt.toISOString(),
+    updatedAt: record.updatedAt.toISOString(),
+    categories: record.categories.map((category) => ({
+      id: category.id,
+      templateId: category.templateId,
+      title: category.title,
+      emoji: category.emoji,
+      requiresManualConfirmation: category.requiresManualConfirmation,
+      autopayAllowedByDefault: category.autopayAllowedByDefault,
+      sortOrder: category.sortOrder
+    }))
+  };
+}
+
+function mapNotificationRecord(record: {
+  id: string;
+  userId: string;
+  collectionId: string | null;
+  type: Notification["type"];
+  title: string;
+  body: string;
+  status: Notification["status"];
+  createdAt: Date;
+  readAt: Date | null;
+}): Notification {
+  return {
+    id: record.id,
+    userId: record.userId,
+    collectionId: record.collectionId,
+    type: record.type,
+    title: record.title,
+    body: record.body,
+    status: record.status,
+    createdAt: record.createdAt.toISOString(),
+    readAt: record.readAt?.toISOString() ?? null
+  };
+}
+
+function normalizeRelationshipHint(value: string): CollectionParticipant["relationshipHint"] {
+  switch (value) {
+    case "self":
+    case "partner":
+    case "child":
+    case "guest":
+    case "family":
+    case "colleague":
+    case "other":
+      return value;
+    default:
+      return "other";
+  }
+}
+
+function createDevToken(userId: string, kind = "access"): string {
+  return Buffer.from(`socialsplit:${kind}:${userId}`, "utf8").toString("base64url");
+}
+
+function parseDevToken(token: string): string | null {
+  try {
+    const decoded = Buffer.from(token, "base64url").toString("utf8");
+    const [namespace, _kind, userId] = decoded.split(":");
+    return namespace === "socialsplit" && userId ? userId : null;
+  } catch {
+    return null;
+  }
+}
+
+function collectionCreateInputFromRecord(
+  collection: {
+    id: string;
+    title: string;
+    type: Collection["type"];
+    groupId: string | null;
+    organizerId: string;
+    currency: string;
+    status: Collection["status"];
+    paymentMode: Collection["paymentMode"];
+    totalAmountMinor: number;
+    reviewDeadlineAt: Date | null;
+    paymentDeadlineAt: Date | null;
+    createdAt: Date;
+    updatedAt: Date;
+  },
+  overrides?: Partial<{
+    status: Collection["status"];
+    updatedAt: Date;
+  }>
+) {
+  return {
+    id: collection.id,
+    title: collection.title,
+    type: collection.type,
+    groupId: collection.groupId,
+    organizerId: collection.organizerId,
+    currency: collection.currency,
+    status: overrides?.status ?? collection.status,
+    paymentMode: collection.paymentMode,
+    totalAmountMinor: collection.totalAmountMinor,
+    reviewDeadlineAt: collection.reviewDeadlineAt,
+    paymentDeadlineAt: collection.paymentDeadlineAt,
+    createdAt: collection.createdAt,
+    updatedAt: overrides?.updatedAt ?? collection.updatedAt
+  };
 }

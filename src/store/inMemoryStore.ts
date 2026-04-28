@@ -907,6 +907,43 @@ export class InMemoryStore {
     return updated;
   }
 
+  debugGetCollectionState(collectionId: string): {
+    collection: Collection;
+    participants: CollectionParticipant[];
+    categories: ExpenseCategory[];
+    expenses: Expense[];
+    expensePayments: ExpensePayment[];
+    shareRules: ExpenseShareRule[];
+    calculationVersions: CalculationVersion[];
+    disputes: Dispute[];
+    manualPaymentProofs: ManualPaymentProof[];
+    auditLogs: AuditLog[];
+    notifications: Notification[];
+  } {
+    const expenses = this.getExpenses(collectionId);
+    return {
+      collection: this.getCollection(collectionId),
+      participants: this.getParticipants(collectionId),
+      categories: this.getCategories(collectionId),
+      expenses,
+      expensePayments: expenses.flatMap((expense) => this.getExpensePayments(expense.id)),
+      shareRules: expenses.flatMap((expense) => this.getExpenseShareRules(expense.id)),
+      calculationVersions: this.getCalculationVersions(collectionId),
+      disputes: [...this.disputes.values()].filter((dispute) => dispute.collectionId === collectionId),
+      manualPaymentProofs: [...this.manualPaymentProofs.values()].filter((proof) => proof.collectionId === collectionId),
+      auditLogs: [...this.auditLogs.values()].filter((log) => log.collectionId === collectionId),
+      notifications: [...this.notifications.values()].filter((notification) => notification.collectionId === collectionId)
+    };
+  }
+
+  debugGetNotification(notificationId: string): Notification | null {
+    return this.notifications.get(notificationId) ?? null;
+  }
+
+  debugGetExpense(expenseId: string): Expense {
+    return this.getExpense(expenseId);
+  }
+
   private getDispute(disputeId: string): Dispute {
     const dispute = this.disputes.get(disputeId);
     if (!dispute) {

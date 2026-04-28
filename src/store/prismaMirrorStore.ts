@@ -1,10 +1,30 @@
+import { createHash } from "node:crypto";
 import { Prisma, PrismaClient } from "@prisma/client";
+import type { Notification } from "../domain";
 import type { AppStore } from "./appStore";
 import { InMemoryStore } from "./inMemoryStore";
 
 type PrismaMirrorClient = Pick<
   PrismaClient,
-  "collection" | "collectionParticipant" | "collectionTemplate" | "expenseCategory" | "friendship" | "group" | "groupMember" | "user"
+  | "auditLog"
+  | "calculationVersion"
+  | "collection"
+  | "collectionParticipant"
+  | "collectionTemplate"
+  | "dispute"
+  | "expense"
+  | "expenseCategory"
+  | "expensePayment"
+  | "expenseShareRule"
+  | "friendship"
+  | "group"
+  | "groupMember"
+  | "manualPaymentProof"
+  | "notification"
+  | "participantCalculation"
+  | "responsiblePayerCalculation"
+  | "transferPlan"
+  | "user"
 >;
 
 export class PrismaMirrorStore implements AppStore {
@@ -144,54 +164,7 @@ export class PrismaMirrorStore implements AppStore {
 
   async createCollection(userId: string, data: Parameters<InMemoryStore["createCollection"]>[1]) {
     const result = this.memory.createCollection(userId, data);
-    const categories = this.memory.listCategories(userId, result.collection.id);
-
-    await this.client.collection.create({
-      data: {
-        id: result.collection.id,
-        title: result.collection.title,
-        type: result.collection.type,
-        groupId: result.collection.groupId,
-        organizerId: result.collection.organizerId,
-        currency: result.collection.currency,
-        status: result.collection.status,
-        paymentMode: result.collection.paymentMode,
-        totalAmountMinor: result.collection.totalAmountMinor,
-        reviewDeadlineAt: asOptionalDate(result.collection.reviewDeadlineAt),
-        paymentDeadlineAt: asOptionalDate(result.collection.paymentDeadlineAt),
-        createdAt: asDate(result.collection.createdAt),
-        updatedAt: asDate(result.collection.updatedAt),
-        participants: {
-          create: {
-            id: result.organizerParticipant.id,
-            participantType: result.organizerParticipant.participantType,
-            linkedUserId: result.organizerParticipant.linkedUserId,
-            invitedPhone: result.organizerParticipant.invitedPhone,
-            displayNameSnapshot: result.organizerParticipant.displayNameSnapshot,
-            invitedByUserId: result.organizerParticipant.invitedByUserId,
-            paymentResponsibleParticipantId: result.organizerParticipant.paymentResponsibleParticipantId,
-            relationshipHint: result.organizerParticipant.relationshipHint,
-            defaultWeight: toDecimal(result.organizerParticipant.defaultWeight),
-            status: result.organizerParticipant.status,
-            finalShareAmountMinor: result.organizerParticipant.finalShareAmountMinor,
-            paymentStatus: result.organizerParticipant.paymentStatus,
-            createdAt: asDate(result.organizerParticipant.createdAt),
-            updatedAt: asDate(result.organizerParticipant.updatedAt)
-          }
-        },
-        categories: {
-          create: categories.map((category) => ({
-            id: category.id,
-            title: category.title,
-            emoji: category.emoji,
-            requiresManualConfirmation: category.requiresManualConfirmation,
-            autopayAllowedByDefault: category.autopayAllowedByDefault,
-            createdAt: asDate(category.createdAt)
-          }))
-        }
-      }
-    });
-
+    await this.syncCollectionState(result.collection.id);
     return result;
   }
 
@@ -203,33 +176,43 @@ export class PrismaMirrorStore implements AppStore {
     return this.memory.getCollectionForUser(userId, collectionId);
   }
 
-  updateCollectionStatus(userId: string, collectionId: string, status: Parameters<InMemoryStore["updateCollectionStatus"]>[2]) {
-    return this.memory.updateCollectionStatus(userId, collectionId, status);
+  async updateCollectionStatus(userId: string, collectionId: string, status: Parameters<InMemoryStore["updateCollectionStatus"]>[2]) {
+    const collection = this.memory.updateCollectionStatus(userId, collectionId, status);
+    await this.syncCollectionState(collectionId);
+    return collection;
   }
 
   listParticipants(userId: string, collectionId: string) {
     return this.memory.listParticipants(userId, collectionId);
   }
 
-  addParticipant(userId: string, collectionId: string, data: Parameters<InMemoryStore["addParticipant"]>[2]) {
-    return this.memory.addParticipant(userId, collectionId, data);
+  async addParticipant(userId: string, collectionId: string, data: Parameters<InMemoryStore["addParticipant"]>[2]) {
+    const participant = this.memory.addParticipant(userId, collectionId, data);
+    await this.syncCollectionState(collectionId);
+    return participant;
   }
 
-  addGuest(userId: string, collectionId: string, data: Parameters<InMemoryStore["addGuest"]>[2]) {
-    return this.memory.addGuest(userId, collectionId, data);
+  async addGuest(userId: string, collectionId: string, data: Parameters<InMemoryStore["addGuest"]>[2]) {
+    const participant = this.memory.addGuest(userId, collectionId, data);
+    await this.syncCollectionState(collectionId);
+    return participant;
   }
 
-  addChild(userId: string, collectionId: string, data: Parameters<InMemoryStore["addChild"]>[2]) {
-    return this.memory.addChild(userId, collectionId, data);
+  async addChild(userId: string, collectionId: string, data: Parameters<InMemoryStore["addChild"]>[2]) {
+    const participant = this.memory.addChild(userId, collectionId, data);
+    await this.syncCollectionState(collectionId);
+    return participant;
   }
 
-  setResponsiblePayer(
+  async setResponsiblePayer(
     userId: string,
     collectionId: string,
     participantId: string,
     responsiblePayerParticipantId: string | null
   ) {
-    return this.memory.setResponsiblePayer(userId, collectionId, participantId, responsiblePayerParticipantId);
+    const participant = this.memory.setResponsiblePayer(userId, collectionId, participantId, responsiblePayerParticipantId);
+    await this.syncCollectionState(collectionId);
+    return participant;
   }
 
   listExpenses(userId: string, collectionId: string) {
@@ -242,78 +225,96 @@ export class PrismaMirrorStore implements AppStore {
 
   async createCategory(userId: string, collectionId: string, data: Parameters<InMemoryStore["createCategory"]>[2]) {
     const category = this.memory.createCategory(userId, collectionId, data);
-    await this.client.expenseCategory.create({
-      data: {
-        id: category.id,
-        collectionId: category.collectionId,
-        title: category.title,
-        emoji: category.emoji,
-        requiresManualConfirmation: category.requiresManualConfirmation,
-        autopayAllowedByDefault: category.autopayAllowedByDefault,
-        createdAt: asDate(category.createdAt)
-      }
-    });
+    await this.syncCollectionState(collectionId);
     return category;
   }
 
-  createExpense(userId: string, collectionId: string, data: Parameters<InMemoryStore["createExpense"]>[2]) {
-    return this.memory.createExpense(userId, collectionId, data);
+  async createExpense(userId: string, collectionId: string, data: Parameters<InMemoryStore["createExpense"]>[2]) {
+    const result = this.memory.createExpense(userId, collectionId, data);
+    await this.syncCollectionState(collectionId);
+    return result;
   }
 
-  addExpensePayment(userId: string, expenseId: string, data: Parameters<InMemoryStore["addExpensePayment"]>[2]) {
-    return this.memory.addExpensePayment(userId, expenseId, data);
+  async addExpensePayment(userId: string, expenseId: string, data: Parameters<InMemoryStore["addExpensePayment"]>[2]) {
+    const payment = this.memory.addExpensePayment(userId, expenseId, data);
+    const expense = this.memory.debugGetExpense(payment.expenseId);
+    await this.syncCollectionState(expense.collectionId);
+    return payment;
   }
 
-  addShareRule(userId: string, expenseId: string, data: Parameters<InMemoryStore["addShareRule"]>[2]) {
-    return this.memory.addShareRule(userId, expenseId, data);
+  async addShareRule(userId: string, expenseId: string, data: Parameters<InMemoryStore["addShareRule"]>[2]) {
+    const rule = this.memory.addShareRule(userId, expenseId, data);
+    const expense = this.memory.debugGetExpense(rule.expenseId);
+    await this.syncCollectionState(expense.collectionId);
+    return rule;
   }
 
-  calculateCollection(userId: string, collectionId: string) {
-    return this.memory.calculateCollection(userId, collectionId);
+  async calculateCollection(userId: string, collectionId: string) {
+    const version = this.memory.calculateCollection(userId, collectionId);
+    await this.syncCollectionState(collectionId);
+    return version;
   }
 
   getLatestCalculation(userId: string, collectionId: string) {
     return this.memory.getLatestCalculation(userId, collectionId);
   }
 
-  confirmParticipantReview(userId: string, collectionId: string, participantId: string) {
-    return this.memory.confirmParticipantReview(userId, collectionId, participantId);
+  async confirmParticipantReview(userId: string, collectionId: string, participantId: string) {
+    const participant = this.memory.confirmParticipantReview(userId, collectionId, participantId);
+    await this.syncCollectionState(collectionId);
+    return participant;
   }
 
-  createDispute(userId: string, collectionId: string, data: Parameters<InMemoryStore["createDispute"]>[2]) {
-    return this.memory.createDispute(userId, collectionId, data);
+  async createDispute(userId: string, collectionId: string, data: Parameters<InMemoryStore["createDispute"]>[2]) {
+    const dispute = this.memory.createDispute(userId, collectionId, data);
+    await this.syncCollectionState(collectionId);
+    return dispute;
   }
 
   listDisputes(userId: string, collectionId: string) {
     return this.memory.listDisputes(userId, collectionId);
   }
 
-  acceptDispute(userId: string, disputeId: string, resolutionComment?: string | null) {
-    return this.memory.acceptDispute(userId, disputeId, resolutionComment);
+  async acceptDispute(userId: string, disputeId: string, resolutionComment?: string | null) {
+    const dispute = this.memory.acceptDispute(userId, disputeId, resolutionComment);
+    await this.syncCollectionState(dispute.collectionId);
+    return dispute;
   }
 
-  rejectDispute(userId: string, disputeId: string, resolutionComment?: string | null) {
-    return this.memory.rejectDispute(userId, disputeId, resolutionComment);
+  async rejectDispute(userId: string, disputeId: string, resolutionComment?: string | null) {
+    const dispute = this.memory.rejectDispute(userId, disputeId, resolutionComment);
+    await this.syncCollectionState(dispute.collectionId);
+    return dispute;
   }
 
-  resolveDispute(userId: string, disputeId: string, resolutionComment?: string | null) {
-    return this.memory.resolveDispute(userId, disputeId, resolutionComment);
+  async resolveDispute(userId: string, disputeId: string, resolutionComment?: string | null) {
+    const result = this.memory.resolveDispute(userId, disputeId, resolutionComment);
+    await this.syncCollectionState(result.dispute.collectionId);
+    return result;
   }
 
-  markManualPaymentPaid(userId: string, collectionId: string, data: Parameters<InMemoryStore["markManualPaymentPaid"]>[2]) {
-    return this.memory.markManualPaymentPaid(userId, collectionId, data);
+  async markManualPaymentPaid(userId: string, collectionId: string, data: Parameters<InMemoryStore["markManualPaymentPaid"]>[2]) {
+    const proof = this.memory.markManualPaymentPaid(userId, collectionId, data);
+    await this.syncCollectionState(collectionId);
+    return proof;
   }
 
-  uploadManualPaymentProof(userId: string, proofId: string, data: Parameters<InMemoryStore["uploadManualPaymentProof"]>[2]) {
-    return this.memory.uploadManualPaymentProof(userId, proofId, data);
+  async uploadManualPaymentProof(userId: string, proofId: string, data: Parameters<InMemoryStore["uploadManualPaymentProof"]>[2]) {
+    const proof = this.memory.uploadManualPaymentProof(userId, proofId, data);
+    await this.syncCollectionState(proof.collectionId);
+    return proof;
   }
 
-  confirmManualPayment(userId: string, proofId: string) {
-    return this.memory.confirmManualPayment(userId, proofId);
+  async confirmManualPayment(userId: string, proofId: string) {
+    const proof = this.memory.confirmManualPayment(userId, proofId);
+    await this.syncCollectionState(proof.collectionId);
+    return proof;
   }
 
-  rejectManualPayment(userId: string, proofId: string) {
-    return this.memory.rejectManualPayment(userId, proofId);
+  async rejectManualPayment(userId: string, proofId: string) {
+    const proof = this.memory.rejectManualPayment(userId, proofId);
+    await this.syncCollectionState(proof.collectionId);
+    return proof;
   }
 
   listManualPayments(userId: string, collectionId: string) {
@@ -359,8 +360,397 @@ export class PrismaMirrorStore implements AppStore {
     return this.memory.listNotifications(userId);
   }
 
-  markNotificationRead(userId: string, notificationId: string) {
-    return this.memory.markNotificationRead(userId, notificationId);
+  async markNotificationRead(userId: string, notificationId: string) {
+    const notification = this.memory.markNotificationRead(userId, notificationId);
+    if (notification.collectionId) {
+      await this.syncCollectionState(notification.collectionId);
+    } else {
+      await this.upsertNotification(notification);
+    }
+    return notification;
+  }
+
+  private async syncCollectionState(collectionId: string) {
+    const state = this.memory.debugGetCollectionState(collectionId);
+
+    await this.client.collection.upsert({
+      where: { id: state.collection.id },
+      update: {
+        title: state.collection.title,
+        type: state.collection.type,
+        groupId: state.collection.groupId,
+        organizerId: state.collection.organizerId,
+        currency: state.collection.currency,
+        status: state.collection.status,
+        paymentMode: state.collection.paymentMode,
+        totalAmountMinor: state.collection.totalAmountMinor,
+        reviewDeadlineAt: asOptionalDate(state.collection.reviewDeadlineAt),
+        paymentDeadlineAt: asOptionalDate(state.collection.paymentDeadlineAt),
+        updatedAt: asDate(state.collection.updatedAt)
+      },
+      create: {
+        id: state.collection.id,
+        title: state.collection.title,
+        type: state.collection.type,
+        groupId: state.collection.groupId,
+        organizerId: state.collection.organizerId,
+        currency: state.collection.currency,
+        status: state.collection.status,
+        paymentMode: state.collection.paymentMode,
+        totalAmountMinor: state.collection.totalAmountMinor,
+        reviewDeadlineAt: asOptionalDate(state.collection.reviewDeadlineAt),
+        paymentDeadlineAt: asOptionalDate(state.collection.paymentDeadlineAt),
+        createdAt: asDate(state.collection.createdAt),
+        updatedAt: asDate(state.collection.updatedAt)
+      }
+    });
+
+    for (const participant of state.participants) {
+      await this.client.collectionParticipant.upsert({
+        where: { id: participant.id },
+        update: {
+          participantType: participant.participantType,
+          linkedUserId: participant.linkedUserId,
+          invitedPhone: participant.invitedPhone,
+          displayNameSnapshot: participant.displayNameSnapshot,
+          invitedByUserId: participant.invitedByUserId,
+          paymentResponsibleParticipantId: participant.paymentResponsibleParticipantId,
+          relationshipHint: participant.relationshipHint,
+          defaultWeight: toDecimal(participant.defaultWeight),
+          status: participant.status,
+          finalShareAmountMinor: participant.finalShareAmountMinor,
+          paymentStatus: participant.paymentStatus,
+          updatedAt: asDate(participant.updatedAt)
+        },
+        create: {
+          id: participant.id,
+          collectionId: participant.collectionId,
+          participantType: participant.participantType,
+          linkedUserId: participant.linkedUserId,
+          invitedPhone: participant.invitedPhone,
+          displayNameSnapshot: participant.displayNameSnapshot,
+          invitedByUserId: participant.invitedByUserId,
+          paymentResponsibleParticipantId: participant.paymentResponsibleParticipantId,
+          relationshipHint: participant.relationshipHint,
+          defaultWeight: toDecimal(participant.defaultWeight),
+          status: participant.status,
+          finalShareAmountMinor: participant.finalShareAmountMinor,
+          paymentStatus: participant.paymentStatus,
+          createdAt: asDate(participant.createdAt),
+          updatedAt: asDate(participant.updatedAt)
+        }
+      });
+    }
+
+    for (const category of state.categories) {
+      await this.client.expenseCategory.upsert({
+        where: { id: category.id },
+        update: {
+          title: category.title,
+          emoji: category.emoji,
+          requiresManualConfirmation: category.requiresManualConfirmation,
+          autopayAllowedByDefault: category.autopayAllowedByDefault
+        },
+        create: {
+          id: category.id,
+          collectionId: category.collectionId,
+          title: category.title,
+          emoji: category.emoji,
+          requiresManualConfirmation: category.requiresManualConfirmation,
+          autopayAllowedByDefault: category.autopayAllowedByDefault,
+          createdAt: asDate(category.createdAt)
+        }
+      });
+    }
+
+    for (const expense of state.expenses) {
+      const primaryPayment = state.expensePayments.find((payment) => payment.expenseId === expense.id);
+      await this.client.expense.upsert({
+        where: { id: expense.id },
+        update: {
+          title: expense.title,
+          amountMinor: expense.amountMinor,
+          currency: expense.currency,
+          expenseType: expense.expenseType,
+          primaryPaidByParticipantId: primaryPayment?.paidByParticipantId ?? null,
+          categoryId: expense.categoryId,
+          receiptUrl: expense.receiptUrl,
+          comment: expense.comment,
+          updatedAt: asDate(expense.updatedAt)
+        },
+        create: {
+          id: expense.id,
+          collectionId: expense.collectionId,
+          title: expense.title,
+          amountMinor: expense.amountMinor,
+          currency: expense.currency,
+          expenseType: expense.expenseType,
+          primaryPaidByParticipantId: primaryPayment?.paidByParticipantId ?? null,
+          categoryId: expense.categoryId,
+          receiptUrl: expense.receiptUrl,
+          comment: expense.comment,
+          createdAt: asDate(expense.createdAt),
+          updatedAt: asDate(expense.updatedAt)
+        }
+      });
+    }
+
+    for (const payment of state.expensePayments) {
+      await this.client.expensePayment.upsert({
+        where: { id: payment.id },
+        update: {
+          paidByParticipantId: payment.paidByParticipantId,
+          amountMinor: payment.amountMinor,
+          currency: payment.currency,
+          paymentSource: payment.paymentSource,
+          comment: payment.comment
+        },
+        create: {
+          id: payment.id,
+          expenseId: payment.expenseId,
+          paidByParticipantId: payment.paidByParticipantId,
+          amountMinor: payment.amountMinor,
+          currency: payment.currency,
+          paymentSource: payment.paymentSource,
+          comment: payment.comment,
+          createdAt: asDate(payment.createdAt)
+        }
+      });
+    }
+
+    for (const rule of state.shareRules) {
+      await this.client.expenseShareRule.upsert({
+        where: { id: rule.id },
+        update: {
+          expenseId: rule.expenseId,
+          expenseItemId: rule.expenseItemId,
+          categoryId: rule.categoryId,
+          participantId: rule.participantId,
+          splitMode: rule.splitMode,
+          weight: asOptionalDecimal(rule.weight),
+          fixedAmountMinor: rule.fixedAmountMinor ?? null,
+          percent: asOptionalDecimal(rule.percent),
+          capAmountMinor: rule.capAmountMinor ?? null,
+          excluded: rule.excluded ?? false,
+          reason: rule.reason ?? null
+        },
+        create: {
+          id: rule.id,
+          expenseId: rule.expenseId,
+          expenseItemId: rule.expenseItemId,
+          categoryId: rule.categoryId,
+          participantId: rule.participantId,
+          splitMode: rule.splitMode,
+          weight: asOptionalDecimal(rule.weight),
+          fixedAmountMinor: rule.fixedAmountMinor ?? null,
+          percent: asOptionalDecimal(rule.percent),
+          capAmountMinor: rule.capAmountMinor ?? null,
+          excluded: rule.excluded ?? false,
+          reason: rule.reason ?? null
+        }
+      });
+    }
+
+    for (const version of state.calculationVersions) {
+      await this.client.calculationVersion.upsert({
+        where: { id: version.id },
+        update: {
+          version: version.version,
+          status: version.status,
+          totalAmountMinor: version.totalAmountMinor,
+          createdByUserId: version.createdByUserId,
+          result: asJson(version.result)
+        },
+        create: {
+          id: version.id,
+          collectionId: version.collectionId,
+          version: version.version,
+          status: version.status,
+          totalAmountMinor: version.totalAmountMinor,
+          createdByUserId: version.createdByUserId,
+          result: asJson(version.result),
+          createdAt: asDate(version.createdAt)
+        }
+      });
+
+      await this.client.participantCalculation.deleteMany({
+        where: { calculationVersionId: version.id }
+      });
+      if (version.result.participantCalculations.length > 0) {
+        await this.client.participantCalculation.createMany({
+          data: version.result.participantCalculations.map((item) => ({
+            id: stableUuid(`${version.id}:participant:${item.participantId}`),
+            calculationVersionId: version.id,
+            participantId: item.participantId,
+            paymentResponsibleParticipantId: item.responsiblePayerId,
+            owesAmountMinor: item.owesAmountMinor,
+            paidAmountMinor: item.paidAmountMinor,
+            netBalanceMinor: item.netBalanceMinor,
+            explanation: asJson(item.explanation)
+          }))
+        });
+      }
+
+      await this.client.responsiblePayerCalculation.deleteMany({
+        where: { calculationVersionId: version.id }
+      });
+      if (version.result.responsiblePayerCalculations.length > 0) {
+        await this.client.responsiblePayerCalculation.createMany({
+          data: version.result.responsiblePayerCalculations.map((item) => ({
+            id: stableUuid(`${version.id}:responsible:${item.responsiblePayerId}`),
+            calculationVersionId: version.id,
+            responsibleUserId: state.participants.find((participant) => participant.id === item.responsiblePayerId)?.linkedUserId ?? null,
+            responsibleParticipantId: item.responsiblePayerId,
+            totalOwesAmountMinor: item.totalOwesAmountMinor,
+            totalPaidAmountMinor: item.totalPaidAmountMinor,
+            netBalanceMinor: item.netBalanceMinor,
+            coveredParticipantIds: item.coveredParticipantIds,
+            explanationSummary: asJson(item.explanationSummary)
+          }))
+        });
+      }
+
+      await this.client.transferPlan.deleteMany({
+        where: { calculationVersionId: version.id }
+      });
+      if (version.result.transferPlan.length > 0) {
+        await this.client.transferPlan.createMany({
+          data: version.result.transferPlan.map((item, index) => ({
+            id: stableUuid(`${version.id}:transfer:${index}:${item.fromResponsiblePayerId}:${item.toResponsiblePayerId}:${item.amountMinor}`),
+            calculationVersionId: version.id,
+            fromResponsibleParticipantId: item.fromResponsiblePayerId,
+            toResponsibleParticipantId: item.toResponsiblePayerId,
+            amountMinor: item.amountMinor,
+            status: item.status,
+            confirmationRequiredBy: item.confirmationRequiredBy,
+            confirmedByUserId: null,
+            proofUrl: null,
+            comment: null
+          }))
+        });
+      }
+    }
+
+    for (const dispute of state.disputes) {
+      await this.client.dispute.upsert({
+        where: { id: dispute.id },
+        update: {
+          participantId: dispute.participantId,
+          createdByUserId: dispute.createdByUserId,
+          targetParticipantId: dispute.targetParticipantId,
+          type: dispute.type,
+          message: dispute.message,
+          status: dispute.status,
+          resolutionComment: dispute.resolutionComment,
+          resolvedAt: asOptionalDate(dispute.resolvedAt)
+        },
+        create: {
+          id: dispute.id,
+          collectionId: dispute.collectionId,
+          participantId: dispute.participantId,
+          createdByUserId: dispute.createdByUserId,
+          targetParticipantId: dispute.targetParticipantId,
+          type: dispute.type,
+          message: dispute.message,
+          status: dispute.status,
+          resolutionComment: dispute.resolutionComment,
+          createdAt: asDate(dispute.createdAt),
+          resolvedAt: asOptionalDate(dispute.resolvedAt)
+        }
+      });
+    }
+
+    for (const proof of state.manualPaymentProofs) {
+      await this.client.manualPaymentProof.upsert({
+        where: { id: proof.id },
+        update: {
+          transferPlanId: proof.transferPlanId,
+          payerUserId: proof.payerUserId,
+          payerParticipantId: proof.payerParticipantId,
+          receiverUserId: proof.receiverUserId,
+          receiverParticipantId: proof.receiverParticipantId,
+          amountMinor: proof.amountMinor,
+          method: proof.method,
+          comment: proof.comment,
+          proofUrl: proof.proofUrl,
+          status: proof.status,
+          updatedAt: asDate(proof.updatedAt)
+        },
+        create: {
+          id: proof.id,
+          transferPlanId: proof.transferPlanId,
+          collectionId: proof.collectionId,
+          payerUserId: proof.payerUserId,
+          payerParticipantId: proof.payerParticipantId,
+          receiverUserId: proof.receiverUserId,
+          receiverParticipantId: proof.receiverParticipantId,
+          amountMinor: proof.amountMinor,
+          method: proof.method,
+          comment: proof.comment,
+          proofUrl: proof.proofUrl,
+          status: proof.status,
+          createdAt: asDate(proof.createdAt),
+          updatedAt: asDate(proof.updatedAt)
+        }
+      });
+    }
+
+    for (const log of state.auditLogs) {
+      await this.client.auditLog.upsert({
+        where: { id: log.id },
+        update: {
+          actorUserId: log.actorUserId,
+          entityType: log.entityType,
+          entityId: log.entityId,
+          action: log.action,
+          metadata: asJson(log.metadata),
+          ipAddress: log.ipAddress,
+          userAgent: log.userAgent
+        },
+        create: {
+          id: log.id,
+          actorUserId: log.actorUserId,
+          entityType: log.entityType,
+          entityId: log.entityId,
+          collectionId: log.collectionId,
+          action: log.action,
+          metadata: asJson(log.metadata),
+          ipAddress: log.ipAddress,
+          userAgent: log.userAgent,
+          createdAt: asDate(log.createdAt)
+        }
+      });
+    }
+
+    for (const notification of state.notifications) {
+      await this.upsertNotification(notification);
+    }
+  }
+
+  private async upsertNotification(notification: Notification) {
+    await this.client.notification.upsert({
+      where: { id: notification.id },
+      update: {
+        userId: notification.userId,
+        collectionId: notification.collectionId,
+        type: notification.type,
+        title: notification.title,
+        body: notification.body,
+        status: notification.status,
+        readAt: asOptionalDate(notification.readAt)
+      },
+      create: {
+        id: notification.id,
+        userId: notification.userId,
+        collectionId: notification.collectionId,
+        type: notification.type,
+        title: notification.title,
+        body: notification.body,
+        status: notification.status,
+        createdAt: asDate(notification.createdAt),
+        readAt: asOptionalDate(notification.readAt)
+      }
+    });
   }
 
   private async upsertUser(user: ReturnType<InMemoryStore["getUser"]>) {
@@ -398,4 +788,19 @@ function asOptionalDate(value: string | null): Date | null {
 
 function toDecimal(value: number): Prisma.Decimal {
   return new Prisma.Decimal(value.toString());
+}
+
+function asOptionalDecimal(value: number | null | undefined): Prisma.Decimal | null {
+  return value === null || value === undefined ? null : new Prisma.Decimal(value.toString());
+}
+
+function asJson(value: unknown): Prisma.InputJsonValue {
+  return value as Prisma.InputJsonValue;
+}
+
+function stableUuid(key: string): string {
+  const hex = createHash("sha1").update(key).digest("hex").slice(0, 32).split("");
+  hex[12] = "5";
+  hex[16] = ["8", "9", "a", "b"][Number.parseInt(hex[16] ?? "0", 16) % 4];
+  return `${hex.slice(0, 8).join("")}-${hex.slice(8, 12).join("")}-${hex.slice(12, 16).join("")}-${hex.slice(16, 20).join("")}-${hex.slice(20, 32).join("")}`;
 }

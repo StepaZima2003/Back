@@ -47,14 +47,20 @@ npm run dev
 - friendships;
 - groups and group members;
 - group templates with template categories;
-- collections with organizer participant and collection categories.
+- collections, participants, and collection categories;
+- expenses, payments, and share rules;
+- calculation versions with participant/responsible-payer snapshots and transfer plans;
+- disputes;
+- manual payment proofs;
+- audit log;
+- collection-scoped notifications.
 
-Expenses, calculations, disputes, manual payments, notifications, and audit logs are still memory-only in this mode.
+Read-side hydration is still not implemented in this mode, so process restart still drops the runtime state even though the mirror writes are persisted.
 
 ## Persistence Roadmap
 
 1. Keep calculation logic pure and independent from Prisma.
-2. Expand mirror coverage to participants, expenses, share rules, calculations, disputes, manual payments, notifications, and audit logs.
-3. Add read-side hydration from Prisma so restart no longer loses mirrored data.
-4. Run the same API smoke tests against both `InMemoryStore` and the Prisma-backed store contract.
-5. Switch production bootstrap to a full Prisma store behind an environment flag.
+2. Add read-side hydration from Prisma so restart no longer loses mirrored data.
+3. Run the same API smoke tests against both `InMemoryStore` and the Prisma-backed store contract.
+4. Switch production bootstrap to a full Prisma store behind an environment flag.
+5. Remove the mirror transitional layer after the full Prisma store owns writes directly.

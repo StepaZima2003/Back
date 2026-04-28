@@ -5,8 +5,7 @@ Working notes for the next SocialSplitApp backend increment.
 ## Next MVP layer
 
 - async-compatible store contract across Fastify routes and auth context;
-- `prisma-mirror` dual-write mode for stable entities;
-- extend mirror coverage to participants, expenses, calculations, disputes, manual payments, notifications, and audit logs;
+- `prisma-mirror` now covers the current MVP write flow;
 - add read-side hydration from Prisma to survive process restart;
 - keep contract tests for both in-memory and Prisma-backed store implementations;
 - add item-level split for restaurant receipts;

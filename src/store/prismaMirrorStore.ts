@@ -1,8 +1,25 @@
 import { createHash } from "node:crypto";
 import { Prisma, PrismaClient } from "@prisma/client";
-import type { Notification } from "../domain";
+import type {
+  AuditLog,
+  CalculationVersion,
+  Collection,
+  CollectionParticipant,
+  CollectionTemplate,
+  Dispute,
+  Expense,
+  ExpenseCategory,
+  ExpensePayment,
+  ExpenseShareRule,
+  Friendship,
+  Group,
+  GroupMember,
+  ManualPaymentProof,
+  Notification,
+  User
+} from "../domain";
 import type { AppStore } from "./appStore";
-import { InMemoryStore } from "./inMemoryStore";
+import { InMemoryStore, type InMemoryStoreSnapshot } from "./inMemoryStore";
 
 type PrismaMirrorClient = Pick<
   PrismaClient,
@@ -31,6 +48,65 @@ export class PrismaMirrorStore implements AppStore {
   private readonly memory = new InMemoryStore();
 
   constructor(private readonly client: PrismaMirrorClient) {}
+
+  static async create(client: PrismaMirrorClient): Promise<PrismaMirrorStore> {
+    const store = new PrismaMirrorStore(client);
+    await store.hydrateFromDatabase();
+    return store;
+  }
+
+  async hydrateFromDatabase(): Promise<void> {
+    const [users, friendships, groups, groupMembers, collectionTemplates, collections, notifications] = await Promise.all([
+      this.client.user.findMany(),
+      this.client.friendship.findMany(),
+      this.client.group.findMany(),
+      this.client.groupMember.findMany(),
+      this.client.collectionTemplate.findMany({ include: { categories: true } }),
+      this.client.collection.findMany({
+        include: {
+          participants: true,
+          categories: true,
+          expenses: {
+            include: {
+              payments: true,
+              shareRules: true
+            }
+          },
+          calculationVersions: true,
+          disputes: true,
+          manualPaymentProofs: true,
+          auditLogs: true,
+          notifications: true
+        }
+      }),
+      this.client.notification.findMany()
+    ]);
+
+    const snapshot: InMemoryStoreSnapshot = {
+      users: users.map(mapUserRecord),
+      friendships: friendships.map(mapFriendshipRecord),
+      groups: groups.map(mapGroupRecord),
+      groupMembers: groupMembers.map(mapGroupMemberRecord),
+      collections: collections.map(mapCollectionRecord),
+      participants: collections.flatMap((collection) => collection.participants.map(mapParticipantRecord)),
+      expenses: collections.flatMap((collection) => collection.expenses.map(mapExpenseRecord)),
+      expenseCategories: collections.flatMap((collection) => collection.categories.map(mapCategoryRecord)),
+      expensePayments: collections.flatMap((collection) => collection.expenses.flatMap((expense) => expense.payments.map(mapExpensePaymentRecord))),
+      shareRules: collections.flatMap((collection) =>
+        collection.expenses.flatMap((expense) =>
+          expense.shareRules.flatMap((rule) => (rule.expenseId ? [mapShareRuleRecord({ ...rule, expenseId: rule.expenseId })] : []))
+        )
+      ),
+      calculationVersions: collections.flatMap((collection) => collection.calculationVersions.map(mapCalculationVersionRecord)),
+      collectionTemplates: collectionTemplates.map(mapTemplateRecord),
+      disputes: collections.flatMap((collection) => collection.disputes.map(mapDisputeRecord)),
+      manualPaymentProofs: collections.flatMap((collection) => collection.manualPaymentProofs.map(mapManualPaymentProofRecord)),
+      auditLogs: collections.flatMap((collection) => collection.auditLogs.map(mapAuditLogRecord)),
+      notifications: notifications.map(mapNotificationRecord)
+    };
+
+    this.memory.debugLoadSnapshot(snapshot);
+  }
 
   requestOtp(phone: string) {
     return this.memory.requestOtp(phone);
@@ -803,4 +879,439 @@ function stableUuid(key: string): string {
   hex[12] = "5";
   hex[16] = ["8", "9", "a", "b"][Number.parseInt(hex[16] ?? "0", 16) % 4];
   return `${hex.slice(0, 8).join("")}-${hex.slice(8, 12).join("")}-${hex.slice(12, 16).join("")}-${hex.slice(16, 20).join("")}-${hex.slice(20, 32).join("")}`;
+}
+
+function mapUserRecord(record: {
+  id: string;
+  phone: string;
+  displayName: string;
+  avatarUrl: string | null;
+  status: User["status"];
+  verificationLevel: User["verificationLevel"];
+  createdAt: Date;
+  updatedAt: Date;
+}): User {
+  return {
+    id: record.id,
+    phone: record.phone,
+    displayName: record.displayName,
+    avatarUrl: record.avatarUrl,
+    status: record.status,
+    verificationLevel: record.verificationLevel,
+    createdAt: record.createdAt.toISOString(),
+    updatedAt: record.updatedAt.toISOString()
+  };
+}
+
+function mapFriendshipRecord(record: {
+  id: string;
+  userId: string;
+  friendId: string;
+  status: Friendship["status"];
+  createdAt: Date;
+}): Friendship {
+  return {
+    id: record.id,
+    userId: record.userId,
+    friendId: record.friendId,
+    status: record.status,
+    createdAt: record.createdAt.toISOString()
+  };
+}
+
+function mapGroupRecord(record: {
+  id: string;
+  title: string;
+  emoji: string | null;
+  ownerId: string;
+  visibility: Group["visibility"];
+  groupType: Group["groupType"];
+  createdAt: Date;
+  updatedAt: Date;
+}): Group {
+  return {
+    id: record.id,
+    title: record.title,
+    emoji: record.emoji,
+    ownerId: record.ownerId,
+    visibility: record.visibility,
+    groupType: record.groupType,
+    createdAt: record.createdAt.toISOString(),
+    updatedAt: record.updatedAt.toISOString()
+  };
+}
+
+function mapGroupMemberRecord(record: {
+  id: string;
+  groupId: string;
+  userId: string;
+  role: GroupMember["role"];
+  status: GroupMember["status"];
+  joinedAt: Date;
+}): GroupMember {
+  return {
+    id: record.id,
+    groupId: record.groupId,
+    userId: record.userId,
+    role: record.role,
+    status: record.status,
+    joinedAt: record.joinedAt.toISOString()
+  };
+}
+
+function mapCollectionRecord(record: {
+  id: string;
+  title: string;
+  type: Collection["type"];
+  groupId: string | null;
+  organizerId: string;
+  currency: string;
+  status: Collection["status"];
+  paymentMode: Collection["paymentMode"];
+  totalAmountMinor: number;
+  reviewDeadlineAt: Date | null;
+  paymentDeadlineAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+}): Collection {
+  return {
+    id: record.id,
+    title: record.title,
+    type: record.type,
+    groupId: record.groupId,
+    organizerId: record.organizerId,
+    currency: "RUB",
+    status: record.status,
+    paymentMode: record.paymentMode,
+    totalAmountMinor: record.totalAmountMinor,
+    reviewDeadlineAt: record.reviewDeadlineAt?.toISOString() ?? null,
+    paymentDeadlineAt: record.paymentDeadlineAt?.toISOString() ?? null,
+    createdAt: record.createdAt.toISOString(),
+    updatedAt: record.updatedAt.toISOString()
+  };
+}
+
+function mapParticipantRecord(record: {
+  id: string;
+  collectionId: string;
+  participantType: CollectionParticipant["participantType"];
+  linkedUserId: string | null;
+  invitedPhone: string | null;
+  displayNameSnapshot: string;
+  invitedByUserId: string | null;
+  paymentResponsibleParticipantId: string | null;
+  relationshipHint: string;
+  defaultWeight: Prisma.Decimal;
+  status: CollectionParticipant["status"];
+  finalShareAmountMinor: number;
+  paymentStatus: CollectionParticipant["paymentStatus"];
+  createdAt: Date;
+  updatedAt: Date;
+}): CollectionParticipant {
+  return {
+    id: record.id,
+    collectionId: record.collectionId,
+    participantType: record.participantType,
+    linkedUserId: record.linkedUserId,
+    invitedPhone: record.invitedPhone,
+    displayNameSnapshot: record.displayNameSnapshot,
+    invitedByUserId: record.invitedByUserId,
+    paymentResponsibleParticipantId: record.paymentResponsibleParticipantId,
+    relationshipHint: normalizeRelationshipHint(record.relationshipHint),
+    defaultWeight: record.defaultWeight.toNumber(),
+    status: record.status,
+    finalShareAmountMinor: record.finalShareAmountMinor,
+    paymentStatus: record.paymentStatus,
+    createdAt: record.createdAt.toISOString(),
+    updatedAt: record.updatedAt.toISOString()
+  };
+}
+
+function mapExpenseRecord(record: {
+  id: string;
+  collectionId: string;
+  title: string;
+  amountMinor: number;
+  currency: string;
+  expenseType: Expense["expenseType"];
+  categoryId: string | null;
+  receiptUrl: string | null;
+  comment: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+}): Expense {
+  return {
+    id: record.id,
+    collectionId: record.collectionId,
+    title: record.title,
+    amountMinor: record.amountMinor,
+    currency: "RUB",
+    expenseType: record.expenseType,
+    categoryId: record.categoryId,
+    receiptUrl: record.receiptUrl,
+    comment: record.comment,
+    createdAt: record.createdAt.toISOString(),
+    updatedAt: record.updatedAt.toISOString()
+  };
+}
+
+function mapCategoryRecord(record: {
+  id: string;
+  collectionId: string;
+  title: string;
+  emoji: string | null;
+  requiresManualConfirmation: boolean;
+  autopayAllowedByDefault: boolean;
+  createdAt: Date;
+}): ExpenseCategory {
+  return {
+    id: record.id,
+    collectionId: record.collectionId,
+    title: record.title,
+    emoji: record.emoji,
+    requiresManualConfirmation: record.requiresManualConfirmation,
+    autopayAllowedByDefault: record.autopayAllowedByDefault,
+    createdAt: record.createdAt.toISOString()
+  };
+}
+
+function mapExpensePaymentRecord(record: {
+  id: string;
+  expenseId: string;
+  paidByParticipantId: string;
+  amountMinor: number;
+  currency: string;
+  paymentSource: ExpensePayment["paymentSource"];
+  comment: string | null;
+  createdAt: Date;
+}): ExpensePayment {
+  return {
+    id: record.id,
+    expenseId: record.expenseId,
+    paidByParticipantId: record.paidByParticipantId,
+    amountMinor: record.amountMinor,
+    currency: "RUB",
+    paymentSource: record.paymentSource,
+    comment: record.comment,
+    createdAt: record.createdAt.toISOString()
+  };
+}
+
+function mapShareRuleRecord(record: {
+  id: string;
+  expenseId: string;
+  expenseItemId: string | null;
+  categoryId: string | null;
+  participantId: string;
+  splitMode: ExpenseShareRule["splitMode"];
+  weight: Prisma.Decimal | null;
+  fixedAmountMinor: number | null;
+  percent: Prisma.Decimal | null;
+  capAmountMinor: number | null;
+  excluded: boolean;
+  reason: string | null;
+}): ExpenseShareRule {
+  return {
+    id: record.id,
+    expenseId: record.expenseId,
+    expenseItemId: record.expenseItemId,
+    categoryId: record.categoryId,
+    participantId: record.participantId,
+    splitMode: record.splitMode,
+    weight: record.weight?.toNumber() ?? null,
+    fixedAmountMinor: record.fixedAmountMinor,
+    percent: record.percent?.toNumber() ?? null,
+    capAmountMinor: record.capAmountMinor,
+    excluded: record.excluded,
+    reason: record.reason
+  };
+}
+
+function mapCalculationVersionRecord(record: {
+  id: string;
+  collectionId: string;
+  version: number;
+  status: CalculationVersion["status"];
+  totalAmountMinor: number;
+  createdByUserId: string;
+  result: Prisma.JsonValue;
+  createdAt: Date;
+}): CalculationVersion {
+  return {
+    id: record.id,
+    collectionId: record.collectionId,
+    version: record.version,
+    status: record.status,
+    totalAmountMinor: record.totalAmountMinor,
+    createdByUserId: record.createdByUserId,
+    result: record.result as unknown as CalculationVersion["result"],
+    createdAt: record.createdAt.toISOString()
+  };
+}
+
+function mapTemplateRecord(record: {
+  id: string;
+  groupId: string;
+  ownerUserId: string;
+  title: string;
+  collectionType: CollectionTemplate["collectionType"];
+  paymentMode: CollectionTemplate["paymentMode"];
+  createdAt: Date;
+  updatedAt: Date;
+  categories: Array<{
+    id: string;
+    templateId: string;
+    title: string;
+    emoji: string | null;
+    requiresManualConfirmation: boolean;
+    autopayAllowedByDefault: boolean;
+    sortOrder: number;
+  }>;
+}): CollectionTemplate {
+  return {
+    id: record.id,
+    groupId: record.groupId,
+    ownerUserId: record.ownerUserId,
+    title: record.title,
+    collectionType: record.collectionType,
+    paymentMode: record.paymentMode,
+    createdAt: record.createdAt.toISOString(),
+    updatedAt: record.updatedAt.toISOString(),
+    categories: record.categories.map((category) => ({
+      id: category.id,
+      templateId: category.templateId,
+      title: category.title,
+      emoji: category.emoji,
+      requiresManualConfirmation: category.requiresManualConfirmation,
+      autopayAllowedByDefault: category.autopayAllowedByDefault,
+      sortOrder: category.sortOrder
+    }))
+  };
+}
+
+function mapDisputeRecord(record: {
+  id: string;
+  collectionId: string;
+  participantId: string;
+  createdByUserId: string;
+  targetParticipantId: string | null;
+  type: Dispute["type"];
+  message: string;
+  status: Dispute["status"];
+  resolutionComment: string | null;
+  createdAt: Date;
+  resolvedAt: Date | null;
+}): Dispute {
+  return {
+    id: record.id,
+    collectionId: record.collectionId,
+    participantId: record.participantId,
+    createdByUserId: record.createdByUserId,
+    targetParticipantId: record.targetParticipantId,
+    type: record.type,
+    message: record.message,
+    status: record.status,
+    resolutionComment: record.resolutionComment,
+    createdAt: record.createdAt.toISOString(),
+    resolvedAt: record.resolvedAt?.toISOString() ?? null
+  };
+}
+
+function mapManualPaymentProofRecord(record: {
+  id: string;
+  transferPlanId: string | null;
+  collectionId: string;
+  payerUserId: string;
+  payerParticipantId: string | null;
+  receiverUserId: string | null;
+  receiverParticipantId: string | null;
+  amountMinor: number;
+  method: ManualPaymentProof["method"];
+  comment: string | null;
+  proofUrl: string | null;
+  status: ManualPaymentProof["status"];
+  createdAt: Date;
+  updatedAt: Date;
+}): ManualPaymentProof {
+  return {
+    id: record.id,
+    transferPlanId: record.transferPlanId,
+    collectionId: record.collectionId,
+    payerUserId: record.payerUserId,
+    payerParticipantId: record.payerParticipantId,
+    receiverUserId: record.receiverUserId,
+    receiverParticipantId: record.receiverParticipantId,
+    amountMinor: record.amountMinor,
+    method: record.method,
+    comment: record.comment,
+    proofUrl: record.proofUrl,
+    status: record.status,
+    createdAt: record.createdAt.toISOString(),
+    updatedAt: record.updatedAt.toISOString()
+  };
+}
+
+function mapAuditLogRecord(record: {
+  id: string;
+  actorUserId: string | null;
+  entityType: AuditLog["entityType"];
+  entityId: string;
+  collectionId: string | null;
+  action: AuditLog["action"];
+  metadata: Prisma.JsonValue;
+  ipAddress: string | null;
+  userAgent: string | null;
+  createdAt: Date;
+}): AuditLog {
+  return {
+    id: record.id,
+    actorUserId: record.actorUserId,
+    entityType: record.entityType,
+    entityId: record.entityId,
+    collectionId: record.collectionId,
+    action: record.action,
+    metadata: (record.metadata ?? {}) as Record<string, unknown>,
+    ipAddress: record.ipAddress,
+    userAgent: record.userAgent,
+    createdAt: record.createdAt.toISOString()
+  };
+}
+
+function mapNotificationRecord(record: {
+  id: string;
+  userId: string;
+  collectionId: string | null;
+  type: Notification["type"];
+  title: string;
+  body: string;
+  status: Notification["status"];
+  createdAt: Date;
+  readAt: Date | null;
+}): Notification {
+  return {
+    id: record.id,
+    userId: record.userId,
+    collectionId: record.collectionId,
+    type: record.type,
+    title: record.title,
+    body: record.body,
+    status: record.status,
+    createdAt: record.createdAt.toISOString(),
+    readAt: record.readAt?.toISOString() ?? null
+  };
+}
+
+function normalizeRelationshipHint(value: string): CollectionParticipant["relationshipHint"] {
+  switch (value) {
+    case "self":
+    case "partner":
+    case "child":
+    case "guest":
+    case "family":
+    case "colleague":
+    case "other":
+      return value;
+    default:
+      return "other";
+  }
 }

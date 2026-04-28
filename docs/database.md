@@ -55,12 +55,11 @@ npm run dev
 - audit log;
 - collection-scoped notifications.
 
-Read-side hydration is still not implemented in this mode, so process restart still drops the runtime state even though the mirror writes are persisted.
+On startup, `prisma-mirror` now hydrates persisted users, groups, templates, collections, participants, expenses, calculations, disputes, manual payments, audit logs, and notifications back into the in-memory runtime layer.
 
 ## Persistence Roadmap
 
 1. Keep calculation logic pure and independent from Prisma.
-2. Add read-side hydration from Prisma so restart no longer loses mirrored data.
-3. Run the same API smoke tests against both `InMemoryStore` and the Prisma-backed store contract.
-4. Switch production bootstrap to a full Prisma store behind an environment flag.
-5. Remove the mirror transitional layer after the full Prisma store owns writes directly.
+2. Run the same API smoke tests against both `InMemoryStore` and the Prisma-backed store contract.
+3. Switch production bootstrap to a full Prisma store behind an environment flag.
+4. Remove the mirror transitional layer after the full Prisma store owns writes directly.

@@ -39,7 +39,7 @@ $env:STORE_PROVIDER="prisma-mirror"
 npm run dev
 ```
 
-`prisma-mirror` keeps in-memory execution semantics and dual-writes the current MVP flow into PostgreSQL: users, friendships, groups, templates, collections, participants, categories, expenses, share rules, calculations, disputes, manual payments, audit log, and collection-scoped notifications.
+`prisma-mirror` keeps in-memory execution semantics, dual-writes the current MVP flow into PostgreSQL, and hydrates persisted runtime state back on startup. Covered: users, friendships, groups, templates, collections, participants, categories, expenses, share rules, calculations, disputes, manual payments, audit log, and collection-scoped notifications.
 
 По умолчанию API стартует на `http://localhost:3000`.
 

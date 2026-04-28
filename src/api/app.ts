@@ -16,7 +16,7 @@ export interface BuildAppOptions {
 }
 
 export async function buildApp(options: BuildAppOptions = {}) {
-  const store = options.store ?? createAppStoreFromEnv();
+  const store = options.store ?? (await createAppStoreFromEnv());
   const app = Fastify({ logger: options.logger ?? false });
 
   app.setErrorHandler((error, _request, reply) => {

@@ -3,10 +3,10 @@ import type { AppStore } from "./appStore";
 import { InMemoryStore } from "./inMemoryStore";
 import { PrismaMirrorStore } from "./prismaMirrorStore";
 
-export function createAppStoreFromEnv(): AppStore {
+export async function createAppStoreFromEnv(): Promise<AppStore> {
   const provider = process.env.STORE_PROVIDER ?? "memory";
   if (provider === "prisma-mirror") {
-    return new PrismaMirrorStore(prisma);
+    return await PrismaMirrorStore.create(prisma);
   }
 
   return new InMemoryStore();

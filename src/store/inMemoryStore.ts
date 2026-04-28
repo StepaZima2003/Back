@@ -26,6 +26,25 @@ import type {
   User
 } from "../domain";
 
+export interface InMemoryStoreSnapshot {
+  users: User[];
+  friendships: Friendship[];
+  groups: Group[];
+  groupMembers: GroupMember[];
+  collections: Collection[];
+  participants: CollectionParticipant[];
+  expenses: Expense[];
+  expenseCategories: ExpenseCategory[];
+  expensePayments: ExpensePayment[];
+  shareRules: ExpenseShareRule[];
+  calculationVersions: CalculationVersion[];
+  collectionTemplates: CollectionTemplate[];
+  disputes: Dispute[];
+  manualPaymentProofs: ManualPaymentProof[];
+  auditLogs: AuditLog[];
+  notifications: Notification[];
+}
+
 export class AppError extends Error {
   constructor(
     public readonly statusCode: number,
@@ -942,6 +961,77 @@ export class InMemoryStore {
 
   debugGetExpense(expenseId: string): Expense {
     return this.getExpense(expenseId);
+  }
+
+  debugLoadSnapshot(snapshot: InMemoryStoreSnapshot): void {
+    this.otpRequests.clear();
+    this.users.clear();
+    this.usersByPhone.clear();
+    this.friendships.clear();
+    this.groups.clear();
+    this.groupMembers.clear();
+    this.collections.clear();
+    this.participants.clear();
+    this.expenses.clear();
+    this.expenseCategories.clear();
+    this.expensePayments.clear();
+    this.shareRules.clear();
+    this.calculationVersions.clear();
+    this.collectionTemplates.clear();
+    this.disputes.clear();
+    this.manualPaymentProofs.clear();
+    this.auditLogs.clear();
+    this.notifications.clear();
+
+    for (const user of snapshot.users) {
+      this.users.set(user.id, user);
+      this.usersByPhone.set(user.phone, user.id);
+    }
+    for (const friendship of snapshot.friendships) {
+      this.friendships.set(friendship.id, friendship);
+    }
+    for (const group of snapshot.groups) {
+      this.groups.set(group.id, group);
+    }
+    for (const member of snapshot.groupMembers) {
+      this.groupMembers.set(member.id, member);
+    }
+    for (const collection of snapshot.collections) {
+      this.collections.set(collection.id, collection);
+    }
+    for (const participant of snapshot.participants) {
+      this.participants.set(participant.id, participant);
+    }
+    for (const expense of snapshot.expenses) {
+      this.expenses.set(expense.id, expense);
+    }
+    for (const category of snapshot.expenseCategories) {
+      this.expenseCategories.set(category.id, category);
+    }
+    for (const payment of snapshot.expensePayments) {
+      this.expensePayments.set(payment.id, payment);
+    }
+    for (const rule of snapshot.shareRules) {
+      this.shareRules.set(rule.id, rule);
+    }
+    for (const version of snapshot.calculationVersions) {
+      this.calculationVersions.set(version.id, version);
+    }
+    for (const template of snapshot.collectionTemplates) {
+      this.collectionTemplates.set(template.id, template);
+    }
+    for (const dispute of snapshot.disputes) {
+      this.disputes.set(dispute.id, dispute);
+    }
+    for (const proof of snapshot.manualPaymentProofs) {
+      this.manualPaymentProofs.set(proof.id, proof);
+    }
+    for (const log of snapshot.auditLogs) {
+      this.auditLogs.set(log.id, log);
+    }
+    for (const notification of snapshot.notifications) {
+      this.notifications.set(notification.id, notification);
+    }
   }
 
   private getDispute(disputeId: string): Dispute {

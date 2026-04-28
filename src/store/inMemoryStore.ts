@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { calculateCollection } from "../calculation";
+import { buildAutoPaymentPlan, type AutoPaymentExecutionPlan, type AutoPaymentPreviewItem } from "../payments/autopay";
 import type {
   AutoPaymentRule,
   AuthResult,
@@ -1361,6 +1362,67 @@ export class InMemoryStore {
     return updated;
   }
 
+  previewAutoPayments(userId: string, collectionId: string): AutoPaymentPreviewItem[] {
+    this.getOrganizerCollection(userId, collectionId);
+    return this.buildAutoPaymentExecutionPlan(collectionId).preview;
+  }
+
+  executeAutoPayments(
+    userId: string,
+    collectionId: string,
+    options?: { dryRun?: boolean }
+  ): { createdPayments: Payment[]; skipped: AutoPaymentPreviewItem[]; preview: AutoPaymentPreviewItem[] } {
+    this.getOrganizerCollection(userId, collectionId);
+    const plan = this.buildAutoPaymentExecutionPlan(collectionId);
+    if (options?.dryRun) {
+      return {
+        createdPayments: [],
+        skipped: plan.preview.filter((item) => item.status !== "eligible"),
+        preview: plan.preview
+      };
+    }
+
+    const createdPayments: Payment[] = [];
+    for (const item of plan.eligible) {
+      const responsibleUserId = item.responsibleUserId;
+      if (!responsibleUserId || !item.idempotencyKey) {
+        continue;
+      }
+      const paymentMethod = item.paymentMethodId ? this.paymentMethods.get(item.paymentMethodId) ?? null : null;
+      const existing = this.findPaymentByIdempotencyKey(collectionId, item.idempotencyKey);
+      if (existing) {
+        createdPayments.push(existing);
+        continue;
+      }
+
+      const payment = this.createAutoPaymentRecord({
+        collectionId,
+        participantId: item.participantId,
+        responsibleUserId,
+        amountMinor: item.amountMinor,
+        provider: normalizeMockPaymentProvider(paymentMethod?.provider),
+        idempotencyKey: item.idempotencyKey
+      });
+      this.addAudit(userId, "payment", payment.id, collectionId, "created", {
+        amountMinor: payment.amountMinor,
+        provider: payment.provider,
+        participantId: payment.participantId,
+        paymentMethodId: paymentMethod?.id ?? null,
+        ruleId: item.ruleId,
+        category: item.category,
+        simulated: true,
+        autoTriggered: true
+      });
+      createdPayments.push(payment);
+    }
+
+    return {
+      createdPayments,
+      skipped: plan.preview.filter((item) => item.status !== "eligible"),
+      preview: plan.preview
+    };
+  }
+
   listAuditLogs(userId: string, collectionId: string): AuditLog[] {
     this.getCollectionForUser(userId, collectionId);
     return [...this.auditLogs.values()].filter((log) => log.collectionId === collectionId).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
@@ -1656,6 +1718,54 @@ export class InMemoryStore {
 
   private findPaymentByIdempotencyKey(collectionId: string, idempotencyKey: string): Payment | null {
     return this.getPayments(collectionId).find((payment) => payment.idempotencyKey === idempotencyKey) ?? null;
+  }
+
+  private createAutoPaymentRecord(data: {
+    collectionId: string;
+    participantId: string;
+    responsibleUserId: string;
+    amountMinor: number;
+    provider: Payment["provider"];
+    idempotencyKey: string;
+  }): Payment {
+    const payment: Payment = {
+      id: randomUUID(),
+      collectionId: data.collectionId,
+      participantId: data.participantId,
+      responsibleUserId: data.responsibleUserId,
+      amountMinor: data.amountMinor,
+      currency: "RUB",
+      provider: data.provider,
+      providerPaymentId: `mock_pay_${randomUUID()}`,
+      status: "pending",
+      idempotencyKey: data.idempotencyKey,
+      createdAt: now(),
+      updatedAt: now()
+    };
+    this.payments.set(payment.id, payment);
+    this.setParticipantPaymentStatus(data.collectionId, data.participantId, "pending");
+    this.markCollectionStatus(data.collectionId, "payment_pending");
+    return payment;
+  }
+
+  private buildAutoPaymentExecutionPlan(collectionId: string): AutoPaymentExecutionPlan {
+    const collection = this.getCollection(collectionId);
+    const calculationVersion = this.getCalculationVersions(collectionId).at(-1);
+    if (!calculationVersion) {
+      throw new AppError(409, "Auto payment execution requires a calculation.");
+    }
+
+    return buildAutoPaymentPlan({
+      collectionId,
+      collectionGroupId: collection.groupId,
+      nowIso: now(),
+      calculationVersion,
+      participants: this.getParticipants(collectionId),
+      categories: this.getCategories(collectionId),
+      paymentMethods: [...this.paymentMethods.values()],
+      autoPaymentRules: [...this.autoPaymentRules.values()],
+      payments: this.getPayments(collectionId)
+    });
   }
 
   private getPaymentForActor(userId: string, paymentId: string): Payment {

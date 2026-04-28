@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { PrismaClient, type Prisma } from "@prisma/client";
 import { calculateCollection } from "../calculation";
+import { buildAutoPaymentPlan, type AutoPaymentExecutionPlan, type AutoPaymentPreviewItem } from "../payments/autopay";
 import type {
   AutoPaymentRule,
   AuditAction,
@@ -1878,6 +1879,69 @@ export class PrismaStore implements AppStore {
     return mapPaymentRecord(updated);
   }
 
+  async previewAutoPayments(userId: string, collectionId: string): Promise<AutoPaymentPreviewItem[]> {
+    await this.getOrganizerCollectionRecord(userId, collectionId);
+    return (await this.buildAutoPaymentExecutionPlan(collectionId)).preview;
+  }
+
+  async executeAutoPayments(
+    userId: string,
+    collectionId: string,
+    options?: { dryRun?: boolean }
+  ): Promise<{ createdPayments: Payment[]; skipped: AutoPaymentPreviewItem[]; preview: AutoPaymentPreviewItem[] }> {
+    await this.getOrganizerCollectionRecord(userId, collectionId);
+    return await this.withAdvisoryLock(`collection:${collectionId}:autopay-execute`, async (store) => {
+      const plan = await store.buildAutoPaymentExecutionPlan(collectionId);
+      if (options?.dryRun) {
+        return {
+          createdPayments: [],
+          skipped: plan.preview.filter((item) => item.status !== "eligible"),
+          preview: plan.preview
+        };
+      }
+
+      const createdPayments: Payment[] = [];
+      for (const item of plan.eligible) {
+        const responsibleUserId = item.responsibleUserId;
+        if (!responsibleUserId || !item.idempotencyKey) {
+          continue;
+        }
+        const paymentMethod = item.paymentMethodId ? await store.getPaymentMethodForUserDirect(responsibleUserId, item.paymentMethodId) : null;
+        const existing = await store.findPaymentByIdempotencyKeyDirect(collectionId, item.idempotencyKey);
+        if (existing) {
+          createdPayments.push(existing);
+          continue;
+        }
+
+        const payment = await store.createAutoPaymentDirect({
+          collectionId,
+          participantId: item.participantId,
+          responsibleUserId,
+          amountMinor: item.amountMinor,
+          provider: normalizeMockPaymentProvider(paymentMethod?.provider),
+          idempotencyKey: item.idempotencyKey
+        });
+        await store.addAuditDirect(userId, "payment", payment.id, collectionId, "created", {
+          amountMinor: payment.amountMinor,
+          provider: payment.provider,
+          participantId: payment.participantId,
+          paymentMethodId: paymentMethod?.id ?? null,
+          ruleId: item.ruleId,
+          category: item.category,
+          simulated: true,
+          autoTriggered: true
+        });
+        createdPayments.push(payment);
+      }
+
+      return {
+        createdPayments,
+        skipped: plan.preview.filter((item) => item.status !== "eligible"),
+        preview: plan.preview
+      };
+    });
+  }
+
   async listAuditLogs(userId: string, collectionId: string): Promise<AuditLog[]> {
     await this.getCollectionForUser(userId, collectionId);
     return (await this.client.auditLog.findMany())
@@ -2260,11 +2324,67 @@ export class PrismaStore implements AppStore {
     });
   }
 
+  private async buildAutoPaymentExecutionPlan(collectionId: string): Promise<AutoPaymentExecutionPlan> {
+    const collection = await this.getCollectionRecord(collectionId);
+    const calculationVersion = (await this.getCalculationVersionRecords(collectionId)).at(-1);
+    if (!calculationVersion) {
+      throw new AppError(409, "Auto payment execution requires a calculation.");
+    }
+
+    return buildAutoPaymentPlan({
+      collectionId,
+      collectionGroupId: collection.groupId,
+      nowIso: new Date().toISOString(),
+      calculationVersion,
+      participants: await this.listParticipants(collection.organizerId, collectionId),
+      categories: (await this.client.expenseCategory.findMany())
+        .filter((category) => category.collectionId === collectionId)
+        .map(mapCategoryRecord),
+      paymentMethods: (await this.client.paymentMethod.findMany()).map(mapPaymentMethodRecord),
+      autoPaymentRules: (await this.client.autoPaymentRule.findMany()).map(mapAutoPaymentRuleRecord),
+      payments: (await this.client.payment.findMany())
+        .filter((payment) => payment.collectionId === collectionId)
+        .map(mapPaymentRecord)
+    });
+  }
+
   private async findPaymentByIdempotencyKeyDirect(collectionId: string, idempotencyKey: string): Promise<Payment | null> {
     const payment = (await this.client.payment.findMany()).find(
       (item) => item.collectionId === collectionId && item.idempotencyKey === idempotencyKey
     );
     return payment ? mapPaymentRecord(payment) : null;
+  }
+
+  private async createAutoPaymentDirect(data: {
+    collectionId: string;
+    participantId: string;
+    responsibleUserId: string;
+    amountMinor: number;
+    provider: Payment["provider"];
+    idempotencyKey: string;
+  }): Promise<Payment> {
+    const createdAt = new Date();
+    const payment = await this.client.payment.upsert({
+      where: { id: randomUUID() },
+      update: {},
+      create: {
+        id: randomUUID(),
+        collectionId: data.collectionId,
+        participantId: data.participantId,
+        responsibleUserId: data.responsibleUserId,
+        amountMinor: data.amountMinor,
+        currency: "RUB",
+        provider: data.provider,
+        providerPaymentId: `mock_pay_${randomUUID()}`,
+        status: "pending",
+        idempotencyKey: data.idempotencyKey,
+        createdAt,
+        updatedAt: createdAt
+      }
+    });
+    await this.setParticipantPaymentStatusDirect(data.collectionId, data.participantId, "pending");
+    await this.bumpCollectionStatus(data.collectionId, "payment_pending");
+    return mapPaymentRecord(payment);
   }
 
   private async getPaymentForActorDirect(userId: string, paymentId: string): Promise<Payment> {

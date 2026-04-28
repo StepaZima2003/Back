@@ -220,7 +220,9 @@ export function createSharedMockPrismaClient() {
           categories.push({ ...create });
           collection.categories = categories;
           return create;
-        }
+        },
+        findMany: async () =>
+          state.collections.flatMap((collection) => (collection.categories as Array<Record<string, unknown>> | undefined) ?? [])
       },
       expense: {
         upsert: async ({ where, create, update }: { where: { id: string }; create: Record<string, unknown>; update: Record<string, unknown> }) => {

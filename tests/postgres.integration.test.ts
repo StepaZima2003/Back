@@ -561,4 +561,127 @@ describe("PostgreSQL integration", () => {
     const auditLog = auditResponse.json();
     expect(auditLog.some((entry: { entityType: string }) => entry.entityType === "payment")).toBe(true);
   });
+
+  it("executes persisted auto payment batches with category rules on live PostgreSQL", async () => {
+    const organizer = await auth(app!, "+79990011041");
+    const participantUser = await auth(app!, "+79990011042");
+
+    const collectionResponse = await app!.inject({
+      method: "POST",
+      url: "/collections",
+      headers: { authorization: organizer.authorization },
+      payload: { title: "Autopay live batch", type: "trip" }
+    });
+    const { collection, organizerParticipant } = collectionResponse.json();
+
+    const participantResponse = await app!.inject({
+      method: "POST",
+      url: `/collections/${collection.id}/participants`,
+      headers: { authorization: organizer.authorization },
+      payload: { linkedUserId: participantUser.user.id, displayName: "Friend" }
+    });
+    const participant = participantResponse.json();
+
+    await app!.inject({
+      method: "POST",
+      url: "/payment-methods/mock-bind",
+      headers: { authorization: participantUser.authorization },
+      payload: {
+        provider: "bank",
+        maskedPan: "2200 **** **** 4141",
+        brand: "mir",
+        setAsDefault: true
+      }
+    });
+
+    const categoriesResponse = await app!.inject({
+      method: "GET",
+      url: `/collections/${collection.id}/categories`,
+      headers: { authorization: organizer.authorization }
+    });
+    const categories = categoriesResponse.json();
+    const foodCategory = categories.find((category: { title: string }) => category.title === "Food");
+    const alcoholCategory = categories.find((category: { title: string }) => category.title === "Alcohol");
+    expect(foodCategory).toBeTruthy();
+    expect(alcoholCategory).toBeTruthy();
+
+    await app!.inject({
+      method: "POST",
+      url: `/collections/${collection.id}/expenses`,
+      headers: { authorization: organizer.authorization },
+      payload: {
+        title: "Food",
+        amountMinor: 4000,
+        categoryId: foodCategory.id,
+        payments: [{ paidByParticipantId: organizerParticipant.id, amountMinor: 4000, paymentSource: "card" }]
+      }
+    });
+    await app!.inject({
+      method: "POST",
+      url: `/collections/${collection.id}/expenses`,
+      headers: { authorization: organizer.authorization },
+      payload: {
+        title: "Wine",
+        amountMinor: 2000,
+        categoryId: alcoholCategory.id,
+        payments: [{ paidByParticipantId: organizerParticipant.id, amountMinor: 2000, paymentSource: "card" }]
+      }
+    });
+    await app!.inject({
+      method: "POST",
+      url: `/collections/${collection.id}/calculate`,
+      headers: { authorization: organizer.authorization }
+    });
+
+    await app!.inject({
+      method: "POST",
+      url: "/autopay-rules",
+      headers: { authorization: participantUser.authorization },
+      payload: {
+        collectionId: collection.id,
+        category: "Food",
+        requiresObjectionWindow: false
+      }
+    });
+    await app!.inject({
+      method: "POST",
+      url: "/autopay-rules",
+      headers: { authorization: participantUser.authorization },
+      payload: {
+        collectionId: collection.id,
+        singleCollectionLimitMinor: 500,
+        requiresObjectionWindow: false
+      }
+    });
+
+    const previewResponse = await app!.inject({
+      method: "GET",
+      url: `/collections/${collection.id}/autopay/preview`,
+      headers: { authorization: organizer.authorization }
+    });
+    expect(previewResponse.statusCode).toBe(200);
+    const preview = previewResponse.json().filter((item: { participantId: string }) => item.participantId === participant.id);
+    expect(preview.some((item: { category: string; status: string; amountMinor: number }) => item.category === "food" && item.status === "eligible" && item.amountMinor === 2000)).toBe(true);
+    expect(preview.some((item: { category: string; reasonCode: string; amountMinor: number }) => item.category === "alcohol" && item.reasonCode === "collection_limit_exceeded" && item.amountMinor === 1000)).toBe(true);
+
+    const executeResponse = await app!.inject({
+      method: "POST",
+      url: `/collections/${collection.id}/autopay/execute`,
+      headers: { authorization: organizer.authorization }
+    });
+    expect(executeResponse.statusCode).toBe(200);
+    expect(executeResponse.json().createdPayments).toHaveLength(1);
+
+    await app!.close();
+    app = await createApp();
+
+    const paymentsResponse = await app!.inject({
+      method: "GET",
+      url: `/collections/${collection.id}/payments`,
+      headers: { authorization: organizer.authorization }
+    });
+    expect(paymentsResponse.statusCode).toBe(200);
+    expect(paymentsResponse.json()).toHaveLength(1);
+    expect(paymentsResponse.json()[0].amountMinor).toBe(2000);
+  });
 });

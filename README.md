@@ -100,6 +100,8 @@ Mock payment and autopay groundwork is now available without any real payment pr
 - simulated payment intents stored in PostgreSQL;
 - retry-safe mock payment intent creation via `idempotencyKey`;
 - simulated success / failure / refund transitions for backend development;
+- organizer-side auto payment preview and batch execution against the latest calculation;
+- category-scoped auto payment segmentation plus collection/day/month rule limits;
 - route-level parity tests and live PostgreSQL coverage for the new payment slice.
 
 По умолчанию API стартует на `http://localhost:3000`.

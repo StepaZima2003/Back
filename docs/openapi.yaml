@@ -91,6 +91,57 @@ paths:
       responses:
         "201":
           description: Group
+  /payment-methods:
+    get:
+      summary: List current user payment methods
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Payment methods
+  /payment-methods/mock-bind:
+    post:
+      summary: Bind masked mock payment method
+      security:
+        - bearerAuth: []
+      responses:
+        "201":
+          description: Payment method
+  /payment-methods/{id}/revoke:
+    post:
+      summary: Revoke payment method
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          description: Revoked payment method
+  /autopay-rules:
+    get:
+      summary: List current user auto payment rules
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Auto payment rules
+    post:
+      summary: Create auto payment rule
+      security:
+        - bearerAuth: []
+      responses:
+        "201":
+          description: Auto payment rule
+  /autopay-rules/{id}:
+    patch:
+      summary: Update auto payment rule
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          description: Auto payment rule
   /groups/{id}/templates:
     get:
       summary: List group templates
@@ -307,6 +358,46 @@ paths:
       responses:
         "200":
           description: Manual payment proofs
+  /collections/{id}/payments:
+    get:
+      summary: List collection payment intents
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/CollectionId"
+      responses:
+        "200":
+          description: Payment intents
+  /collections/{id}/autopay/preview:
+    get:
+      summary: Preview collection auto payment execution plan
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/CollectionId"
+      responses:
+        "200":
+          description: Auto payment preview
+  /collections/{id}/autopay/execute:
+    post:
+      summary: Execute simulated collection auto payment batch
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/CollectionId"
+      responses:
+        "200":
+          description: Auto payment execution result
+  /collections/{id}/payments/mock-intents:
+    post:
+      summary: Create simulated payment intent
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/CollectionId"
+      responses:
+        "201":
+          description: Payment intent
   /manual-payments/{id}/upload-proof:
     post:
       summary: Update manual payment proof URL or comment
@@ -337,6 +428,36 @@ paths:
       responses:
         "200":
           description: Rejected manual payment
+  /payments/{id}/simulate-success:
+    post:
+      summary: Simulate successful payment capture
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          description: Payment intent
+  /payments/{id}/simulate-failure:
+    post:
+      summary: Simulate failed payment capture
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          description: Payment intent
+  /payments/{id}/refund:
+    post:
+      summary: Simulate payment refund
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          description: Refunded payment intent
   /collections/{id}/audit-log:
     get:
       summary: List collection audit log

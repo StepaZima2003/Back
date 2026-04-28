@@ -774,4 +774,156 @@ describe.each<ProviderName>(["memory", "prisma"])("api provider parity: %s", (pr
 
     await app.close();
   });
+
+  it("previews and executes auto payment batches with category rules and collection limits", async () => {
+    const app = await buildApp({ store: await createStore(provider) });
+
+    async function auth(phone: string) {
+      await app.inject({ method: "POST", url: "/auth/request-otp", payload: { phone } });
+      const response = await app.inject({ method: "POST", url: "/auth/verify-otp", payload: { phone, otp: "000000" } });
+      const body = response.json();
+      return {
+        user: body.user,
+        authorization: `Bearer ${body.accessToken}`
+      };
+    }
+
+    const organizer = await auth("+79990010051");
+    const participantUser = await auth("+79990010052");
+
+    const collectionResponse = await app.inject({
+      method: "POST",
+      url: "/collections",
+      headers: { authorization: organizer.authorization },
+      payload: { title: "Autopay batch", type: "trip" }
+    });
+    const { collection, organizerParticipant } = collectionResponse.json();
+
+    const participantResponse = await app.inject({
+      method: "POST",
+      url: `/collections/${collection.id}/participants`,
+      headers: { authorization: organizer.authorization },
+      payload: { linkedUserId: participantUser.user.id, displayName: "Friend" }
+    });
+    const participant = participantResponse.json();
+
+    await app.inject({
+      method: "POST",
+      url: "/payment-methods/mock-bind",
+      headers: { authorization: participantUser.authorization },
+      payload: {
+        provider: "bank",
+        maskedPan: "2200 **** **** 5151",
+        brand: "mir",
+        setAsDefault: true
+      }
+    });
+
+    const categoriesResponse = await app.inject({
+      method: "GET",
+      url: `/collections/${collection.id}/categories`,
+      headers: { authorization: organizer.authorization }
+    });
+    const categories = categoriesResponse.json();
+    const foodCategory = categories.find((category: { title: string }) => category.title === "Food");
+    const alcoholCategory = categories.find((category: { title: string }) => category.title === "Alcohol");
+    expect(foodCategory).toBeTruthy();
+    expect(alcoholCategory).toBeTruthy();
+
+    await app.inject({
+      method: "POST",
+      url: `/collections/${collection.id}/expenses`,
+      headers: { authorization: organizer.authorization },
+      payload: {
+        title: "Food",
+        amountMinor: 4000,
+        categoryId: foodCategory.id,
+        payments: [{ paidByParticipantId: organizerParticipant.id, amountMinor: 4000, paymentSource: "card" }]
+      }
+    });
+    await app.inject({
+      method: "POST",
+      url: `/collections/${collection.id}/expenses`,
+      headers: { authorization: organizer.authorization },
+      payload: {
+        title: "Wine",
+        amountMinor: 2000,
+        categoryId: alcoholCategory.id,
+        payments: [{ paidByParticipantId: organizerParticipant.id, amountMinor: 2000, paymentSource: "card" }]
+      }
+    });
+    await app.inject({
+      method: "POST",
+      url: `/collections/${collection.id}/calculate`,
+      headers: { authorization: organizer.authorization }
+    });
+
+    await app.inject({
+      method: "POST",
+      url: "/autopay-rules",
+      headers: { authorization: participantUser.authorization },
+      payload: {
+        collectionId: collection.id,
+        category: "Food",
+        requiresObjectionWindow: false
+      }
+    });
+    await app.inject({
+      method: "POST",
+      url: "/autopay-rules",
+      headers: { authorization: participantUser.authorization },
+      payload: {
+        collectionId: collection.id,
+        singleCollectionLimitMinor: 500,
+        requiresObjectionWindow: false
+      }
+    });
+
+    const previewResponse = await app.inject({
+      method: "GET",
+      url: `/collections/${collection.id}/autopay/preview`,
+      headers: { authorization: organizer.authorization }
+    });
+    expect(previewResponse.statusCode).toBe(200);
+    const preview = previewResponse.json().filter((item: { participantId: string }) => item.participantId === participant.id);
+    expect(preview).toHaveLength(2);
+    expect(preview.some((item: { category: string; status: string; amountMinor: number }) => item.category === "food" && item.status === "eligible" && item.amountMinor === 2000)).toBe(true);
+    expect(preview.some((item: { category: string; reasonCode: string; amountMinor: number }) => item.category === "alcohol" && item.reasonCode === "collection_limit_exceeded" && item.amountMinor === 1000)).toBe(true);
+
+    const dryRunResponse = await app.inject({
+      method: "POST",
+      url: `/collections/${collection.id}/autopay/execute`,
+      headers: { authorization: organizer.authorization },
+      payload: { dryRun: true }
+    });
+    expect(dryRunResponse.statusCode).toBe(200);
+    expect(dryRunResponse.json().createdPayments).toHaveLength(0);
+
+    const executeResponse = await app.inject({
+      method: "POST",
+      url: `/collections/${collection.id}/autopay/execute`,
+      headers: { authorization: organizer.authorization }
+    });
+    expect(executeResponse.statusCode).toBe(200);
+    expect(executeResponse.json().createdPayments).toHaveLength(1);
+    expect(executeResponse.json().createdPayments[0].amountMinor).toBe(2000);
+
+    const rerunResponse = await app.inject({
+      method: "POST",
+      url: `/collections/${collection.id}/autopay/execute`,
+      headers: { authorization: organizer.authorization }
+    });
+    expect(rerunResponse.statusCode).toBe(200);
+    expect(rerunResponse.json().createdPayments).toHaveLength(0);
+    expect(rerunResponse.json().preview.some((item: { status: string; reasonCode: string }) => item.status === "already_exists" && item.reasonCode === "existing_payment")).toBe(true);
+
+    const paymentsResponse = await app.inject({
+      method: "GET",
+      url: `/collections/${collection.id}/payments`,
+      headers: { authorization: organizer.authorization }
+    });
+    expect(paymentsResponse.json()).toHaveLength(1);
+
+    await app.close();
+  });
 });

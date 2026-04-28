@@ -62,6 +62,8 @@ type AppStoreMethodName =
   | "confirmMockPayment"
   | "failMockPayment"
   | "refundPayment"
+  | "previewAutoPayments"
+  | "executeAutoPayments"
   | "listAuditLogs"
   | "listGroupTemplates"
   | "createGroupTemplate"

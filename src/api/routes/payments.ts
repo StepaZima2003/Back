@@ -51,6 +51,10 @@ const paymentActionSchema = z.object({
   reason: z.string().nullable().optional()
 });
 
+const executeAutopaySchema = z.object({
+  dryRun: z.boolean().optional()
+});
+
 export function registerPaymentRoutes(app: FastifyInstance, store: AppStore): void {
   app.get("/payment-methods", async (request) => {
     const user = await requireUser(request, store);
@@ -94,6 +98,19 @@ export function registerPaymentRoutes(app: FastifyInstance, store: AppStore): vo
     const user = await requireUser(request, store);
     const params = idParamsSchema.parse(request.params);
     return await store.listPayments(user.id, params.id);
+  });
+
+  app.get("/collections/:id/autopay/preview", async (request) => {
+    const user = await requireUser(request, store);
+    const params = idParamsSchema.parse(request.params);
+    return await store.previewAutoPayments(user.id, params.id);
+  });
+
+  app.post("/collections/:id/autopay/execute", async (request) => {
+    const user = await requireUser(request, store);
+    const params = idParamsSchema.parse(request.params);
+    const body = executeAutopaySchema.parse(request.body ?? {});
+    return await store.executeAutoPayments(user.id, params.id, body);
   });
 
   app.post("/collections/:id/payments/mock-intents", async (request, reply) => {

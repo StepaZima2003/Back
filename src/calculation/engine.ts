@@ -5,6 +5,7 @@ import type {
   CalculationParticipantInput,
   CalculationWarning,
   ExpenseInput,
+  ExpenseItemInput,
   ExpenseShareRuleInput,
   ParticipantCalculationResult,
   ResponsiblePayerCalculationResult,
@@ -135,13 +136,43 @@ function applyExpenseShares(
   participantCalculations: Map<string, ParticipantAccumulator>,
   warnings: CalculationWarning[]
 ): void {
+  if (expense.items && expense.items.length > 0) {
+    const itemsTotalMinor = expense.items.reduce((sum, item) => sum + item.amountMinor, 0);
+    if (itemsTotalMinor === expense.amountMinor) {
+      for (const item of expense.items) {
+        applyExpenseSharesForTarget(expense, item, participants, participantCalculations, warnings);
+      }
+      return;
+    }
+
+    warnings.push({
+      code: "ROUNDING_MISMATCH",
+      message: "Expense items total does not match expense amount.",
+      expenseId: expense.id
+    });
+  }
+
+  applyExpenseSharesForTarget(expense, null, participants, participantCalculations, warnings);
+}
+
+function applyExpenseSharesForTarget(
+  expense: ExpenseInput,
+  item: ExpenseItemInput | null,
+  participants: CalculationParticipantInput[],
+  participantCalculations: Map<string, ParticipantAccumulator>,
+  warnings: CalculationWarning[]
+): void {
+  const targetId = item?.id ?? null;
+  const targetAmountMinor = item?.amountMinor ?? expense.amountMinor;
+  const targetCategoryId = item?.categoryId ?? expense.categoryId;
+  const targetTitle = item ? `${expense.title} / ${item.title}` : expense.title;
   const fixedShares = new Map<string, { amountMinor: number; reason?: string | null }>();
   const percentShares = new Map<string, { amountMinor: number; reason?: string | null }>();
   const excludedParticipantIds = new Set<string>();
   const weightedItems: WeightedAllocationInput[] = [];
 
   for (const participant of participants) {
-    const rule = selectRule(expense, participant.id);
+    const rule = selectRule(expense, participant.id, targetId, targetCategoryId);
 
     if (rule?.excluded || rule?.splitMode === "excluded") {
       excludedParticipantIds.add(participant.id);
@@ -159,7 +190,7 @@ function applyExpenseShares(
     if (rule?.splitMode === "percent") {
       const percent = Math.max(0, rule.percent ?? 0);
       percentShares.set(participant.id, {
-        amountMinor: Math.round((expense.amountMinor * percent) / 100),
+        amountMinor: Math.round((targetAmountMinor * percent) / 100),
         reason: rule.reason
       });
       continue;
@@ -181,34 +212,34 @@ function applyExpenseShares(
   }
 
   for (const participantId of excludedParticipantIds) {
-    const calculation = participantCalculations.get(participantId);
-    if (!calculation) {
-      continue;
-    }
+      const calculation = participantCalculations.get(participantId);
+      if (!calculation) {
+        continue;
+      }
 
-    calculation.excludedCount += 1;
-    calculation.explanation.excluded.push({
-      expenseId: expense.id,
-      expenseTitle: expense.title,
-      categoryId: expense.categoryId,
-      amountMinor: 0,
-      reason: selectRule(expense, participantId)?.reason ?? "Participant excluded from expense."
-    });
-  }
+      calculation.excludedCount += 1;
+      calculation.explanation.excluded.push({
+        expenseId: expense.id,
+        expenseTitle: targetTitle,
+        categoryId: targetCategoryId,
+        amountMinor: 0,
+        reason: selectRule(expense, participantId, targetId, targetCategoryId)?.reason ?? "Participant excluded from expense."
+      });
+    }
 
   let allocatedMinor = 0;
 
   for (const [participantId, fixed] of fixedShares) {
     allocatedMinor += fixed.amountMinor;
-    addOwedShare(expense, participantId, fixed.amountMinor, fixed.reason, participantCalculations);
+    addOwedShare(expense, targetTitle, targetCategoryId, participantId, fixed.amountMinor, fixed.reason, participantCalculations);
   }
 
   for (const [participantId, percent] of percentShares) {
     allocatedMinor += percent.amountMinor;
-    addOwedShare(expense, participantId, percent.amountMinor, percent.reason, participantCalculations);
+    addOwedShare(expense, targetTitle, targetCategoryId, participantId, percent.amountMinor, percent.reason, participantCalculations);
   }
 
-  let remainingMinor = expense.amountMinor - allocatedMinor;
+  let remainingMinor = targetAmountMinor - allocatedMinor;
 
   if (remainingMinor < 0) {
     warnings.push({
@@ -250,10 +281,18 @@ function applyExpenseShares(
   let allocatedByWeights = 0;
   for (const [participantId, amountMinor] of allocation.allocations) {
     allocatedByWeights += amountMinor;
-    addOwedShare(expense, participantId, amountMinor, selectRule(expense, participantId)?.reason, participantCalculations);
+    addOwedShare(
+      expense,
+      targetTitle,
+      targetCategoryId,
+      participantId,
+      amountMinor,
+      selectRule(expense, participantId, targetId, targetCategoryId)?.reason,
+      participantCalculations
+    );
   }
 
-  if (allocatedMinor + allocatedByWeights + allocation.unallocatedMinor !== expense.amountMinor) {
+  if (allocatedMinor + allocatedByWeights + allocation.unallocatedMinor !== targetAmountMinor) {
     warnings.push({
       code: "ROUNDING_MISMATCH",
       message: "Allocated amount does not match expense amount.",
@@ -264,6 +303,8 @@ function applyExpenseShares(
 
 function addOwedShare(
   expense: ExpenseInput,
+  expenseTitle: string,
+  categoryId: string | null | undefined,
   participantId: string,
   amountMinor: number,
   reason: string | null | undefined,
@@ -277,18 +318,24 @@ function addOwedShare(
   calculation.owesAmountMinor += amountMinor;
   calculation.explanation.included.push({
     expenseId: expense.id,
-    expenseTitle: expense.title,
-    categoryId: expense.categoryId,
+    expenseTitle,
+    categoryId,
     amountMinor,
     reason
   });
 }
 
-function selectRule(expense: ExpenseInput, participantId: string): ExpenseShareRuleInput | undefined {
+function selectRule(
+  expense: ExpenseInput,
+  participantId: string,
+  expenseItemId?: string | null,
+  categoryId?: string | null
+): ExpenseShareRuleInput | undefined {
   const matchingRules = (expense.shareRules ?? []).filter((rule) => {
     const sameParticipant = rule.participantId === participantId;
-    const sameCategory = !rule.categoryId || rule.categoryId === expense.categoryId;
-    return sameParticipant && sameCategory;
+    const sameCategory = !rule.categoryId || rule.categoryId === categoryId;
+    const sameItem = expenseItemId ? rule.expenseItemId === expenseItemId || rule.expenseItemId == null : rule.expenseItemId == null;
+    return sameParticipant && sameCategory && sameItem;
   });
 
   return matchingRules.at(-1);
@@ -389,4 +436,3 @@ function calculateTransferPlan(responsiblePayers: ResponsiblePayerCalculationRes
 
   return transfers;
 }
-

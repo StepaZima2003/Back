@@ -12,6 +12,7 @@ import type {
   CollectionTemplate,
   Dispute,
   Expense,
+  ExpenseItem,
   ExpenseCategory,
   ExpensePayment,
   ExpenseShareRule,
@@ -604,6 +605,15 @@ export class PrismaStore implements AppStore {
     return collection?.expenses.map(mapExpenseRecord) ?? [];
   }
 
+  async listExpenseItems(userId: string, expenseId: string): Promise<ExpenseItem[]> {
+    const expense = await this.getExpenseRecord(expenseId);
+    await this.getCollectionForUser(userId, expense.collectionId);
+    return (await this.client.expenseItem.findMany())
+      .filter((item) => item.expenseId === expenseId)
+      .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime() || a.title.localeCompare(b.title))
+      .map(mapExpenseItemRecord);
+  }
+
   async listCategories(userId: string, collectionId: string): Promise<ExpenseCategory[]> {
     await this.getCollectionForUser(userId, collectionId);
     const collection = (await this.client.collection.findMany({ include: { categories: true } })).find((item) => item.id === collectionId);
@@ -637,6 +647,16 @@ export class PrismaStore implements AppStore {
     if (data.categoryId) {
       await this.getCategoryRecord(collectionId, data.categoryId);
     }
+    if (data.items?.some((item) => item.categoryId)) {
+      for (const item of data.items) {
+        if (item.categoryId) {
+          await this.getCategoryRecord(collectionId, item.categoryId);
+        }
+      }
+    }
+    if (data.items && data.items.reduce((sum, item) => sum + item.amountMinor, 0) !== data.amountMinor) {
+      throw new AppError(400, "Expense items total must match expense amount.");
+    }
 
     const now = new Date();
     const expenseId = randomUUID();
@@ -664,6 +684,23 @@ export class PrismaStore implements AppStore {
       const createdPayment = await this.addExpensePayment(userId, expense.id, payment);
       payments.push(createdPayment);
     }
+    for (const item of data.items ?? []) {
+      await this.client.expenseItem.upsert({
+        where: { id: randomUUID() },
+        update: {},
+        create: {
+          id: randomUUID(),
+          expenseId: expense.id,
+          title: item.title,
+          amountMinor: item.amountMinor,
+          currency: "RUB",
+          categoryId: item.categoryId ?? null,
+          splitMode: item.splitMode ?? "equal",
+          createdAt: now,
+          updatedAt: now
+        }
+      });
+    }
 
     await this.recalculateCollectionTotalDirect(collectionId);
     await this.bumpCollectionStatus(collectionId, "expenses_added");
@@ -672,6 +709,39 @@ export class PrismaStore implements AppStore {
       expense: mapExpenseRecord(expense),
       payments
     };
+  }
+
+  async createExpenseItem(
+    userId: string,
+    expenseId: string,
+    data: Parameters<AppStore["createExpenseItem"]>[2]
+  ): Promise<ExpenseItem> {
+    const expense = await this.getExpenseRecord(expenseId);
+    await this.getOrganizerCollectionRecord(userId, expense.collectionId);
+    if (data.categoryId) {
+      await this.getCategoryRecord(expense.collectionId, data.categoryId);
+    }
+
+    const item = await this.client.expenseItem.upsert({
+      where: { id: randomUUID() },
+      update: {},
+      create: {
+        id: randomUUID(),
+        expenseId,
+        title: data.title,
+        amountMinor: data.amountMinor,
+        currency: "RUB",
+        categoryId: data.categoryId ?? null,
+        splitMode: data.splitMode ?? "equal",
+        createdAt: new Date(),
+        updatedAt: new Date()
+      }
+    });
+
+    await this.recalculateExpenseAmountFromItemsDirect(expenseId);
+    await this.recalculateCollectionTotalDirect(expense.collectionId);
+    await this.bumpCollectionStatus(expense.collectionId, "expenses_added");
+    return mapExpenseItemRecord(item);
   }
 
   async addExpensePayment(userId: string, expenseId: string, data: Parameters<AppStore["addExpensePayment"]>[2]): Promise<ExpensePayment> {
@@ -702,6 +772,9 @@ export class PrismaStore implements AppStore {
     const expense = await this.getExpenseRecord(expenseId);
     await this.getOrganizerCollectionRecord(userId, expense.collectionId);
     await this.getParticipantRecord(expense.collectionId, data.participantId);
+    if (data.expenseItemId) {
+      await this.getExpenseItemRecord(expenseId, data.expenseItemId);
+    }
 
     const rule = await this.client.expenseShareRule.upsert({
       where: { id: randomUUID() },
@@ -709,7 +782,7 @@ export class PrismaStore implements AppStore {
       create: {
         id: randomUUID(),
         expenseId,
-        expenseItemId: null,
+        expenseItemId: data.expenseItemId ?? null,
         categoryId: data.categoryId ?? null,
         participantId: data.participantId,
         splitMode: data.splitMode,
@@ -755,8 +828,17 @@ export class PrismaStore implements AppStore {
           participantId: payment.paidByParticipantId,
           amountMinor: payment.amountMinor
         })),
+        items: (expense.items ?? []).map((item) => ({
+          id: item.id,
+          title: item.title,
+          amountMinor: item.amountMinor,
+          currency: item.currency,
+          categoryId: item.categoryId,
+          splitMode: item.splitMode
+        })),
         shareRules: (expense.shareRules ?? []).map((rule) => ({
           participantId: rule.participantId,
+          expenseItemId: rule.expenseItemId,
           splitMode: rule.splitMode,
           categoryId: rule.categoryId,
           weight: typeof rule.weight === "number" ? rule.weight : (rule.weight?.toNumber?.() ?? null),
@@ -1391,11 +1473,12 @@ export class PrismaStore implements AppStore {
       await this.client.collection.findMany({
         include: {
           participants: true,
-          expenses: {
-            include: {
-              payments: true,
-              shareRules: true
-            }
+            expenses: {
+              include: {
+                items: true,
+                payments: true,
+                shareRules: true
+              }
           }
         }
       })
@@ -1441,7 +1524,7 @@ export class PrismaStore implements AppStore {
   }
 
   private async getExpenseRecord(expenseId: string) {
-    const collection = (await this.client.collection.findMany({ include: { expenses: true } })).find((item) =>
+    const collection = (await this.client.collection.findMany({ include: { expenses: { include: { items: true } } } })).find((item) =>
       item.expenses.some((expense) => expense.id === expenseId)
     );
     const expense = collection?.expenses.find((item) => item.id === expenseId);
@@ -1449,6 +1532,14 @@ export class PrismaStore implements AppStore {
       throw new AppError(404, "Expense not found.");
     }
     return expense;
+  }
+
+  private async getExpenseItemRecord(expenseId: string, expenseItemId: string) {
+    const item = (await this.client.expenseItem.findMany()).find((entry) => entry.id === expenseItemId && entry.expenseId === expenseId);
+    if (!item) {
+      throw new AppError(404, "Expense item not found.");
+    }
+    return item;
   }
 
   private async getCalculationVersionRecords(collectionId: string): Promise<CalculationVersion[]> {
@@ -1633,6 +1724,23 @@ export class PrismaStore implements AppStore {
       create: {
         ...collectionCreateInputFromRecord(collection, { updatedAt: new Date() }),
         totalAmountMinor
+      }
+    });
+  }
+
+  private async recalculateExpenseAmountFromItemsDirect(expenseId: string): Promise<void> {
+    const expense = await this.getExpenseRecord(expenseId);
+    const amountMinor = (await this.client.expenseItem.findMany())
+      .filter((item) => item.expenseId === expenseId)
+      .reduce((sum, item) => sum + item.amountMinor, 0);
+    await this.client.expense.upsert({
+      where: { id: expenseId },
+      update: {
+        amountMinor,
+        updatedAt: new Date()
+      },
+      create: {
+        ...expenseCreateInputFromRecord(expense, { amountMinor, updatedAt: new Date() })
       }
     });
   }
@@ -1828,6 +1936,30 @@ function mapExpenseRecord(record: {
     categoryId: record.categoryId,
     receiptUrl: record.receiptUrl,
     comment: record.comment,
+    createdAt: record.createdAt.toISOString(),
+    updatedAt: record.updatedAt.toISOString()
+  };
+}
+
+function mapExpenseItemRecord(record: {
+  id: string;
+  expenseId: string;
+  title: string;
+  amountMinor: number;
+  currency: string;
+  categoryId: string | null;
+  splitMode: ExpenseItem["splitMode"];
+  createdAt: Date;
+  updatedAt: Date;
+}): ExpenseItem {
+  return {
+    id: record.id,
+    expenseId: record.expenseId,
+    title: record.title,
+    amountMinor: record.amountMinor,
+    currency: "RUB",
+    categoryId: record.categoryId,
+    splitMode: record.splitMode,
     createdAt: record.createdAt.toISOString(),
     updatedAt: record.updatedAt.toISOString()
   };
@@ -2240,5 +2372,41 @@ function collectionCreateInputFromRecord(
     paymentDeadlineAt: collection.paymentDeadlineAt,
     createdAt: collection.createdAt,
     updatedAt: overrides?.updatedAt ?? collection.updatedAt
+  };
+}
+
+function expenseCreateInputFromRecord(
+  expense: {
+    id: string;
+    collectionId: string;
+    title: string;
+    amountMinor: number;
+    currency: string;
+    expenseType: Expense["expenseType"];
+    primaryPaidByParticipantId?: string | null;
+    categoryId: string | null;
+    receiptUrl: string | null;
+    comment: string | null;
+    createdAt: Date;
+    updatedAt: Date;
+  },
+  overrides?: Partial<{
+    amountMinor: number;
+    updatedAt: Date;
+  }>
+) {
+  return {
+    id: expense.id,
+    collectionId: expense.collectionId,
+    title: expense.title,
+    amountMinor: overrides?.amountMinor ?? expense.amountMinor,
+    currency: expense.currency,
+    expenseType: expense.expenseType,
+    primaryPaidByParticipantId: expense.primaryPaidByParticipantId ?? null,
+    categoryId: expense.categoryId,
+    receiptUrl: expense.receiptUrl,
+    comment: expense.comment,
+    createdAt: expense.createdAt,
+    updatedAt: overrides?.updatedAt ?? expense.updatedAt
   };
 }

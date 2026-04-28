@@ -293,4 +293,95 @@ describe.each<ProviderName>(["memory", "prisma"])("api provider parity: %s", (pr
 
     await app.close();
   });
+
+  it("supports itemized restaurant receipts with item-scoped share rules", async () => {
+    const app = await buildApp({ store: await createStore(provider) });
+
+    async function auth(phone: string) {
+      await app.inject({ method: "POST", url: "/auth/request-otp", payload: { phone } });
+      const response = await app.inject({ method: "POST", url: "/auth/verify-otp", payload: { phone, otp: "000000" } });
+      const body = response.json();
+      return {
+        user: body.user,
+        authorization: `Bearer ${body.accessToken}`
+      };
+    }
+
+    const organizer = await auth("+79990010011");
+    const friend = await auth("+79990010012");
+
+    const collectionResponse = await app.inject({
+      method: "POST",
+      url: "/collections",
+      headers: { authorization: organizer.authorization },
+      payload: { title: "Dinner", type: "restaurant" }
+    });
+    const { collection, organizerParticipant } = collectionResponse.json();
+
+    const participantResponse = await app.inject({
+      method: "POST",
+      url: `/collections/${collection.id}/participants`,
+      headers: { authorization: organizer.authorization },
+      payload: { linkedUserId: friend.user.id, displayName: "Friend" }
+    });
+    const participant = participantResponse.json();
+
+    const expenseResponse = await app.inject({
+      method: "POST",
+      url: `/collections/${collection.id}/expenses`,
+      headers: { authorization: organizer.authorization },
+      payload: {
+        title: "Restaurant receipt",
+        amountMinor: 1200,
+        payments: [{ paidByParticipantId: organizerParticipant.id, amountMinor: 1200, paymentSource: "card" }],
+        items: [
+          { title: "Steak", amountMinor: 700 },
+          { title: "Wine", amountMinor: 500, categoryId: null }
+        ]
+      }
+    });
+    expect(expenseResponse.statusCode).toBe(201);
+    const expense = expenseResponse.json().expense;
+
+    const itemsResponse = await app.inject({
+      method: "GET",
+      url: `/expenses/${expense.id}/items`,
+      headers: { authorization: organizer.authorization }
+    });
+    expect(itemsResponse.statusCode).toBe(200);
+    const items = itemsResponse.json();
+    expect(items).toHaveLength(2);
+
+    const wineItem = items.find((item: { title: string }) => item.title === "Wine");
+    expect(wineItem).toBeTruthy();
+
+    const ruleResponse = await app.inject({
+      method: "POST",
+      url: `/expenses/${expense.id}/share-rules`,
+      headers: { authorization: organizer.authorization },
+      payload: {
+        participantId: participant.id,
+        expenseItemId: wineItem.id,
+        splitMode: "excluded",
+        reason: "Did not drink wine."
+      }
+    });
+    expect(ruleResponse.statusCode).toBe(201);
+
+    const calculationResponse = await app.inject({
+      method: "POST",
+      url: `/collections/${collection.id}/calculate`,
+      headers: { authorization: organizer.authorization }
+    });
+    expect(calculationResponse.statusCode).toBe(201);
+
+    const calculation = calculationResponse.json();
+    const organizerCalc = calculation.result.participantCalculations.find((item: { participantId: string }) => item.participantId === organizerParticipant.id);
+    const friendCalc = calculation.result.participantCalculations.find((item: { participantId: string }) => item.participantId === participant.id);
+
+    expect(organizerCalc?.owesAmountMinor).toBe(850);
+    expect(friendCalc?.owesAmountMinor).toBe(350);
+
+    await app.close();
+  });
 });

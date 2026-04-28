@@ -178,10 +178,38 @@ export function createSharedMockPrismaClient() {
             collection.expenses = expenses;
             return existing;
           }
-          expenses.push({ ...create, payments: [], shareRules: [] });
+          expenses.push({ ...create, items: [], payments: [], shareRules: [] });
           collection.expenses = expenses;
           return create;
         }
+      },
+      expenseItem: {
+        upsert: async ({ where, create, update }: { where: { id: string }; create: Record<string, unknown>; update: Record<string, unknown> }) => {
+          for (const collection of state.collections) {
+            const expenses = (collection.expenses as Array<Record<string, unknown>>) ?? [];
+            const expense = expenses.find((item) => item.id === create.expenseId || item.id === update.expenseId);
+            if (!expense) {
+              continue;
+            }
+            const items = (expense.items as Array<Record<string, unknown>>) ?? [];
+            const existing = items.find((item) => item.id === where.id);
+            if (existing) {
+              Object.assign(existing, update);
+              expense.items = items;
+              return existing;
+            }
+            items.push({ ...create });
+            expense.items = items;
+            return create;
+          }
+          return create;
+        },
+        findMany: async () =>
+          state.collections.flatMap((collection) =>
+            ((collection.expenses as Array<Record<string, unknown>> | undefined) ?? []).flatMap(
+              (expense) => (expense.items as Array<Record<string, unknown>> | undefined) ?? []
+            )
+          )
       },
       expensePayment: {
         upsert: async ({ where, create, update }: { where: { id: string }; create: Record<string, unknown>; update: Record<string, unknown> }) => {

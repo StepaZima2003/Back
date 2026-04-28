@@ -41,12 +41,20 @@ const addChildSchema = z.object({
   defaultWeight: z.number().positive().optional()
 });
 
+const createExpenseItemSchema = z.object({
+  title: z.string().min(1).max(160),
+  amountMinor: z.number().int().nonnegative(),
+  categoryId: z.string().nullable().optional(),
+  splitMode: z.enum(["equal", "weights", "fixed", "percent", "excluded", "cap"]).optional()
+});
+
 const createExpenseSchema = z.object({
   title: z.string().min(1).max(160),
   amountMinor: z.number().int().nonnegative(),
   categoryId: z.string().nullable().optional(),
   expenseType: z.enum(["expense", "prepayment", "deposit", "refund", "discount", "correction", "service_fee", "tax", "other"]).optional(),
   comment: z.string().nullable().optional(),
+  items: z.array(createExpenseItemSchema).optional(),
   payments: z
     .array(
       z.object({
@@ -68,6 +76,7 @@ const addPaymentSchema = z.object({
 
 const addShareRuleSchema = z.object({
   participantId: z.string(),
+  expenseItemId: z.string().nullable().optional(),
   splitMode: z.enum(["equal", "weights", "fixed", "percent", "excluded", "cap"]),
   categoryId: z.string().nullable().optional(),
   weight: z.number().nullable().optional(),
@@ -204,6 +213,20 @@ export function registerCollectionRoutes(app: FastifyInstance, store: AppStore):
     const body = createExpenseSchema.parse(request.body);
     const result = await store.createExpense(user.id, params.id, body);
     reply.status(201).send(result);
+  });
+
+  app.get("/expenses/:id/items", async (request) => {
+    const user = await requireUser(request, store);
+    const params = idParamsSchema.parse(request.params);
+    return await store.listExpenseItems(user.id, params.id);
+  });
+
+  app.post("/expenses/:id/items", async (request, reply) => {
+    const user = await requireUser(request, store);
+    const params = idParamsSchema.parse(request.params);
+    const body = createExpenseItemSchema.parse(request.body);
+    const item = await store.createExpenseItem(user.id, params.id, body);
+    reply.status(201).send(item);
   });
 
   app.post("/expenses/:id/payments", async (request, reply) => {

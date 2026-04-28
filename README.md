@@ -51,6 +51,7 @@ Direct Prisma write/read now covers:
 - participants;
 - collection categories;
 - expenses and expense payments;
+- expense items and item-scoped share rules;
 - expense share rules;
 - calculations with version snapshots, participant/responsible-payer rows, and transfer plans;
 - participant review confirmations;

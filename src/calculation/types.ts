@@ -27,6 +27,7 @@ export interface ExpensePaymentInput {
 
 export interface ExpenseShareRuleInput {
   participantId: string;
+  expenseItemId?: string | null;
   splitMode: SplitMode;
   categoryId?: string | null;
   weight?: number | null;
@@ -37,6 +38,15 @@ export interface ExpenseShareRuleInput {
   reason?: string | null;
 }
 
+export interface ExpenseItemInput {
+  id: string;
+  title: string;
+  amountMinor: number;
+  currency?: string;
+  categoryId?: string | null;
+  splitMode?: SplitMode;
+}
+
 export interface ExpenseInput {
   id: string;
   title: string;
@@ -44,6 +54,7 @@ export interface ExpenseInput {
   currency?: string;
   categoryId?: string | null;
   payments: ExpensePaymentInput[];
+  items?: ExpenseItemInput[];
   shareRules?: ExpenseShareRuleInput[];
 }
 
@@ -108,4 +119,3 @@ export interface CalculateCollectionResult {
   transferPlan: TransferPlanItem[];
   warnings: CalculationWarning[];
 }
-

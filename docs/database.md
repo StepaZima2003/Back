@@ -53,6 +53,7 @@ Direct Prisma read/write is already used here for the stable slice:
 - participants;
 - collection categories;
 - expenses and expense payments;
+- expense items and item-scoped share rules;
 - expense share rules;
 - calculations, participant calculations, responsible-payer calculations, and transfer plans;
 - participant review confirmations;

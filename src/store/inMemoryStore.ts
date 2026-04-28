@@ -13,6 +13,7 @@ import type {
   Dispute,
   DisputeType,
   Expense,
+  ExpenseItem,
   ExpenseCategory,
   ExpensePayment,
   ExpenseShareRule,
@@ -34,6 +35,7 @@ export interface InMemoryStoreSnapshot {
   collections: Collection[];
   participants: CollectionParticipant[];
   expenses: Expense[];
+  expenseItems: ExpenseItem[];
   expenseCategories: ExpenseCategory[];
   expensePayments: ExpensePayment[];
   shareRules: ExpenseShareRule[];
@@ -105,6 +107,7 @@ export class InMemoryStore {
   private readonly collections = new Map<string, Collection>();
   private readonly participants = new Map<string, CollectionParticipant>();
   private readonly expenses = new Map<string, Expense>();
+  private readonly expenseItems = new Map<string, ExpenseItem>();
   private readonly expenseCategories = new Map<string, ExpenseCategory>();
   private readonly expensePayments = new Map<string, ExpensePayment>();
   private readonly shareRules = new Map<string, ExpenseShareRule>();
@@ -491,6 +494,12 @@ export class InMemoryStore {
     return this.getExpenses(collectionId);
   }
 
+  listExpenseItems(userId: string, expenseId: string): ExpenseItem[] {
+    const expense = this.getExpense(expenseId);
+    this.getCollectionForUser(userId, expense.collectionId);
+    return this.getExpenseItems(expenseId);
+  }
+
   listCategories(userId: string, collectionId: string): ExpenseCategory[] {
     this.getCollectionForUser(userId, collectionId);
     return this.getCategories(collectionId);
@@ -521,12 +530,23 @@ export class InMemoryStore {
       categoryId?: string | null;
       expenseType?: Expense["expenseType"];
       comment?: string | null;
+      items?: Array<{ title: string; amountMinor: number; categoryId?: string | null; splitMode?: ExpenseItem["splitMode"] }>;
       payments?: Array<{ paidByParticipantId: string; amountMinor: number; paymentSource?: ExpensePayment["paymentSource"]; comment?: string | null }>;
     }
   ): { expense: Expense; payments: ExpensePayment[] } {
     this.getOrganizerCollection(userId, collectionId);
     if (data.categoryId) {
       this.getCategory(collectionId, data.categoryId);
+    }
+    if (data.items?.some((item) => item.categoryId)) {
+      for (const item of data.items) {
+        if (item.categoryId) {
+          this.getCategory(collectionId, item.categoryId);
+        }
+      }
+    }
+    if (data.items && data.items.reduce((sum, item) => sum + item.amountMinor, 0) !== data.amountMinor) {
+      throw new AppError(400, "Expense items total must match expense amount.");
     }
 
     const expense: Expense = {
@@ -543,12 +563,33 @@ export class InMemoryStore {
       updatedAt: now()
     };
     this.expenses.set(expense.id, expense);
+    for (const item of data.items ?? []) {
+      this.createExpenseItemRecord(expense.id, item);
+    }
 
     const payments = (data.payments ?? []).map((payment) => this.addExpensePayment(userId, expense.id, payment));
     this.recalculateCollectionTotal(collectionId);
     this.markCollectionStatus(collectionId, "expenses_added");
 
     return { expense, payments };
+  }
+
+  createExpenseItem(
+    userId: string,
+    expenseId: string,
+    data: { title: string; amountMinor: number; categoryId?: string | null; splitMode?: ExpenseItem["splitMode"] }
+  ): ExpenseItem {
+    const expense = this.getExpense(expenseId);
+    this.getOrganizerCollection(userId, expense.collectionId);
+    if (data.categoryId) {
+      this.getCategory(expense.collectionId, data.categoryId);
+    }
+
+    const item = this.createExpenseItemRecord(expenseId, data);
+    this.recalculateExpenseAmountFromItems(expenseId);
+    this.recalculateCollectionTotal(expense.collectionId);
+    this.markCollectionStatus(expense.collectionId, "expenses_added");
+    return item;
   }
 
   addExpensePayment(
@@ -577,17 +618,39 @@ export class InMemoryStore {
   addShareRule(
     userId: string,
     expenseId: string,
-    data: Omit<ExpenseShareRule, "id" | "expenseId" | "expenseItemId">
+    data: {
+      expenseItemId?: string | null;
+      categoryId?: string | null;
+      participantId: string;
+      splitMode: ExpenseShareRule["splitMode"];
+      weight?: number | null;
+      fixedAmountMinor?: number | null;
+      percent?: number | null;
+      capAmountMinor?: number | null;
+      excluded?: boolean | null;
+      reason?: string | null;
+    }
   ): ExpenseShareRule {
     const expense = this.getExpense(expenseId);
     this.getOrganizerCollection(userId, expense.collectionId);
     this.getParticipant(expense.collectionId, data.participantId);
+    if (data.expenseItemId) {
+      this.getExpenseItem(expenseId, data.expenseItemId);
+    }
 
     const rule: ExpenseShareRule = {
       id: randomUUID(),
       expenseId,
-      expenseItemId: null,
-      ...data
+      expenseItemId: data.expenseItemId ?? null,
+      categoryId: data.categoryId ?? null,
+      participantId: data.participantId,
+      splitMode: data.splitMode,
+      weight: data.weight ?? null,
+      fixedAmountMinor: data.fixedAmountMinor ?? null,
+      percent: data.percent ?? null,
+      capAmountMinor: data.capAmountMinor ?? null,
+      excluded: data.excluded ?? false,
+      reason: data.reason ?? null
     };
     this.shareRules.set(rule.id, rule);
     this.markCollectionStatus(expense.collectionId, "rules_configured");
@@ -620,8 +683,17 @@ export class InMemoryStore {
           participantId: payment.paidByParticipantId,
           amountMinor: payment.amountMinor
         })),
+        items: this.getExpenseItems(expense.id).map((item) => ({
+          id: item.id,
+          title: item.title,
+          amountMinor: item.amountMinor,
+          currency: item.currency,
+          categoryId: item.categoryId,
+          splitMode: item.splitMode
+        })),
         shareRules: this.getExpenseShareRules(expense.id).map((rule) => ({
           participantId: rule.participantId,
+          expenseItemId: rule.expenseItemId,
           splitMode: rule.splitMode,
           categoryId: rule.categoryId,
           weight: rule.weight,
@@ -928,11 +1000,12 @@ export class InMemoryStore {
 
   debugGetCollectionState(collectionId: string): {
     collection: Collection;
-    participants: CollectionParticipant[];
-    categories: ExpenseCategory[];
-    expenses: Expense[];
-    expensePayments: ExpensePayment[];
-    shareRules: ExpenseShareRule[];
+      participants: CollectionParticipant[];
+      categories: ExpenseCategory[];
+      expenses: Expense[];
+      expenseItems: ExpenseItem[];
+      expensePayments: ExpensePayment[];
+      shareRules: ExpenseShareRule[];
     calculationVersions: CalculationVersion[];
     disputes: Dispute[];
     manualPaymentProofs: ManualPaymentProof[];
@@ -942,11 +1015,12 @@ export class InMemoryStore {
     const expenses = this.getExpenses(collectionId);
     return {
       collection: this.getCollection(collectionId),
-      participants: this.getParticipants(collectionId),
-      categories: this.getCategories(collectionId),
-      expenses,
-      expensePayments: expenses.flatMap((expense) => this.getExpensePayments(expense.id)),
-      shareRules: expenses.flatMap((expense) => this.getExpenseShareRules(expense.id)),
+        participants: this.getParticipants(collectionId),
+        categories: this.getCategories(collectionId),
+        expenses,
+        expenseItems: expenses.flatMap((expense) => this.getExpenseItems(expense.id)),
+        expensePayments: expenses.flatMap((expense) => this.getExpensePayments(expense.id)),
+        shareRules: expenses.flatMap((expense) => this.getExpenseShareRules(expense.id)),
       calculationVersions: this.getCalculationVersions(collectionId),
       disputes: [...this.disputes.values()].filter((dispute) => dispute.collectionId === collectionId),
       manualPaymentProofs: [...this.manualPaymentProofs.values()].filter((proof) => proof.collectionId === collectionId),
@@ -975,6 +1049,7 @@ export class InMemoryStore {
     this.collections.clear();
     this.participants.clear();
     this.expenses.clear();
+    this.expenseItems.clear();
     this.expenseCategories.clear();
     this.expensePayments.clear();
     this.shareRules.clear();
@@ -1006,6 +1081,9 @@ export class InMemoryStore {
     }
     for (const expense of snapshot.expenses) {
       this.expenses.set(expense.id, expense);
+    }
+    for (const item of snapshot.expenseItems) {
+      this.expenseItems.set(item.id, item);
     }
     for (const category of snapshot.expenseCategories) {
       this.expenseCategories.set(category.id, category);
@@ -1276,6 +1354,20 @@ export class InMemoryStore {
     return [...this.expenses.values()].filter((expense) => expense.collectionId === collectionId);
   }
 
+  private getExpenseItems(expenseId: string): ExpenseItem[] {
+    return [...this.expenseItems.values()]
+      .filter((item) => item.expenseId === expenseId)
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.title.localeCompare(b.title));
+  }
+
+  private getExpenseItem(expenseId: string, expenseItemId: string): ExpenseItem {
+    const item = this.expenseItems.get(expenseItemId);
+    if (!item || item.expenseId !== expenseId) {
+      throw new AppError(404, "Expense item not found.");
+    }
+    return item;
+  }
+
   private getCategory(collectionId: string, categoryId: string): ExpenseCategory {
     const category = this.expenseCategories.get(categoryId);
     if (!category || category.collectionId !== collectionId) {
@@ -1296,6 +1388,25 @@ export class InMemoryStore {
 
   private getExpenseShareRules(expenseId: string): ExpenseShareRule[] {
     return [...this.shareRules.values()].filter((rule) => rule.expenseId === expenseId);
+  }
+
+  private createExpenseItemRecord(
+    expenseId: string,
+    data: { title: string; amountMinor: number; categoryId?: string | null; splitMode?: ExpenseItem["splitMode"] }
+  ): ExpenseItem {
+    const item: ExpenseItem = {
+      id: randomUUID(),
+      expenseId,
+      title: data.title,
+      amountMinor: data.amountMinor,
+      currency: "RUB",
+      categoryId: data.categoryId ?? null,
+      splitMode: data.splitMode ?? "equal",
+      createdAt: now(),
+      updatedAt: now()
+    };
+    this.expenseItems.set(item.id, item);
+    return item;
   }
 
   private getCalculationVersions(collectionId: string): CalculationVersion[] {
@@ -1354,6 +1465,12 @@ export class InMemoryStore {
     const collection = this.getCollection(collectionId);
     const totalAmountMinor = this.getExpenses(collectionId).reduce((sum, expense) => sum + expense.amountMinor, 0);
     this.collections.set(collectionId, { ...collection, totalAmountMinor, updatedAt: now() });
+  }
+
+  private recalculateExpenseAmountFromItems(expenseId: string): void {
+    const expense = this.getExpense(expenseId);
+    const amountMinor = this.getExpenseItems(expenseId).reduce((sum, item) => sum + item.amountMinor, 0);
+    this.expenses.set(expenseId, { ...expense, amountMinor, updatedAt: now() });
   }
 
   private markCollectionStatus(collectionId: string, status: Collection["status"]): void {

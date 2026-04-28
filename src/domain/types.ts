@@ -161,6 +161,18 @@ export interface Expense {
   updatedAt: string;
 }
 
+export interface ExpenseItem {
+  id: string;
+  expenseId: string;
+  title: string;
+  amountMinor: number;
+  currency: "RUB";
+  categoryId: string | null;
+  splitMode: ExpenseShareRuleInput["splitMode"];
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface ExpenseCategory {
   id: string;
   collectionId: string;

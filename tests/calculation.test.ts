@@ -231,4 +231,40 @@ describe("calculation engine", () => {
     expect(organizerSummary?.totalOwesAmountMinor).toBe(364);
     expect(friendSummary?.totalOwesAmountMinor).toBe(436);
   });
+
+  it("supports item-level restaurant splits inside one expense", () => {
+    const result = calculateCollection({
+      collectionId: "restaurant",
+      currency: "RUB",
+      participants: participants.slice(0, 2),
+      expenses: [
+        {
+          id: "receipt",
+          title: "Restaurant receipt",
+          amountMinor: 1200,
+          payments: [{ participantId: "a", amountMinor: 1200 }],
+          items: [
+            { id: "steak", title: "Steak", amountMinor: 700, splitMode: "equal" },
+            { id: "wine", title: "Wine", amountMinor: 500, categoryId: "alcohol", splitMode: "equal" }
+          ],
+          shareRules: [
+            {
+              participantId: "b",
+              expenseItemId: "wine",
+              splitMode: "excluded",
+              reason: "Did not drink wine."
+            }
+          ]
+        }
+      ]
+    });
+
+    expect(participantAmount(result, "a")).toBe(850);
+    expect(participantAmount(result, "b")).toBe(350);
+    expect(result.participantCalculations.find((item) => item.participantId === "b")?.explanation.excluded).toEqual([
+      expect.objectContaining({
+        expenseTitle: "Restaurant receipt / Wine"
+      })
+    ]);
+  });
 });

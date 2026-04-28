@@ -93,6 +93,15 @@ Retry/concurrency hardening now covers:
 - manual payment submit supports `idempotencyKey` for safe retries;
 - Prisma store serializes calculation and manual payment critical sections on PostgreSQL advisory locks.
 
+Mock payment and autopay groundwork is now available without any real payment processor:
+
+- user-scoped mock payment method binding and revoke flow;
+- collection/global auto-payment rules with update support;
+- simulated payment intents stored in PostgreSQL;
+- retry-safe mock payment intent creation via `idempotencyKey`;
+- simulated success / failure / refund transitions for backend development;
+- route-level parity tests and live PostgreSQL coverage for the new payment slice.
+
 По умолчанию API стартует на `http://localhost:3000`.
 
 ```bash

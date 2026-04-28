@@ -21,6 +21,7 @@ export type CollectionStatus =
   | "cancelled"
   | "blocked";
 export type PaymentMode = "manual" | "confirm_each" | "auto_for_trusted" | "calculation_only";
+export type PaymentProvider = "yookassa" | "bank" | "sbp" | "manual" | "other";
 export type ParticipantType = "registered_user" | "invited_phone" | "guest" | "child" | "external_person" | "group_proxy";
 export type ParticipantStatus = "invited" | "joined" | "declined" | "confirmed" | "disputed" | "removed" | "active";
 export type ParticipantPaymentStatus = "not_required" | "pending" | "paid" | "failed" | "manual_marked_paid" | "disputed";
@@ -40,6 +41,9 @@ export type DisputeType =
   | "other";
 export type ManualPaymentMethod = "sbp" | "cash" | "card" | "other";
 export type ManualPaymentProofStatus = "submitted" | "confirmed" | "rejected";
+export type PaymentStatus = "pending" | "processing" | "succeeded" | "failed" | "cancelled" | "refunded" | "manual_marked_paid" | "disputed";
+export type PaymentMethodStatus = "pending_binding" | "active" | "failed" | "expired" | "revoked" | "requires_confirmation";
+export type PaymentCardBrand = "visa" | "mastercard" | "mir" | "unknown";
 export type AuditEntityType =
   | "collection"
   | "payment"
@@ -143,6 +147,19 @@ export interface Collection {
   updatedAt: string;
 }
 
+export interface PaymentMethod {
+  id: string;
+  userId: string;
+  provider: string;
+  providerPaymentMethodId: string;
+  maskedPan: string;
+  brand: PaymentCardBrand;
+  status: PaymentMethodStatus;
+  isDefault: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface CollectionParticipant {
   id: string;
   collectionId: string;
@@ -161,6 +178,21 @@ export interface CollectionParticipant {
   updatedAt: string;
 }
 
+export interface Payment {
+  id: string;
+  collectionId: string;
+  participantId: string | null;
+  responsibleUserId: string;
+  amountMinor: number;
+  currency: "RUB";
+  provider: PaymentProvider;
+  providerPaymentId: string | null;
+  status: PaymentStatus;
+  idempotencyKey: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface Expense {
   id: string;
   collectionId: string;
@@ -171,6 +203,26 @@ export interface Expense {
   categoryId: string | null;
   receiptUrl: string | null;
   comment: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AutoPaymentRule {
+  id: string;
+  userId: string;
+  collectionId: string | null;
+  groupId: string | null;
+  category: string | null;
+  enabled: boolean;
+  singleCollectionLimitMinor: number;
+  dailyLimitMinor: number;
+  monthlyLimitMinor: number;
+  requiresObjectionWindow: boolean;
+  objectionWindowHours: number;
+  allowGuests: boolean;
+  allowChildren: boolean;
+  allowPartner: boolean;
+  maxCoveredParticipants: number;
   createdAt: string;
   updatedAt: string;
 }

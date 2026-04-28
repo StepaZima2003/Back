@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { PrismaClient, type Prisma } from "@prisma/client";
 import { calculateCollection } from "../calculation";
 import type {
+  AutoPaymentRule,
   AuditAction,
   AuditEntityType,
   AuditLog,
@@ -20,6 +21,9 @@ import type {
   Group,
   GroupMember,
   GroupParticipantProfile,
+  Payment,
+  PaymentCardBrand,
+  PaymentMethod,
   ManualPaymentProof,
   Notification,
   NotificationType,
@@ -517,6 +521,166 @@ export class PrismaStore implements AppStore {
     }
 
     return mapCollectionRecord(updated);
+  }
+
+  async listPaymentMethods(userId: string): Promise<PaymentMethod[]> {
+    await this.getUser(userId);
+    return (await this.client.paymentMethod.findMany())
+      .filter((method) => method.userId === userId)
+      .sort((a, b) => Number(b.isDefault) - Number(a.isDefault) || a.createdAt.getTime() - b.createdAt.getTime())
+      .map(mapPaymentMethodRecord);
+  }
+
+  async bindMockPaymentMethod(
+    userId: string,
+    data: { provider?: string; maskedPan: string; brand?: PaymentCardBrand; setAsDefault?: boolean }
+  ): Promise<PaymentMethod> {
+    await this.getUser(userId);
+    const existingMethods = await this.listPaymentMethods(userId);
+    const isDefault = data.setAsDefault ?? existingMethods.length === 0;
+    if (isDefault) {
+      await this.clearDefaultPaymentMethodDirect(userId);
+    }
+
+    const createdAt = new Date();
+    const method = await this.client.paymentMethod.upsert({
+      where: { id: randomUUID() },
+      update: {},
+      create: {
+        id: randomUUID(),
+        userId,
+        provider: data.provider?.trim() || "mock_bank",
+        providerPaymentMethodId: `mock_pm_${randomUUID()}`,
+        maskedPan: data.maskedPan,
+        brand: data.brand ?? "unknown",
+        status: "active",
+        isDefault,
+        createdAt,
+        updatedAt: createdAt
+      }
+    });
+    await this.addAuditDirect(userId, "user", method.id, null, "created", {
+      kind: "payment_method",
+      provider: method.provider,
+      brand: method.brand,
+      isDefault: method.isDefault
+    });
+    return mapPaymentMethodRecord(method);
+  }
+
+  async revokePaymentMethod(userId: string, paymentMethodId: string): Promise<PaymentMethod> {
+    const method = await this.getPaymentMethodForUserDirect(userId, paymentMethodId);
+    if (method.status === "revoked") {
+      return method;
+    }
+
+    const updated = await this.client.paymentMethod.upsert({
+      where: { id: method.id },
+      update: {
+        status: "revoked",
+        isDefault: false,
+        updatedAt: new Date()
+      },
+      create: paymentMethodCreateInputFromRecord(method, {
+        status: "revoked",
+        isDefault: false,
+        updatedAt: new Date()
+      })
+    });
+    if (method.isDefault) {
+      await this.promoteFallbackDefaultPaymentMethodDirect(userId, method.id);
+    }
+    await this.addAuditDirect(userId, "user", method.id, null, "updated", {
+      kind: "payment_method",
+      status: "revoked"
+    });
+    return mapPaymentMethodRecord(updated);
+  }
+
+  async listAutoPaymentRules(userId: string, scope?: { collectionId?: string; groupId?: string }): Promise<AutoPaymentRule[]> {
+    await this.getUser(userId);
+    return (await this.client.autoPaymentRule.findMany())
+      .filter((rule) => rule.userId === userId)
+      .filter((rule) => !scope?.collectionId || rule.collectionId === scope.collectionId)
+      .filter((rule) => !scope?.groupId || rule.groupId === scope.groupId)
+      .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
+      .map(mapAutoPaymentRuleRecord);
+  }
+
+  async upsertAutoPaymentRule(
+    userId: string,
+    data: {
+      id?: string | null;
+      collectionId?: string | null;
+      groupId?: string | null;
+      category?: string | null;
+      enabled?: boolean;
+      singleCollectionLimitMinor?: number;
+      dailyLimitMinor?: number;
+      monthlyLimitMinor?: number;
+      requiresObjectionWindow?: boolean;
+      objectionWindowHours?: number;
+      allowGuests?: boolean;
+      allowChildren?: boolean;
+      allowPartner?: boolean;
+      maxCoveredParticipants?: number;
+    }
+  ): Promise<AutoPaymentRule> {
+    await this.getUser(userId);
+    if (data.collectionId) {
+      await this.getCollectionForUser(userId, data.collectionId);
+    }
+    if (data.groupId) {
+      await this.getGroupForUser(userId, data.groupId);
+    }
+
+    const existing = data.id ? await this.getOwnAutoPaymentRuleDirect(userId, data.id) : null;
+    const rule = await this.client.autoPaymentRule.upsert({
+      where: { id: existing?.id ?? randomUUID() },
+      update: {
+        collectionId: data.collectionId === undefined ? existing?.collectionId ?? undefined : data.collectionId,
+        groupId: data.groupId === undefined ? existing?.groupId ?? undefined : data.groupId,
+        category: data.category === undefined ? existing?.category ?? undefined : data.category,
+        enabled: data.enabled ?? existing?.enabled ?? true,
+        singleCollectionLimitMinor: data.singleCollectionLimitMinor ?? existing?.singleCollectionLimitMinor ?? 0,
+        dailyLimitMinor: data.dailyLimitMinor ?? existing?.dailyLimitMinor ?? 0,
+        monthlyLimitMinor: data.monthlyLimitMinor ?? existing?.monthlyLimitMinor ?? 0,
+        requiresObjectionWindow: data.requiresObjectionWindow ?? existing?.requiresObjectionWindow ?? true,
+        objectionWindowHours: data.objectionWindowHours ?? existing?.objectionWindowHours ?? 2,
+        allowGuests: data.allowGuests ?? existing?.allowGuests ?? false,
+        allowChildren: data.allowChildren ?? existing?.allowChildren ?? true,
+        allowPartner: data.allowPartner ?? existing?.allowPartner ?? false,
+        maxCoveredParticipants: data.maxCoveredParticipants ?? existing?.maxCoveredParticipants ?? 2,
+        updatedAt: new Date()
+      },
+      create: {
+        id: existing?.id ?? randomUUID(),
+        userId,
+        collectionId: data.collectionId ?? existing?.collectionId ?? null,
+        groupId: data.groupId ?? existing?.groupId ?? null,
+        category: data.category ?? existing?.category ?? null,
+        enabled: data.enabled ?? existing?.enabled ?? true,
+        singleCollectionLimitMinor: data.singleCollectionLimitMinor ?? existing?.singleCollectionLimitMinor ?? 0,
+        dailyLimitMinor: data.dailyLimitMinor ?? existing?.dailyLimitMinor ?? 0,
+        monthlyLimitMinor: data.monthlyLimitMinor ?? existing?.monthlyLimitMinor ?? 0,
+        requiresObjectionWindow: data.requiresObjectionWindow ?? existing?.requiresObjectionWindow ?? true,
+        objectionWindowHours: data.objectionWindowHours ?? existing?.objectionWindowHours ?? 2,
+        allowGuests: data.allowGuests ?? existing?.allowGuests ?? false,
+        allowChildren: data.allowChildren ?? existing?.allowChildren ?? true,
+        allowPartner: data.allowPartner ?? existing?.allowPartner ?? false,
+        maxCoveredParticipants: data.maxCoveredParticipants ?? existing?.maxCoveredParticipants ?? 2,
+        createdAt: existing ? new Date(existing.createdAt) : new Date(),
+        updatedAt: new Date()
+      }
+    });
+    await this.addAuditDirect(userId, "autopay_rule", rule.id, rule.collectionId, existing ? "updated" : "created", {
+      groupId: rule.groupId,
+      category: rule.category,
+      enabled: rule.enabled,
+      singleCollectionLimitMinor: rule.singleCollectionLimitMinor,
+      monthlyLimitMinor: rule.monthlyLimitMinor
+    });
+    return mapAutoPaymentRuleRecord(rule);
   }
 
   async listParticipants(userId: string, collectionId: string): Promise<CollectionParticipant[]> {
@@ -1512,6 +1676,208 @@ export class PrismaStore implements AppStore {
       .map(mapManualPaymentProofRecord);
   }
 
+  async listPayments(userId: string, collectionId: string): Promise<Payment[]> {
+    await this.getCollectionForUser(userId, collectionId);
+    return (await this.client.payment.findMany())
+      .filter((payment) => payment.collectionId === collectionId)
+      .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
+      .map(mapPaymentRecord);
+  }
+
+  async createMockPayment(
+    userId: string,
+    collectionId: string,
+    data: {
+      participantId: string;
+      amountMinor: number;
+      provider?: Payment["provider"];
+      paymentMethodId?: string | null;
+      idempotencyKey: string;
+    }
+  ): Promise<Payment> {
+    return await this.withAdvisoryLock(`collection:${collectionId}:payment-intent`, async (store) => {
+      return await store.createMockPaymentLocked(userId, collectionId, data);
+    });
+  }
+
+  private async createMockPaymentLocked(
+    userId: string,
+    collectionId: string,
+    data: {
+      participantId: string;
+      amountMinor: number;
+      provider?: Payment["provider"];
+      paymentMethodId?: string | null;
+      idempotencyKey: string;
+    }
+  ): Promise<Payment> {
+    await this.getCollectionForUser(userId, collectionId);
+    const participant = await this.getParticipantRecord(collectionId, data.participantId);
+    if (!(await this.canActForParticipant(userId, participant))) {
+      throw new AppError(403, "User cannot create payment for this participant.");
+    }
+
+    const paymentMethod = data.paymentMethodId ? await this.getPaymentMethodForUserDirect(userId, data.paymentMethodId) : null;
+    if (paymentMethod && paymentMethod.status !== "active") {
+      throw new AppError(409, "Payment method is not active.");
+    }
+
+    const normalizedIdempotencyKey = resolveMockPaymentIdempotencyKey(userId, collectionId, data.idempotencyKey);
+    const existing = await this.findPaymentByIdempotencyKeyDirect(collectionId, normalizedIdempotencyKey);
+    if (existing) {
+      if (!isSameMockPaymentRequest(existing, userId, data, normalizedIdempotencyKey)) {
+        throw new AppError(409, "Payment idempotency key is already used for another request.");
+      }
+      return existing;
+    }
+
+    const createdAt = new Date();
+    const payment = await this.client.payment.upsert({
+      where: { id: randomUUID() },
+      update: {},
+      create: {
+        id: randomUUID(),
+        collectionId,
+        participantId: participant.id,
+        responsibleUserId: userId,
+        amountMinor: data.amountMinor,
+        currency: "RUB",
+        provider: data.provider ?? normalizeMockPaymentProvider(paymentMethod?.provider),
+        providerPaymentId: `mock_pay_${randomUUID()}`,
+        status: "pending",
+        idempotencyKey: normalizedIdempotencyKey,
+        createdAt,
+        updatedAt: createdAt
+      }
+    });
+    await this.setParticipantPaymentStatusDirect(collectionId, participant.id, "pending");
+    await this.bumpCollectionStatus(collectionId, "payment_pending");
+    await this.addAuditDirect(userId, "payment", payment.id, collectionId, "created", {
+      amountMinor: payment.amountMinor,
+      provider: payment.provider,
+      participantId: payment.participantId,
+      paymentMethodId: paymentMethod?.id ?? null,
+      simulated: true
+    });
+    return mapPaymentRecord(payment);
+  }
+
+  async confirmMockPayment(userId: string, paymentId: string): Promise<Payment> {
+    return await this.withAdvisoryLock(`payment:${paymentId}`, async (store) => {
+      return await store.confirmMockPaymentLocked(userId, paymentId);
+    });
+  }
+
+  private async confirmMockPaymentLocked(userId: string, paymentId: string): Promise<Payment> {
+    const payment = await this.getPaymentForActorDirect(userId, paymentId);
+    if (payment.status === "succeeded") {
+      return payment;
+    }
+    if (payment.status === "refunded") {
+      throw new AppError(409, "Refunded payment cannot be confirmed.");
+    }
+    if (payment.status === "failed" || payment.status === "cancelled") {
+      throw new AppError(409, "Terminal payment cannot be confirmed.");
+    }
+
+    const updated = await this.client.payment.upsert({
+      where: { id: payment.id },
+      update: {
+        status: "succeeded",
+        updatedAt: new Date()
+      },
+      create: paymentCreateInputFromRecord(payment, {
+        status: "succeeded",
+        updatedAt: new Date()
+      })
+    });
+    if (payment.participantId) {
+      await this.setParticipantPaymentStatusDirect(payment.collectionId, payment.participantId, "paid");
+    }
+    await this.syncCollectionPaymentStatusDirect(payment.collectionId);
+    await this.addAuditDirect(userId, "payment", payment.id, payment.collectionId, "paid", {
+      status: "succeeded",
+      simulated: true
+    });
+    return mapPaymentRecord(updated);
+  }
+
+  async failMockPayment(userId: string, paymentId: string, data?: { reason?: string | null }): Promise<Payment> {
+    return await this.withAdvisoryLock(`payment:${paymentId}`, async (store) => {
+      return await store.failMockPaymentLocked(userId, paymentId, data);
+    });
+  }
+
+  private async failMockPaymentLocked(userId: string, paymentId: string, data?: { reason?: string | null }): Promise<Payment> {
+    const payment = await this.getPaymentForActorDirect(userId, paymentId);
+    if (payment.status === "failed") {
+      return payment;
+    }
+    if (payment.status === "succeeded" || payment.status === "refunded") {
+      throw new AppError(409, "Completed payment cannot be failed.");
+    }
+
+    const updated = await this.client.payment.upsert({
+      where: { id: payment.id },
+      update: {
+        status: "failed",
+        updatedAt: new Date()
+      },
+      create: paymentCreateInputFromRecord(payment, {
+        status: "failed",
+        updatedAt: new Date()
+      })
+    });
+    if (payment.participantId) {
+      await this.setParticipantPaymentStatusDirect(payment.collectionId, payment.participantId, "failed");
+    }
+    await this.syncCollectionPaymentStatusDirect(payment.collectionId);
+    await this.addAuditDirect(userId, "payment", payment.id, payment.collectionId, "updated", {
+      status: "failed",
+      reason: data?.reason ?? null,
+      simulated: true
+    });
+    return mapPaymentRecord(updated);
+  }
+
+  async refundPayment(userId: string, paymentId: string, data?: { reason?: string | null }): Promise<Payment> {
+    return await this.withAdvisoryLock(`payment:${paymentId}`, async (store) => {
+      return await store.refundPaymentLocked(userId, paymentId, data);
+    });
+  }
+
+  private async refundPaymentLocked(userId: string, paymentId: string, data?: { reason?: string | null }): Promise<Payment> {
+    const payment = await this.getPaymentForActorDirect(userId, paymentId);
+    if (payment.status === "refunded") {
+      return payment;
+    }
+    if (payment.status !== "succeeded") {
+      throw new AppError(409, "Only succeeded payment can be refunded.");
+    }
+
+    const updated = await this.client.payment.upsert({
+      where: { id: payment.id },
+      update: {
+        status: "refunded",
+        updatedAt: new Date()
+      },
+      create: paymentCreateInputFromRecord(payment, {
+        status: "refunded",
+        updatedAt: new Date()
+      })
+    });
+    if (payment.participantId) {
+      await this.setParticipantPaymentStatusDirect(payment.collectionId, payment.participantId, "pending");
+    }
+    await this.syncCollectionPaymentStatusDirect(payment.collectionId);
+    await this.addAuditDirect(userId, "payment", payment.id, payment.collectionId, "updated", {
+      status: "refunded",
+      reason: data?.reason ?? null,
+      simulated: true
+    });
+    return mapPaymentRecord(updated);
+  }
+
   async listAuditLogs(userId: string, collectionId: string): Promise<AuditLog[]> {
     await this.getCollectionForUser(userId, collectionId);
     return (await this.client.auditLog.findMany())
@@ -1839,6 +2205,124 @@ export class PrismaStore implements AppStore {
     return proof ? mapManualPaymentProofRecord(proof) : null;
   }
 
+  private async getPaymentMethodForUserDirect(userId: string, paymentMethodId: string): Promise<PaymentMethod> {
+    const method = (await this.client.paymentMethod.findMany()).find((item) => item.id === paymentMethodId);
+    if (!method || method.userId !== userId) {
+      throw new AppError(404, "Payment method not found.");
+    }
+    return mapPaymentMethodRecord(method);
+  }
+
+  private async getOwnAutoPaymentRuleDirect(userId: string, ruleId: string): Promise<AutoPaymentRule> {
+    const rule = (await this.client.autoPaymentRule.findMany()).find((item) => item.id === ruleId);
+    if (!rule || rule.userId !== userId) {
+      throw new AppError(404, "Auto payment rule not found.");
+    }
+    return mapAutoPaymentRuleRecord(rule);
+  }
+
+  private async clearDefaultPaymentMethodDirect(userId: string): Promise<void> {
+    const methods = (await this.client.paymentMethod.findMany()).filter((method) => method.userId === userId && method.isDefault);
+    for (const method of methods) {
+      await this.client.paymentMethod.upsert({
+        where: { id: method.id },
+        update: {
+          isDefault: false,
+          updatedAt: new Date()
+        },
+        create: {
+          ...method,
+          isDefault: false,
+          updatedAt: new Date()
+        }
+      });
+    }
+  }
+
+  private async promoteFallbackDefaultPaymentMethodDirect(userId: string, excludedPaymentMethodId: string): Promise<void> {
+    const fallback = (await this.client.paymentMethod.findMany())
+      .filter((method) => method.userId === userId && method.id !== excludedPaymentMethodId && method.status === "active")
+      .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())[0];
+    if (!fallback) {
+      return;
+    }
+    await this.client.paymentMethod.upsert({
+      where: { id: fallback.id },
+      update: {
+        isDefault: true,
+        updatedAt: new Date()
+      },
+      create: {
+        ...fallback,
+        isDefault: true,
+        updatedAt: new Date()
+      }
+    });
+  }
+
+  private async findPaymentByIdempotencyKeyDirect(collectionId: string, idempotencyKey: string): Promise<Payment | null> {
+    const payment = (await this.client.payment.findMany()).find(
+      (item) => item.collectionId === collectionId && item.idempotencyKey === idempotencyKey
+    );
+    return payment ? mapPaymentRecord(payment) : null;
+  }
+
+  private async getPaymentForActorDirect(userId: string, paymentId: string): Promise<Payment> {
+    const payment = (await this.client.payment.findMany()).find((item) => item.id === paymentId);
+    if (!payment) {
+      throw new AppError(404, "Payment not found.");
+    }
+
+    const collection = await this.getCollectionRecord(payment.collectionId);
+    if (payment.responsibleUserId === userId || collection.organizerId === userId) {
+      return mapPaymentRecord(payment);
+    }
+
+    throw new AppError(403, "User cannot access this payment.");
+  }
+
+  private async setParticipantPaymentStatusDirect(
+    collectionId: string,
+    participantId: string,
+    paymentStatus: CollectionParticipant["paymentStatus"]
+  ): Promise<void> {
+    const participant = await this.getParticipantRecord(collectionId, participantId);
+    await this.client.collectionParticipant.upsert({
+      where: { id: participant.id },
+      update: {
+        paymentStatus,
+        updatedAt: new Date()
+      },
+      create: participantCreateInputFromRecord(participant, {
+        paymentStatus,
+        updatedAt: new Date()
+      })
+    });
+  }
+
+  private async syncCollectionPaymentStatusDirect(collectionId: string): Promise<void> {
+    const participants = (await this.client.collectionParticipant.findMany()).filter(
+      (participant) => participant.collectionId === collectionId && participant.finalShareAmountMinor > 0
+    );
+    if (participants.length === 0) {
+      await this.bumpCollectionStatus(collectionId, "finalized");
+      return;
+    }
+
+    const paidCount = participants.filter(
+      (participant) => participant.paymentStatus === "paid" || participant.paymentStatus === "manual_marked_paid"
+    ).length;
+    if (paidCount === 0) {
+      await this.bumpCollectionStatus(collectionId, "payment_pending");
+      return;
+    }
+    if (paidCount === participants.length) {
+      await this.bumpCollectionStatus(collectionId, "paid");
+      return;
+    }
+    await this.bumpCollectionStatus(collectionId, "partially_paid");
+  }
+
   private async canActForParticipant(userId: string, participant: CollectionParticipant | Awaited<ReturnType<PrismaStore["getParticipantRecord"]>>): Promise<boolean> {
     const collection = await this.getCollectionRecord(participant.collectionId);
     if (collection.organizerId === userId || participant.linkedUserId === userId) {
@@ -2117,6 +2601,32 @@ function mapCollectionRecord(record: {
   };
 }
 
+function mapPaymentMethodRecord(record: {
+  id: string;
+  userId: string;
+  provider: string;
+  providerPaymentMethodId: string;
+  maskedPan: string;
+  brand: PaymentMethod["brand"];
+  status: PaymentMethod["status"];
+  isDefault: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+}): PaymentMethod {
+  return {
+    id: record.id,
+    userId: record.userId,
+    provider: record.provider,
+    providerPaymentMethodId: record.providerPaymentMethodId,
+    maskedPan: record.maskedPan,
+    brand: record.brand,
+    status: record.status,
+    isDefault: record.isDefault,
+    createdAt: record.createdAt.toISOString(),
+    updatedAt: record.updatedAt.toISOString()
+  };
+}
+
 function mapParticipantRecord(record: {
   id: string;
   collectionId: string;
@@ -2154,6 +2664,36 @@ function mapParticipantRecord(record: {
   };
 }
 
+function mapPaymentRecord(record: {
+  id: string;
+  collectionId: string;
+  participantId: string | null;
+  responsibleUserId: string;
+  amountMinor: number;
+  currency: string;
+  provider: Payment["provider"];
+  providerPaymentId: string | null;
+  status: Payment["status"];
+  idempotencyKey: string;
+  createdAt: Date;
+  updatedAt: Date;
+}): Payment {
+  return {
+    id: record.id,
+    collectionId: record.collectionId,
+    participantId: record.participantId,
+    responsibleUserId: record.responsibleUserId,
+    amountMinor: record.amountMinor,
+    currency: "RUB",
+    provider: record.provider,
+    providerPaymentId: record.providerPaymentId,
+    status: record.status,
+    idempotencyKey: record.idempotencyKey,
+    createdAt: record.createdAt.toISOString(),
+    updatedAt: record.updatedAt.toISOString()
+  };
+}
+
 function mapCategoryRecord(record: {
   id: string;
   collectionId: string;
@@ -2171,6 +2711,46 @@ function mapCategoryRecord(record: {
     requiresManualConfirmation: record.requiresManualConfirmation,
     autopayAllowedByDefault: record.autopayAllowedByDefault,
     createdAt: record.createdAt.toISOString()
+  };
+}
+
+function mapAutoPaymentRuleRecord(record: {
+  id: string;
+  userId: string;
+  collectionId: string | null;
+  groupId: string | null;
+  category: string | null;
+  enabled: boolean;
+  singleCollectionLimitMinor: number;
+  dailyLimitMinor: number;
+  monthlyLimitMinor: number;
+  requiresObjectionWindow: boolean;
+  objectionWindowHours: number;
+  allowGuests: boolean;
+  allowChildren: boolean;
+  allowPartner: boolean;
+  maxCoveredParticipants: number;
+  createdAt: Date;
+  updatedAt: Date;
+}): AutoPaymentRule {
+  return {
+    id: record.id,
+    userId: record.userId,
+    collectionId: record.collectionId,
+    groupId: record.groupId,
+    category: record.category,
+    enabled: record.enabled,
+    singleCollectionLimitMinor: record.singleCollectionLimitMinor,
+    dailyLimitMinor: record.dailyLimitMinor,
+    monthlyLimitMinor: record.monthlyLimitMinor,
+    requiresObjectionWindow: record.requiresObjectionWindow,
+    objectionWindowHours: record.objectionWindowHours,
+    allowGuests: record.allowGuests,
+    allowChildren: record.allowChildren,
+    allowPartner: record.allowPartner,
+    maxCoveredParticipants: record.maxCoveredParticipants,
+    createdAt: record.createdAt.toISOString(),
+    updatedAt: record.updatedAt.toISOString()
   };
 }
 
@@ -2568,6 +3148,43 @@ function isSameManualPaymentRequest(
   );
 }
 
+function resolveMockPaymentIdempotencyKey(userId: string, collectionId: string, idempotencyKey: string): string {
+  return `payment:${collectionId}:${userId}:${idempotencyKey.trim()}`;
+}
+
+function normalizeMockPaymentProvider(provider: string | null | undefined): Payment["provider"] {
+  switch (provider) {
+    case "yookassa":
+    case "bank":
+    case "sbp":
+    case "manual":
+    case "other":
+      return provider;
+    default:
+      return "other";
+  }
+}
+
+function isSameMockPaymentRequest(
+  payment: Payment,
+  userId: string,
+  data: {
+    participantId: string;
+    amountMinor: number;
+    provider?: Payment["provider"];
+    paymentMethodId?: string | null;
+  },
+  normalizedIdempotencyKey: string
+): boolean {
+  return (
+    payment.idempotencyKey === normalizedIdempotencyKey &&
+    payment.responsibleUserId === userId &&
+    payment.participantId === data.participantId &&
+    payment.amountMinor === data.amountMinor &&
+    payment.provider === (data.provider ?? payment.provider)
+  );
+}
+
 function toSqlLiteral(value: string): string {
   return `'${value.replace(/'/g, "''")}'`;
 }
@@ -2683,6 +3300,51 @@ function manualPaymentCreateInputFromRecord(
     status: overrides?.status ?? proof.status,
     createdAt: new Date(proof.createdAt),
     updatedAt: overrides?.updatedAt ?? new Date(proof.updatedAt)
+  };
+}
+
+function paymentMethodCreateInputFromRecord(
+  method: PaymentMethod,
+  overrides?: Partial<{
+    status: PaymentMethod["status"];
+    isDefault: boolean;
+    updatedAt: Date;
+  }>
+) {
+  return {
+    id: method.id,
+    userId: method.userId,
+    provider: method.provider,
+    providerPaymentMethodId: method.providerPaymentMethodId,
+    maskedPan: method.maskedPan,
+    brand: method.brand,
+    status: overrides?.status ?? method.status,
+    isDefault: overrides?.isDefault ?? method.isDefault,
+    createdAt: new Date(method.createdAt),
+    updatedAt: overrides?.updatedAt ?? new Date(method.updatedAt)
+  };
+}
+
+function paymentCreateInputFromRecord(
+  payment: Payment,
+  overrides?: Partial<{
+    status: Payment["status"];
+    updatedAt: Date;
+  }>
+) {
+  return {
+    id: payment.id,
+    collectionId: payment.collectionId,
+    participantId: payment.participantId,
+    responsibleUserId: payment.responsibleUserId,
+    amountMinor: payment.amountMinor,
+    currency: payment.currency,
+    provider: payment.provider,
+    providerPaymentId: payment.providerPaymentId,
+    status: overrides?.status ?? payment.status,
+    idempotencyKey: payment.idempotencyKey,
+    createdAt: new Date(payment.createdAt),
+    updatedAt: overrides?.updatedAt ?? new Date(payment.updatedAt)
   };
 }
 

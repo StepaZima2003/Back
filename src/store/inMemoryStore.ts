@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { calculateCollection } from "../calculation";
 import type {
+  AutoPaymentRule,
   AuthResult,
   AuditAction,
   AuditEntityType,
@@ -21,6 +22,9 @@ import type {
   Group,
   GroupMember,
   GroupParticipantProfile,
+  Payment,
+  PaymentCardBrand,
+  PaymentMethod,
   ManualPaymentMethod,
   ManualPaymentProof,
   Notification,
@@ -45,6 +49,9 @@ export interface InMemoryStoreSnapshot {
   collectionTemplates: CollectionTemplate[];
   disputes: Dispute[];
   manualPaymentProofs: ManualPaymentProof[];
+  paymentMethods?: PaymentMethod[];
+  payments?: Payment[];
+  autoPaymentRules?: AutoPaymentRule[];
   auditLogs: AuditLog[];
   notifications: Notification[];
 }
@@ -118,6 +125,9 @@ export class InMemoryStore {
   private readonly collectionTemplates = new Map<string, CollectionTemplate>();
   private readonly disputes = new Map<string, Dispute>();
   private readonly manualPaymentProofs = new Map<string, ManualPaymentProof>();
+  private readonly paymentMethods = new Map<string, PaymentMethod>();
+  private readonly payments = new Map<string, Payment>();
+  private readonly autoPaymentRules = new Map<string, AutoPaymentRule>();
   private readonly auditLogs = new Map<string, AuditLog>();
   private readonly notifications = new Map<string, Notification>();
 
@@ -444,6 +454,139 @@ export class InMemoryStore {
     }
 
     return updated;
+  }
+
+  listPaymentMethods(userId: string): PaymentMethod[] {
+    this.getUser(userId);
+    return [...this.paymentMethods.values()]
+      .filter((method) => method.userId === userId)
+      .sort((a, b) => Number(b.isDefault) - Number(a.isDefault) || a.createdAt.localeCompare(b.createdAt));
+  }
+
+  bindMockPaymentMethod(
+    userId: string,
+    data: { provider?: string; maskedPan: string; brand?: PaymentCardBrand; setAsDefault?: boolean }
+  ): PaymentMethod {
+    this.getUser(userId);
+    const createdAt = now();
+    const isDefault = data.setAsDefault ?? this.listPaymentMethods(userId).length === 0;
+    if (isDefault) {
+      this.clearDefaultPaymentMethod(userId);
+    }
+
+    const method: PaymentMethod = {
+      id: randomUUID(),
+      userId,
+      provider: data.provider?.trim() || "mock_bank",
+      providerPaymentMethodId: `mock_pm_${randomUUID()}`,
+      maskedPan: data.maskedPan,
+      brand: data.brand ?? "unknown",
+      status: "active",
+      isDefault,
+      createdAt,
+      updatedAt: createdAt
+    };
+    this.paymentMethods.set(method.id, method);
+    this.addAudit(userId, "user", method.id, null, "created", {
+      kind: "payment_method",
+      provider: method.provider,
+      brand: method.brand,
+      isDefault: method.isDefault
+    });
+    return method;
+  }
+
+  revokePaymentMethod(userId: string, paymentMethodId: string): PaymentMethod {
+    const method = this.getPaymentMethodForUser(userId, paymentMethodId);
+    if (method.status === "revoked") {
+      return method;
+    }
+
+    const updated: PaymentMethod = {
+      ...method,
+      status: "revoked",
+      isDefault: false,
+      updatedAt: now()
+    };
+    this.paymentMethods.set(method.id, updated);
+    if (method.isDefault) {
+      this.promoteFallbackDefaultPaymentMethod(userId, method.id);
+    }
+    this.addAudit(userId, "user", method.id, null, "updated", {
+      kind: "payment_method",
+      status: "revoked"
+    });
+    return updated;
+  }
+
+  listAutoPaymentRules(userId: string, scope?: { collectionId?: string; groupId?: string }): AutoPaymentRule[] {
+    this.getUser(userId);
+    return [...this.autoPaymentRules.values()]
+      .filter((rule) => rule.userId === userId)
+      .filter((rule) => !scope?.collectionId || rule.collectionId === scope.collectionId)
+      .filter((rule) => !scope?.groupId || rule.groupId === scope.groupId)
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  }
+
+  upsertAutoPaymentRule(
+    userId: string,
+    data: {
+      id?: string | null;
+      collectionId?: string | null;
+      groupId?: string | null;
+      category?: string | null;
+      enabled?: boolean;
+      singleCollectionLimitMinor?: number;
+      dailyLimitMinor?: number;
+      monthlyLimitMinor?: number;
+      requiresObjectionWindow?: boolean;
+      objectionWindowHours?: number;
+      allowGuests?: boolean;
+      allowChildren?: boolean;
+      allowPartner?: boolean;
+      maxCoveredParticipants?: number;
+    }
+  ): AutoPaymentRule {
+    this.getUser(userId);
+
+    if (data.collectionId) {
+      this.getCollectionForUser(userId, data.collectionId);
+    }
+    if (data.groupId) {
+      this.getGroupForUser(userId, data.groupId);
+    }
+
+    const existing = data.id ? this.getOwnAutoPaymentRule(userId, data.id) : null;
+    const createdAt = existing?.createdAt ?? now();
+    const rule: AutoPaymentRule = {
+      id: existing?.id ?? randomUUID(),
+      userId,
+      collectionId: data.collectionId === undefined ? existing?.collectionId ?? null : data.collectionId,
+      groupId: data.groupId === undefined ? existing?.groupId ?? null : data.groupId,
+      category: data.category === undefined ? existing?.category ?? null : data.category,
+      enabled: data.enabled ?? existing?.enabled ?? true,
+      singleCollectionLimitMinor: data.singleCollectionLimitMinor ?? existing?.singleCollectionLimitMinor ?? 0,
+      dailyLimitMinor: data.dailyLimitMinor ?? existing?.dailyLimitMinor ?? 0,
+      monthlyLimitMinor: data.monthlyLimitMinor ?? existing?.monthlyLimitMinor ?? 0,
+      requiresObjectionWindow: data.requiresObjectionWindow ?? existing?.requiresObjectionWindow ?? true,
+      objectionWindowHours: data.objectionWindowHours ?? existing?.objectionWindowHours ?? 2,
+      allowGuests: data.allowGuests ?? existing?.allowGuests ?? false,
+      allowChildren: data.allowChildren ?? existing?.allowChildren ?? true,
+      allowPartner: data.allowPartner ?? existing?.allowPartner ?? false,
+      maxCoveredParticipants: data.maxCoveredParticipants ?? existing?.maxCoveredParticipants ?? 2,
+      createdAt,
+      updatedAt: now()
+    };
+
+    this.autoPaymentRules.set(rule.id, rule);
+    this.addAudit(userId, "autopay_rule", rule.id, rule.collectionId, existing ? "updated" : "created", {
+      groupId: rule.groupId,
+      category: rule.category,
+      enabled: rule.enabled,
+      singleCollectionLimitMinor: rule.singleCollectionLimitMinor,
+      monthlyLimitMinor: rule.monthlyLimitMinor
+    });
+    return rule;
   }
 
   listParticipants(userId: string, collectionId: string): CollectionParticipant[] {
@@ -1087,6 +1230,137 @@ export class InMemoryStore {
     return [...this.manualPaymentProofs.values()].filter((proof) => proof.collectionId === collectionId);
   }
 
+  listPayments(userId: string, collectionId: string): Payment[] {
+    this.getCollectionForUser(userId, collectionId);
+    return this.getPayments(collectionId);
+  }
+
+  createMockPayment(
+    userId: string,
+    collectionId: string,
+    data: {
+      participantId: string;
+      amountMinor: number;
+      provider?: Payment["provider"];
+      paymentMethodId?: string | null;
+      idempotencyKey: string;
+    }
+  ): Payment {
+    this.getCollectionForUser(userId, collectionId);
+    const participant = this.getParticipant(collectionId, data.participantId);
+    if (!this.canActForParticipant(userId, participant)) {
+      throw new AppError(403, "User cannot create payment for this participant.");
+    }
+
+    const paymentMethod = data.paymentMethodId ? this.getPaymentMethodForUser(userId, data.paymentMethodId) : null;
+    if (paymentMethod && paymentMethod.status !== "active") {
+      throw new AppError(409, "Payment method is not active.");
+    }
+
+    const normalizedIdempotencyKey = resolveMockPaymentIdempotencyKey(userId, collectionId, data.idempotencyKey);
+    const existing = this.findPaymentByIdempotencyKey(collectionId, normalizedIdempotencyKey);
+    if (existing) {
+      if (!isSameMockPaymentRequest(existing, userId, data, normalizedIdempotencyKey)) {
+        throw new AppError(409, "Payment idempotency key is already used for another request.");
+      }
+      return existing;
+    }
+
+    const payment: Payment = {
+      id: randomUUID(),
+      collectionId,
+      participantId: participant.id,
+      responsibleUserId: userId,
+      amountMinor: data.amountMinor,
+      currency: "RUB",
+      provider: data.provider ?? normalizeMockPaymentProvider(paymentMethod?.provider),
+      providerPaymentId: `mock_pay_${randomUUID()}`,
+      status: "pending",
+      idempotencyKey: normalizedIdempotencyKey,
+      createdAt: now(),
+      updatedAt: now()
+    };
+    this.payments.set(payment.id, payment);
+    this.setParticipantPaymentStatus(collectionId, participant.id, "pending");
+    this.markCollectionStatus(collectionId, "payment_pending");
+    this.addAudit(userId, "payment", payment.id, collectionId, "created", {
+      amountMinor: payment.amountMinor,
+      provider: payment.provider,
+      participantId: payment.participantId,
+      paymentMethodId: paymentMethod?.id ?? null,
+      simulated: true
+    });
+    return payment;
+  }
+
+  confirmMockPayment(userId: string, paymentId: string): Payment {
+    const payment = this.getPaymentForActor(userId, paymentId);
+    if (payment.status === "succeeded") {
+      return payment;
+    }
+    if (payment.status === "refunded") {
+      throw new AppError(409, "Refunded payment cannot be confirmed.");
+    }
+    if (payment.status === "failed" || payment.status === "cancelled") {
+      throw new AppError(409, "Terminal payment cannot be confirmed.");
+    }
+
+    const updated = this.updatePayment(payment, { status: "succeeded", updatedAt: now() });
+    if (updated.participantId) {
+      this.setParticipantPaymentStatus(updated.collectionId, updated.participantId, "paid");
+    }
+    this.syncCollectionPaymentStatus(updated.collectionId);
+    this.addAudit(userId, "payment", updated.id, updated.collectionId, "paid", {
+      status: updated.status,
+      simulated: true
+    });
+    return updated;
+  }
+
+  failMockPayment(userId: string, paymentId: string, data?: { reason?: string | null }): Payment {
+    const payment = this.getPaymentForActor(userId, paymentId);
+    if (payment.status === "failed") {
+      return payment;
+    }
+    if (payment.status === "succeeded" || payment.status === "refunded") {
+      throw new AppError(409, "Completed payment cannot be failed.");
+    }
+
+    const updated = this.updatePayment(payment, { status: "failed", updatedAt: now() });
+    if (updated.participantId) {
+      this.setParticipantPaymentStatus(updated.collectionId, updated.participantId, "failed");
+    }
+    this.syncCollectionPaymentStatus(updated.collectionId);
+    this.addAudit(userId, "payment", updated.id, updated.collectionId, "updated", {
+      status: updated.status,
+      reason: data?.reason ?? null,
+      simulated: true
+    });
+    return updated;
+  }
+
+  refundPayment(userId: string, paymentId: string, data?: { reason?: string | null }): Payment {
+    const payment = this.getPaymentForActor(userId, paymentId);
+    if (payment.status === "refunded") {
+      return payment;
+    }
+    if (payment.status !== "succeeded") {
+      throw new AppError(409, "Only succeeded payment can be refunded.");
+    }
+
+    const updated = this.updatePayment(payment, { status: "refunded", updatedAt: now() });
+    if (updated.participantId) {
+      this.setParticipantPaymentStatus(updated.collectionId, updated.participantId, "pending");
+    }
+    this.syncCollectionPaymentStatus(updated.collectionId);
+    this.addAudit(userId, "payment", updated.id, updated.collectionId, "updated", {
+      status: updated.status,
+      reason: data?.reason ?? null,
+      simulated: true
+    });
+    return updated;
+  }
+
   listAuditLogs(userId: string, collectionId: string): AuditLog[] {
     this.getCollectionForUser(userId, collectionId);
     return [...this.auditLogs.values()].filter((log) => log.collectionId === collectionId).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
@@ -1165,6 +1439,7 @@ export class InMemoryStore {
     calculationVersions: CalculationVersion[];
     disputes: Dispute[];
     manualPaymentProofs: ManualPaymentProof[];
+    payments: Payment[];
     auditLogs: AuditLog[];
     notifications: Notification[];
   } {
@@ -1180,6 +1455,7 @@ export class InMemoryStore {
       calculationVersions: this.getCalculationVersions(collectionId),
       disputes: [...this.disputes.values()].filter((dispute) => dispute.collectionId === collectionId),
       manualPaymentProofs: [...this.manualPaymentProofs.values()].filter((proof) => proof.collectionId === collectionId),
+      payments: this.getPayments(collectionId),
       auditLogs: [...this.auditLogs.values()].filter((log) => log.collectionId === collectionId),
       notifications: [...this.notifications.values()].filter((notification) => notification.collectionId === collectionId)
     };
@@ -1214,6 +1490,9 @@ export class InMemoryStore {
     this.collectionTemplates.clear();
     this.disputes.clear();
     this.manualPaymentProofs.clear();
+    this.paymentMethods.clear();
+    this.payments.clear();
+    this.autoPaymentRules.clear();
     this.auditLogs.clear();
     this.notifications.clear();
 
@@ -1265,6 +1544,15 @@ export class InMemoryStore {
     }
     for (const proof of snapshot.manualPaymentProofs) {
       this.manualPaymentProofs.set(proof.id, proof);
+    }
+    for (const method of snapshot.paymentMethods ?? []) {
+      this.paymentMethods.set(method.id, method);
+    }
+    for (const payment of snapshot.payments ?? []) {
+      this.payments.set(payment.id, payment);
+    }
+    for (const rule of snapshot.autoPaymentRules ?? []) {
+      this.autoPaymentRules.set(rule.id, rule);
     }
     for (const log of snapshot.auditLogs) {
       this.auditLogs.set(log.id, log);
@@ -1326,6 +1614,100 @@ export class InMemoryStore {
         (proof) => proof.collectionId === collectionId && proof.idempotencyKey === idempotencyKey
       ) ?? null
     );
+  }
+
+  private getPaymentMethodForUser(userId: string, paymentMethodId: string): PaymentMethod {
+    const method = this.paymentMethods.get(paymentMethodId);
+    if (!method || method.userId !== userId) {
+      throw new AppError(404, "Payment method not found.");
+    }
+    return method;
+  }
+
+  private getOwnAutoPaymentRule(userId: string, ruleId: string): AutoPaymentRule {
+    const rule = this.autoPaymentRules.get(ruleId);
+    if (!rule || rule.userId !== userId) {
+      throw new AppError(404, "Auto payment rule not found.");
+    }
+    return rule;
+  }
+
+  private clearDefaultPaymentMethod(userId: string): void {
+    for (const method of this.paymentMethods.values()) {
+      if (method.userId === userId && method.isDefault) {
+        this.paymentMethods.set(method.id, { ...method, isDefault: false, updatedAt: now() });
+      }
+    }
+  }
+
+  private promoteFallbackDefaultPaymentMethod(userId: string, excludedPaymentMethodId: string): void {
+    const fallback = this.listPaymentMethods(userId).find((method) => method.id !== excludedPaymentMethodId && method.status === "active");
+    if (!fallback) {
+      return;
+    }
+    this.paymentMethods.set(fallback.id, { ...fallback, isDefault: true, updatedAt: now() });
+  }
+
+  private getPayments(collectionId: string): Payment[] {
+    return [...this.payments.values()]
+      .filter((payment) => payment.collectionId === collectionId)
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  }
+
+  private findPaymentByIdempotencyKey(collectionId: string, idempotencyKey: string): Payment | null {
+    return this.getPayments(collectionId).find((payment) => payment.idempotencyKey === idempotencyKey) ?? null;
+  }
+
+  private getPaymentForActor(userId: string, paymentId: string): Payment {
+    const payment = this.payments.get(paymentId);
+    if (!payment) {
+      throw new AppError(404, "Payment not found.");
+    }
+
+    const collection = this.getCollection(payment.collectionId);
+    if (payment.responsibleUserId === userId || collection.organizerId === userId) {
+      return payment;
+    }
+
+    throw new AppError(403, "User cannot access this payment.");
+  }
+
+  private updatePayment(payment: Payment, patch: Partial<Payment>): Payment {
+    const updated: Payment = { ...payment, ...patch };
+    this.payments.set(payment.id, updated);
+    return updated;
+  }
+
+  private setParticipantPaymentStatus(
+    collectionId: string,
+    participantId: string,
+    paymentStatus: CollectionParticipant["paymentStatus"]
+  ): void {
+    const participant = this.getParticipant(collectionId, participantId);
+    this.participants.set(participant.id, {
+      ...participant,
+      paymentStatus,
+      updatedAt: now()
+    });
+  }
+
+  private syncCollectionPaymentStatus(collectionId: string): void {
+    const payableParticipants = this.getParticipants(collectionId).filter((participant) => participant.finalShareAmountMinor > 0);
+    if (payableParticipants.length === 0) {
+      this.markCollectionStatus(collectionId, "finalized");
+      return;
+    }
+
+    const paidCount = payableParticipants.filter((participant) => participant.paymentStatus === "paid" || participant.paymentStatus === "manual_marked_paid").length;
+    if (paidCount === 0) {
+      this.markCollectionStatus(collectionId, "payment_pending");
+      return;
+    }
+    if (paidCount === payableParticipants.length) {
+      this.markCollectionStatus(collectionId, "paid");
+      return;
+    }
+    this.markCollectionStatus(collectionId, "partially_paid");
   }
 
   private canActForParticipant(userId: string, participant: CollectionParticipant): boolean {
@@ -1710,6 +2092,43 @@ function resolveManualPaymentIdempotencyKey(
     proofUrl: data.proofUrl ?? null,
     transferPlanId: data.transferPlanId ?? null
   });
+}
+
+function resolveMockPaymentIdempotencyKey(userId: string, collectionId: string, idempotencyKey: string): string {
+  return `payment:${collectionId}:${userId}:${idempotencyKey.trim()}`;
+}
+
+function normalizeMockPaymentProvider(provider: string | undefined | null): Payment["provider"] {
+  switch (provider) {
+    case "yookassa":
+    case "bank":
+    case "sbp":
+    case "manual":
+    case "other":
+      return provider;
+    default:
+      return "other";
+  }
+}
+
+function isSameMockPaymentRequest(
+  payment: Payment,
+  userId: string,
+  data: {
+    participantId: string;
+    amountMinor: number;
+    provider?: Payment["provider"];
+    paymentMethodId?: string | null;
+  },
+  normalizedIdempotencyKey: string
+): boolean {
+  return (
+    payment.idempotencyKey === normalizedIdempotencyKey &&
+    payment.responsibleUserId === userId &&
+    payment.participantId === data.participantId &&
+    payment.amountMinor === data.amountMinor &&
+    payment.provider === (data.provider ?? payment.provider)
+  );
 }
 
 function isSameManualPaymentRequest(

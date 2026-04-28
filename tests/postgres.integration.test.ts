@@ -396,4 +396,169 @@ describe("PostgreSQL integration", () => {
     });
     expect(listManualPaymentsResponse.json()).toHaveLength(1);
   });
+
+  it("persists mock payment methods, autopay rules, and simulated provider payments in live PostgreSQL", async () => {
+    const organizer = await auth(app!, "+79990011031");
+    const participantUser = await auth(app!, "+79990011032");
+
+    const collectionResponse = await app!.inject({
+      method: "POST",
+      url: "/collections",
+      headers: { authorization: organizer.authorization },
+      payload: { title: "Mock payment trip", type: "trip" }
+    });
+    const { collection, organizerParticipant } = collectionResponse.json();
+
+    const participantResponse = await app!.inject({
+      method: "POST",
+      url: `/collections/${collection.id}/participants`,
+      headers: { authorization: organizer.authorization },
+      payload: { linkedUserId: participantUser.user.id, displayName: "Friend" }
+    });
+    const participant = participantResponse.json();
+
+    const paymentMethodResponse = await app!.inject({
+      method: "POST",
+      url: "/payment-methods/mock-bind",
+      headers: { authorization: participantUser.authorization },
+      payload: {
+        provider: "bank",
+        maskedPan: "2200 **** **** 3131",
+        brand: "mir",
+        setAsDefault: true
+      }
+    });
+    expect(paymentMethodResponse.statusCode).toBe(201);
+    const paymentMethod = paymentMethodResponse.json();
+
+    const autopayRuleResponse = await app!.inject({
+      method: "POST",
+      url: "/autopay-rules",
+      headers: { authorization: participantUser.authorization },
+      payload: {
+        collectionId: collection.id,
+        singleCollectionLimitMinor: 12000,
+        monthlyLimitMinor: 50000
+      }
+    });
+    expect(autopayRuleResponse.statusCode).toBe(201);
+    const autopayRule = autopayRuleResponse.json();
+
+    await app!.inject({
+      method: "POST",
+      url: `/collections/${collection.id}/expenses`,
+      headers: { authorization: organizer.authorization },
+      payload: {
+        title: "House",
+        amountMinor: 10000,
+        payments: [{ paidByParticipantId: organizerParticipant.id, amountMinor: 10000, paymentSource: "card" }]
+      }
+    });
+    await app!.inject({
+      method: "POST",
+      url: `/collections/${collection.id}/calculate`,
+      headers: { authorization: organizer.authorization }
+    });
+
+    const [paymentIntentA, paymentIntentB] = await Promise.all([
+      app!.inject({
+        method: "POST",
+        url: `/collections/${collection.id}/payments/mock-intents`,
+        headers: { authorization: participantUser.authorization },
+        payload: {
+          participantId: participant.id,
+          amountMinor: 5000,
+          paymentMethodId: paymentMethod.id,
+          provider: "bank",
+          idempotencyKey: "live-mock-intent-1"
+        }
+      }),
+      app!.inject({
+        method: "POST",
+        url: `/collections/${collection.id}/payments/mock-intents`,
+        headers: { authorization: participantUser.authorization },
+        payload: {
+          participantId: participant.id,
+          amountMinor: 5000,
+          paymentMethodId: paymentMethod.id,
+          provider: "bank",
+          idempotencyKey: "live-mock-intent-1"
+        }
+      })
+    ]);
+
+    expect(paymentIntentA.statusCode).toBe(201);
+    expect(paymentIntentB.statusCode).toBe(201);
+    expect(paymentIntentA.json().id).toBe(paymentIntentB.json().id);
+
+    const successResponse = await app!.inject({
+      method: "POST",
+      url: `/payments/${paymentIntentA.json().id}/simulate-success`,
+      headers: { authorization: organizer.authorization }
+    });
+    expect(successResponse.statusCode).toBe(200);
+    expect(successResponse.json().status).toBe("succeeded");
+
+    const refundResponse = await app!.inject({
+      method: "POST",
+      url: `/payments/${paymentIntentA.json().id}/refund`,
+      headers: { authorization: organizer.authorization },
+      payload: { reason: "Live mock refund." }
+    });
+    expect(refundResponse.statusCode).toBe(200);
+    expect(refundResponse.json().status).toBe("refunded");
+
+    const secondPaymentResponse = await app!.inject({
+      method: "POST",
+      url: `/collections/${collection.id}/payments/mock-intents`,
+      headers: { authorization: participantUser.authorization },
+      payload: {
+        participantId: participant.id,
+        amountMinor: 5000,
+        paymentMethodId: paymentMethod.id,
+        provider: "bank",
+        idempotencyKey: "live-mock-intent-2"
+      }
+    });
+    expect(secondPaymentResponse.statusCode).toBe(201);
+
+    const failureResponse = await app!.inject({
+      method: "POST",
+      url: `/payments/${secondPaymentResponse.json().id}/simulate-failure`,
+      headers: { authorization: participantUser.authorization },
+      payload: { reason: "Issuer declined." }
+    });
+    expect(failureResponse.statusCode).toBe(200);
+    expect(failureResponse.json().status).toBe("failed");
+
+    await app!.close();
+    app = await createApp();
+
+    const autopayRulesResponse = await app!.inject({
+      method: "GET",
+      url: `/autopay-rules?collectionId=${collection.id}`,
+      headers: { authorization: participantUser.authorization }
+    });
+    expect(autopayRulesResponse.statusCode).toBe(200);
+    expect(autopayRulesResponse.json().find((rule: { id: string }) => rule.id === autopayRule.id)).toBeTruthy();
+
+    const paymentsListResponse = await app!.inject({
+      method: "GET",
+      url: `/collections/${collection.id}/payments`,
+      headers: { authorization: organizer.authorization }
+    });
+    expect(paymentsListResponse.statusCode).toBe(200);
+    const payments = paymentsListResponse.json();
+    expect(payments).toHaveLength(2);
+    expect(payments.some((payment: { status: string }) => payment.status === "refunded")).toBe(true);
+    expect(payments.some((payment: { status: string }) => payment.status === "failed")).toBe(true);
+
+    const auditResponse = await app!.inject({
+      method: "GET",
+      url: `/collections/${collection.id}/audit-log`,
+      headers: { authorization: organizer.authorization }
+    });
+    const auditLog = auditResponse.json();
+    expect(auditLog.some((entry: { entityType: string }) => entry.entityType === "payment")).toBe(true);
+  });
 });

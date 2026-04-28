@@ -1,12 +1,15 @@
 export function createSharedMockPrismaClient() {
   const state = {
     users: [] as Array<Record<string, unknown>>,
+    paymentMethods: [] as Array<Record<string, unknown>>,
     friendships: [] as Array<Record<string, unknown>>,
     groups: [] as Array<Record<string, unknown>>,
     groupMembers: [] as Array<Record<string, unknown>>,
     groupParticipantProfiles: [] as Array<Record<string, unknown>>,
     templates: [] as Array<Record<string, unknown>>,
     collections: [] as Array<Record<string, unknown>>,
+    payments: [] as Array<Record<string, unknown>>,
+    autoPaymentRules: [] as Array<Record<string, unknown>>,
     notifications: [] as Array<Record<string, unknown>>
   };
 
@@ -24,6 +27,18 @@ export function createSharedMockPrismaClient() {
           return create;
         },
         findMany: async () => state.users
+      },
+      paymentMethod: {
+        upsert: async ({ where, create, update }: { where: { id: string }; create: Record<string, unknown>; update: Record<string, unknown> }) => {
+          const existing = state.paymentMethods.find((item) => item.id === where.id);
+          if (existing) {
+            Object.assign(existing, update);
+            return existing;
+          }
+          state.paymentMethods.push({ ...create });
+          return create;
+        },
+        findMany: async () => state.paymentMethods
       },
       friendship: {
         upsert: async ({ where, create, update }: { where: { id: string }; create: Record<string, unknown>; update: Record<string, unknown> }) => {
@@ -160,7 +175,33 @@ export function createSharedMockPrismaClient() {
           participants.push({ ...create });
           collection.participants = participants;
           return create;
-        }
+        },
+        findMany: async () =>
+          state.collections.flatMap((collection) => (collection.participants as Array<Record<string, unknown>> | undefined) ?? [])
+      },
+      payment: {
+        upsert: async ({ where, create, update }: { where: { id: string }; create: Record<string, unknown>; update: Record<string, unknown> }) => {
+          const existing = state.payments.find((item) => item.id === where.id);
+          if (existing) {
+            Object.assign(existing, update);
+            return existing;
+          }
+          state.payments.push({ ...create });
+          return create;
+        },
+        findMany: async () => state.payments
+      },
+      autoPaymentRule: {
+        upsert: async ({ where, create, update }: { where: { id: string }; create: Record<string, unknown>; update: Record<string, unknown> }) => {
+          const existing = state.autoPaymentRules.find((item) => item.id === where.id);
+          if (existing) {
+            Object.assign(existing, update);
+            return existing;
+          }
+          state.autoPaymentRules.push({ ...create });
+          return create;
+        },
+        findMany: async () => state.autoPaymentRules
       },
       expenseCategory: {
         create: async ({ data }: { data: Record<string, unknown> }) => data,

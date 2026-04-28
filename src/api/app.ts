@@ -7,6 +7,7 @@ import { registerCollectionRoutes } from "./routes/collections";
 import { registerFriendRoutes } from "./routes/friends";
 import { registerGroupRoutes } from "./routes/groups";
 import { registerNotificationRoutes } from "./routes/notifications";
+import { registerPaymentRoutes } from "./routes/payments";
 import { registerUserRoutes } from "./routes/users";
 import { AppError, createAppStoreFromEnv, type AppStore } from "../store";
 
@@ -58,6 +59,7 @@ export async function buildApp(options: BuildAppOptions = {}) {
   registerFriendRoutes(app, store);
   registerGroupRoutes(app, store);
   registerCollectionRoutes(app, store);
+  registerPaymentRoutes(app, store);
   registerNotificationRoutes(app, store);
 
   return app;

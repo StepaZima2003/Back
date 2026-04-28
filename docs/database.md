@@ -75,6 +75,14 @@ Money-flow hardening now includes:
 - retry-safe manual payment submit via `idempotencyKey`;
 - idempotent confirm/reject behavior for terminal manual payment states.
 
+The same backend now has a mock payment slice for non-production payment work:
+
+- `payment_methods` are persisted as masked mock bindings only;
+- `auto_payment_rules` are persisted and queryable by user/collection/group scope;
+- `payments` are persisted as simulated provider intents with `pending -> succeeded|failed|refunded` transitions;
+- mock payment intent creation is also idempotent through the existing retry discipline;
+- route-level parity and live PostgreSQL integration now cover the mock payment/autopay flow.
+
 There is also a live PostgreSQL lane:
 
 ```bash
@@ -92,5 +100,5 @@ This same split now runs in GitHub Actions:
 ## Persistence Roadmap
 
 1. Keep calculation logic pure and independent from Prisma.
-2. Extend the same retry/concurrency discipline to future autopay/provider payment flows.
+2. Replace simulated provider transitions with a real PSP adapter and webhook verification.
 3. Expand persistence coverage toward richer profile/template reuse flows.

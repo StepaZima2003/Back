@@ -1,0 +1,797 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserStatus {
+  active
+  blocked
+  deleted
+}
+
+enum VerificationLevel {
+  phone
+  bank_id
+  kyc
+}
+
+enum FriendshipStatus {
+  pending
+  accepted
+  blocked
+}
+
+enum GroupVisibility {
+  private
+  invite_link
+}
+
+enum GroupType {
+  friends
+  family
+  work
+  trip
+  event
+  other
+}
+
+enum GroupRole {
+  owner
+  admin
+  member
+}
+
+enum GroupMemberStatus {
+  active
+  invited
+  left
+  removed
+}
+
+enum CollectionType {
+  picnic
+  restaurant
+  gift
+  trip
+  office
+  rent
+  kids
+  dacha
+  other
+}
+
+enum CollectionStatus {
+  draft
+  participants_selected
+  expenses_added
+  rules_configured
+  review
+  dispute_pending
+  finalized
+  payment_pending
+  partially_paid
+  paid
+  closed
+  cancelled
+  blocked
+}
+
+enum PaymentMode {
+  manual
+  confirm_each
+  auto_for_trusted
+  calculation_only
+}
+
+enum ParticipantType {
+  registered_user
+  invited_phone
+  guest
+  child
+  external_person
+  group_proxy
+}
+
+enum ParticipantStatus {
+  invited
+  joined
+  declined
+  confirmed
+  disputed
+  removed
+  active
+}
+
+enum ParticipantPaymentStatus {
+  not_required
+  pending
+  paid
+  failed
+  manual_marked_paid
+  disputed
+}
+
+enum ExpenseType {
+  expense
+  prepayment
+  deposit
+  refund
+  discount
+  correction
+  service_fee
+  tax
+  other
+}
+
+enum PaymentSource {
+  card
+  cash
+  sbp
+  bonus
+  certificate
+  other
+}
+
+enum SplitMode {
+  equal
+  weights
+  fixed
+  percent
+  excluded
+  cap
+}
+
+enum CalculationVersionStatus {
+  draft
+  sent_to_review
+  final
+  superseded
+}
+
+enum TransferPlanStatus {
+  pending
+  paid
+  cancelled
+  disputed
+}
+
+enum ConfirmationRequiredBy {
+  recipient
+  organizer
+  both
+  none
+}
+
+enum DisputeType {
+  not_eat
+  not_drink
+  partial_time
+  already_paid
+  bought_something
+  absent
+  guest_absent
+  payer_changed
+  other
+}
+
+enum DisputeStatus {
+  created
+  under_review
+  accepted
+  rejected
+  resolved_by_recalculation
+  cancelled
+}
+
+enum ManualPaymentMethod {
+  sbp
+  cash
+  card
+  other
+}
+
+enum ManualPaymentProofStatus {
+  submitted
+  confirmed
+  rejected
+}
+
+enum PaymentProvider {
+  yookassa
+  bank
+  sbp
+  manual
+  other
+}
+
+enum PaymentStatus {
+  pending
+  processing
+  succeeded
+  failed
+  cancelled
+  refunded
+  manual_marked_paid
+  disputed
+}
+
+enum PaymentMethodStatus {
+  pending_binding
+  active
+  failed
+  expired
+  revoked
+  requires_confirmation
+}
+
+enum PaymentCardBrand {
+  visa
+  mastercard
+  mir
+  unknown
+}
+
+enum AuditEntityType {
+  collection
+  payment
+  group
+  user
+  dispute
+  autopay_rule
+  participant
+  share_rule
+  manual_payment
+  notification
+}
+
+enum AuditAction {
+  created
+  updated
+  deleted
+  confirmed
+  paid
+  disputed
+  blocked
+  recalculated
+  accepted
+  rejected
+  sent_to_review
+  read
+}
+
+enum NotificationStatus {
+  unread
+  read
+}
+
+enum NotificationType {
+  collection_review_requested
+  participant_confirmed
+  dispute_created
+  dispute_updated
+  manual_payment_submitted
+  manual_payment_confirmed
+  manual_payment_rejected
+}
+
+model User {
+  id                String            @id @default(uuid()) @db.Uuid
+  phone             String            @unique
+  displayName       String            @map("display_name")
+  avatarUrl         String?           @map("avatar_url")
+  status            UserStatus        @default(active)
+  verificationLevel VerificationLevel @default(phone) @map("verification_level")
+  createdAt         DateTime          @default(now()) @map("created_at")
+  updatedAt         DateTime          @updatedAt @map("updated_at")
+
+  paymentMethods        PaymentMethod[]
+  friendshipsStarted    Friendship[]            @relation("FriendshipUser")
+  friendshipsReceived   Friendship[]            @relation("FriendshipFriend")
+  ownedGroups           Group[]
+  groupMemberships      GroupMember[]
+  organizedCollections  Collection[]
+  linkedParticipants    CollectionParticipant[] @relation("LinkedParticipantUser")
+  invitedParticipants   CollectionParticipant[] @relation("InvitedByUser")
+  calculationVersions   CalculationVersion[]
+  disputesCreated       Dispute[]
+  manualPaymentsAsPayer ManualPaymentProof[]    @relation("ManualPaymentPayer")
+  manualPaymentsAsReceiver ManualPaymentProof[] @relation("ManualPaymentReceiver")
+  payments              Payment[]
+  autoPaymentRules      AutoPaymentRule[]
+  shareRuleChangeLogs   ShareRuleChangeLog[]
+  auditLogs             AuditLog[]
+  notifications         Notification[]
+
+  @@map("users")
+}
+
+model PaymentMethod {
+  id                      String              @id @default(uuid()) @db.Uuid
+  userId                  String              @map("user_id") @db.Uuid
+  provider                String
+  providerPaymentMethodId String              @map("provider_payment_method_id")
+  maskedPan               String              @map("masked_pan")
+  brand                   PaymentCardBrand    @default(unknown)
+  status                  PaymentMethodStatus @default(pending_binding)
+  isDefault               Boolean             @default(false) @map("is_default")
+  createdAt               DateTime            @default(now()) @map("created_at")
+  updatedAt               DateTime            @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("payment_methods")
+}
+
+model Friendship {
+  id        String           @id @default(uuid()) @db.Uuid
+  userId    String           @map("user_id") @db.Uuid
+  friendId  String           @map("friend_id") @db.Uuid
+  status    FriendshipStatus @default(pending)
+  createdAt DateTime         @default(now()) @map("created_at")
+
+  user   User @relation("FriendshipUser", fields: [userId], references: [id], onDelete: Cascade)
+  friend User @relation("FriendshipFriend", fields: [friendId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, friendId])
+  @@index([friendId])
+  @@map("friendships")
+}
+
+model Group {
+  id         String          @id @default(uuid()) @db.Uuid
+  title      String
+  emoji      String?
+  ownerId    String          @map("owner_id") @db.Uuid
+  visibility GroupVisibility @default(private)
+  groupType  GroupType       @default(other) @map("group_type")
+  createdAt  DateTime        @default(now()) @map("created_at")
+  updatedAt  DateTime        @updatedAt @map("updated_at")
+
+  owner       User          @relation(fields: [ownerId], references: [id], onDelete: Restrict)
+  members     GroupMember[]
+  collections Collection[]
+
+  @@index([ownerId])
+  @@map("groups")
+}
+
+model GroupMember {
+  id       String            @id @default(uuid()) @db.Uuid
+  groupId  String            @map("group_id") @db.Uuid
+  userId   String            @map("user_id") @db.Uuid
+  role     GroupRole         @default(member)
+  status   GroupMemberStatus @default(active)
+  joinedAt DateTime          @default(now()) @map("joined_at")
+
+  group Group @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([groupId, userId])
+  @@index([userId])
+  @@map("group_members")
+}
+
+model Collection {
+  id                String           @id @default(uuid()) @db.Uuid
+  title             String
+  type              CollectionType   @default(other)
+  groupId           String?          @map("group_id") @db.Uuid
+  organizerId       String           @map("organizer_id") @db.Uuid
+  currency          String           @default("RUB")
+  status            CollectionStatus @default(draft)
+  paymentMode       PaymentMode      @default(manual) @map("payment_mode")
+  totalAmountMinor  Int              @default(0) @map("total_amount_minor")
+  reviewDeadlineAt  DateTime?        @map("review_deadline_at")
+  paymentDeadlineAt DateTime?        @map("payment_deadline_at")
+  createdAt         DateTime         @default(now()) @map("created_at")
+  updatedAt         DateTime         @updatedAt @map("updated_at")
+
+  group                 Group?                  @relation(fields: [groupId], references: [id], onDelete: SetNull)
+  organizer             User                    @relation(fields: [organizerId], references: [id], onDelete: Restrict)
+  participants          CollectionParticipant[]
+  expenses              Expense[]
+  categories            ExpenseCategory[]
+  calculationVersions   CalculationVersion[]
+  disputes              Dispute[]
+  manualPaymentProofs   ManualPaymentProof[]
+  payments              Payment[]
+  autoPaymentRules      AutoPaymentRule[]
+  shareRuleChangeLogs   ShareRuleChangeLog[]
+  auditLogs             AuditLog[]
+  notifications         Notification[]
+
+  @@index([organizerId])
+  @@index([groupId])
+  @@index([status])
+  @@map("collections")
+}
+
+model CollectionParticipant {
+  id                              String                   @id @default(uuid()) @db.Uuid
+  collectionId                    String                   @map("collection_id") @db.Uuid
+  participantType                 ParticipantType          @map("participant_type")
+  linkedUserId                    String?                  @map("linked_user_id") @db.Uuid
+  invitedPhone                    String?                  @map("invited_phone")
+  displayNameSnapshot             String                   @map("display_name_snapshot")
+  invitedByUserId                 String?                  @map("invited_by_user_id") @db.Uuid
+  paymentResponsibleParticipantId String?                  @map("payment_responsible_participant_id") @db.Uuid
+  relationshipHint                String                   @default("other") @map("relationship_hint")
+  defaultWeight                   Decimal                  @default(1.0) @map("default_weight") @db.Decimal(8, 3)
+  status                          ParticipantStatus        @default(active)
+  finalShareAmountMinor           Int                      @default(0) @map("final_share_amount_minor")
+  paymentStatus                   ParticipantPaymentStatus @default(pending) @map("payment_status")
+  createdAt                       DateTime                 @default(now()) @map("created_at")
+  updatedAt                       DateTime                 @updatedAt @map("updated_at")
+
+  collection Collection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+  linkedUser User?      @relation("LinkedParticipantUser", fields: [linkedUserId], references: [id], onDelete: SetNull)
+  invitedBy  User?      @relation("InvitedByUser", fields: [invitedByUserId], references: [id], onDelete: SetNull)
+
+  responsibleFor         CollectionParticipant[] @relation("ResponsiblePayer")
+  paymentResponsible     CollectionParticipant?  @relation("ResponsiblePayer", fields: [paymentResponsibleParticipantId], references: [id], onDelete: SetNull)
+  expensesPaidPrimary    Expense[]               @relation("PrimaryExpensePayer")
+  expensePayments        ExpensePayment[]
+  shareRules             ExpenseShareRule[]
+  participantCalculations ParticipantCalculation[]
+  disputes               Dispute[]               @relation("DisputeParticipant")
+  targetDisputes         Dispute[]               @relation("DisputeTargetParticipant")
+  manualPaymentsAsPayer  ManualPaymentProof[]    @relation("ManualPaymentPayerParticipant")
+  manualPaymentsAsReceiver ManualPaymentProof[]  @relation("ManualPaymentReceiverParticipant")
+  payments               Payment[]
+
+  @@index([collectionId])
+  @@index([linkedUserId])
+  @@index([paymentResponsibleParticipantId])
+  @@map("collection_participants")
+}
+
+model Expense {
+  id                         String      @id @default(uuid()) @db.Uuid
+  collectionId               String      @map("collection_id") @db.Uuid
+  title                      String
+  amountMinor                Int         @map("amount_minor")
+  currency                   String      @default("RUB")
+  expenseType                ExpenseType @default(expense) @map("expense_type")
+  primaryPaidByParticipantId String?     @map("primary_paid_by_participant_id") @db.Uuid
+  categoryId                 String?     @map("category_id") @db.Uuid
+  receiptUrl                 String?     @map("receipt_url")
+  comment                    String?
+  createdAt                  DateTime    @default(now()) @map("created_at")
+  updatedAt                  DateTime    @updatedAt @map("updated_at")
+
+  collection            Collection             @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+  primaryPaidBy         CollectionParticipant? @relation("PrimaryExpensePayer", fields: [primaryPaidByParticipantId], references: [id], onDelete: SetNull)
+  category              ExpenseCategory?       @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  payments              ExpensePayment[]
+  items                 ExpenseItem[]
+  shareRules            ExpenseShareRule[]
+
+  @@index([collectionId])
+  @@index([categoryId])
+  @@map("expenses")
+}
+
+model ExpensePayment {
+  id                  String        @id @default(uuid()) @db.Uuid
+  expenseId           String        @map("expense_id") @db.Uuid
+  paidByParticipantId String        @map("paid_by_participant_id") @db.Uuid
+  amountMinor         Int           @map("amount_minor")
+  currency            String        @default("RUB")
+  paymentSource       PaymentSource @default(other) @map("payment_source")
+  comment             String?
+  createdAt           DateTime      @default(now()) @map("created_at")
+
+  expense           Expense               @relation(fields: [expenseId], references: [id], onDelete: Cascade)
+  paidByParticipant CollectionParticipant @relation(fields: [paidByParticipantId], references: [id], onDelete: Cascade)
+
+  @@index([expenseId])
+  @@index([paidByParticipantId])
+  @@map("expense_payments")
+}
+
+model ExpenseCategory {
+  id                         String   @id @default(uuid()) @db.Uuid
+  collectionId               String   @map("collection_id") @db.Uuid
+  title                      String
+  emoji                      String?
+  requiresManualConfirmation Boolean  @default(false) @map("requires_manual_confirmation")
+  autopayAllowedByDefault    Boolean  @default(false) @map("autopay_allowed_by_default")
+  createdAt                  DateTime @default(now()) @map("created_at")
+
+  collection Collection         @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+  expenses   Expense[]
+  items      ExpenseItem[]
+  shareRules ExpenseShareRule[]
+
+  @@unique([collectionId, title])
+  @@map("expense_categories")
+}
+
+model ExpenseItem {
+  id          String    @id @default(uuid()) @db.Uuid
+  expenseId   String    @map("expense_id") @db.Uuid
+  title       String
+  amountMinor Int       @map("amount_minor")
+  currency    String    @default("RUB")
+  categoryId  String?   @map("category_id") @db.Uuid
+  splitMode   SplitMode @default(equal) @map("split_mode")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  expense    Expense            @relation(fields: [expenseId], references: [id], onDelete: Cascade)
+  category   ExpenseCategory?   @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  shareRules ExpenseShareRule[]
+
+  @@index([expenseId])
+  @@index([categoryId])
+  @@map("expense_items")
+}
+
+model ExpenseShareRule {
+  id                 String    @id @default(uuid()) @db.Uuid
+  expenseId          String?   @map("expense_id") @db.Uuid
+  expenseItemId      String?   @map("expense_item_id") @db.Uuid
+  categoryId         String?   @map("category_id") @db.Uuid
+  participantId      String    @map("participant_id") @db.Uuid
+  splitMode          SplitMode @map("split_mode")
+  weight             Decimal?  @db.Decimal(8, 3)
+  fixedAmountMinor   Int?      @map("fixed_amount_minor")
+  percent            Decimal?  @db.Decimal(8, 4)
+  capAmountMinor     Int?      @map("cap_amount_minor")
+  excluded           Boolean   @default(false)
+  reason             String?
+
+  expense     Expense?               @relation(fields: [expenseId], references: [id], onDelete: Cascade)
+  expenseItem ExpenseItem?           @relation(fields: [expenseItemId], references: [id], onDelete: Cascade)
+  category    ExpenseCategory?       @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  participant CollectionParticipant  @relation(fields: [participantId], references: [id], onDelete: Cascade)
+
+  @@index([expenseId])
+  @@index([expenseItemId])
+  @@index([categoryId])
+  @@index([participantId])
+  @@map("expense_share_rules")
+}
+
+model CalculationVersion {
+  id              String                   @id @default(uuid()) @db.Uuid
+  collectionId    String                   @map("collection_id") @db.Uuid
+  version         Int
+  status          CalculationVersionStatus @default(draft)
+  totalAmountMinor Int                     @map("total_amount_minor")
+  createdByUserId String                   @map("created_by_user_id") @db.Uuid
+  result          Json
+  createdAt       DateTime                 @default(now()) @map("created_at")
+
+  collection                    Collection                    @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+  createdBy                     User                          @relation(fields: [createdByUserId], references: [id], onDelete: Restrict)
+  participantCalculations       ParticipantCalculation[]
+  responsiblePayerCalculations  ResponsiblePayerCalculation[]
+  transferPlans                 TransferPlan[]
+
+  @@unique([collectionId, version])
+  @@index([createdByUserId])
+  @@map("calculation_versions")
+}
+
+model ParticipantCalculation {
+  id                   String @id @default(uuid()) @db.Uuid
+  calculationVersionId String @map("calculation_version_id") @db.Uuid
+  participantId        String @map("participant_id") @db.Uuid
+  paymentResponsibleParticipantId String? @map("payment_responsible_participant_id") @db.Uuid
+  owesAmountMinor      Int    @map("owes_amount_minor")
+  paidAmountMinor      Int    @map("paid_amount_minor")
+  netBalanceMinor      Int    @map("net_balance_minor")
+  explanation          Json
+
+  calculationVersion CalculationVersion      @relation(fields: [calculationVersionId], references: [id], onDelete: Cascade)
+  participant        CollectionParticipant   @relation(fields: [participantId], references: [id], onDelete: Cascade)
+
+  @@unique([calculationVersionId, participantId])
+  @@map("participant_calculations")
+}
+
+model ResponsiblePayerCalculation {
+  id                   String   @id @default(uuid()) @db.Uuid
+  calculationVersionId String   @map("calculation_version_id") @db.Uuid
+  responsibleUserId    String?  @map("responsible_user_id") @db.Uuid
+  responsibleParticipantId String @map("responsible_participant_id") @db.Uuid
+  totalOwesAmountMinor Int      @map("total_owes_amount_minor")
+  totalPaidAmountMinor Int      @map("total_paid_amount_minor")
+  netBalanceMinor      Int      @map("net_balance_minor")
+  coveredParticipantIds String[] @map("covered_participant_ids") @db.Uuid
+  explanationSummary   Json     @map("explanation_summary")
+
+  calculationVersion CalculationVersion @relation(fields: [calculationVersionId], references: [id], onDelete: Cascade)
+
+  @@index([calculationVersionId])
+  @@index([responsibleParticipantId])
+  @@map("responsible_payer_calculations")
+}
+
+model TransferPlan {
+  id                   String                 @id @default(uuid()) @db.Uuid
+  calculationVersionId String                 @map("calculation_version_id") @db.Uuid
+  fromResponsibleParticipantId String         @map("from_responsible_participant_id") @db.Uuid
+  toResponsibleParticipantId   String         @map("to_responsible_participant_id") @db.Uuid
+  amountMinor           Int                   @map("amount_minor")
+  status                TransferPlanStatus    @default(pending)
+  confirmationRequiredBy ConfirmationRequiredBy @default(recipient) @map("confirmation_required_by")
+  confirmedByUserId     String?               @map("confirmed_by_user_id") @db.Uuid
+  proofUrl              String?               @map("proof_url")
+  comment               String?
+
+  calculationVersion CalculationVersion @relation(fields: [calculationVersionId], references: [id], onDelete: Cascade)
+  manualPaymentProofs ManualPaymentProof[]
+
+  @@index([calculationVersionId])
+  @@map("transfer_plans")
+}
+
+model Dispute {
+  id                  String        @id @default(uuid()) @db.Uuid
+  collectionId        String        @map("collection_id") @db.Uuid
+  participantId       String        @map("participant_id") @db.Uuid
+  createdByUserId     String        @map("created_by_user_id") @db.Uuid
+  targetParticipantId String?       @map("target_participant_id") @db.Uuid
+  type                DisputeType
+  message             String
+  status              DisputeStatus @default(created)
+  resolutionComment   String?       @map("resolution_comment")
+  createdAt           DateTime      @default(now()) @map("created_at")
+  resolvedAt          DateTime?     @map("resolved_at")
+
+  collection        Collection            @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+  participant       CollectionParticipant @relation("DisputeParticipant", fields: [participantId], references: [id], onDelete: Cascade)
+  createdBy         User                  @relation(fields: [createdByUserId], references: [id], onDelete: Restrict)
+  targetParticipant CollectionParticipant? @relation("DisputeTargetParticipant", fields: [targetParticipantId], references: [id], onDelete: SetNull)
+
+  @@index([collectionId])
+  @@index([createdByUserId])
+  @@map("disputes")
+}
+
+model ManualPaymentProof {
+  id                    String                   @id @default(uuid()) @db.Uuid
+  transferPlanId        String?                  @map("transfer_plan_id") @db.Uuid
+  collectionId          String                   @map("collection_id") @db.Uuid
+  payerUserId           String                   @map("payer_user_id") @db.Uuid
+  payerParticipantId    String?                  @map("payer_participant_id") @db.Uuid
+  receiverUserId        String?                  @map("receiver_user_id") @db.Uuid
+  receiverParticipantId String?                  @map("receiver_participant_id") @db.Uuid
+  amountMinor           Int                      @map("amount_minor")
+  method                ManualPaymentMethod
+  comment               String?
+  proofUrl              String?                  @map("proof_url")
+  status                ManualPaymentProofStatus @default(submitted)
+  createdAt             DateTime                 @default(now()) @map("created_at")
+  updatedAt             DateTime                 @updatedAt @map("updated_at")
+
+  transferPlan        TransferPlan?          @relation(fields: [transferPlanId], references: [id], onDelete: SetNull)
+  collection          Collection             @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+  payer               User                   @relation("ManualPaymentPayer", fields: [payerUserId], references: [id], onDelete: Restrict)
+  payerParticipant    CollectionParticipant? @relation("ManualPaymentPayerParticipant", fields: [payerParticipantId], references: [id], onDelete: SetNull)
+  receiver            User?                  @relation("ManualPaymentReceiver", fields: [receiverUserId], references: [id], onDelete: SetNull)
+  receiverParticipant CollectionParticipant? @relation("ManualPaymentReceiverParticipant", fields: [receiverParticipantId], references: [id], onDelete: SetNull)
+
+  @@index([collectionId])
+  @@index([payerUserId])
+  @@index([status])
+  @@map("manual_payment_proofs")
+}
+
+model Payment {
+  id                String          @id @default(uuid()) @db.Uuid
+  collectionId      String          @map("collection_id") @db.Uuid
+  participantId     String?         @map("participant_id") @db.Uuid
+  responsibleUserId String          @map("responsible_user_id") @db.Uuid
+  amountMinor       Int             @map("amount_minor")
+  currency          String          @default("RUB")
+  provider          PaymentProvider @default(manual)
+  providerPaymentId String?         @map("provider_payment_id")
+  status            PaymentStatus   @default(pending)
+  idempotencyKey    String          @unique @map("idempotency_key")
+  createdAt         DateTime        @default(now()) @map("created_at")
+  updatedAt         DateTime        @updatedAt @map("updated_at")
+
+  collection  Collection             @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+  participant CollectionParticipant? @relation(fields: [participantId], references: [id], onDelete: SetNull)
+  responsible User                   @relation(fields: [responsibleUserId], references: [id], onDelete: Restrict)
+
+  @@index([collectionId])
+  @@index([responsibleUserId])
+  @@index([status])
+  @@map("payments")
+}
+
+model AutoPaymentRule {
+  id                     String   @id @default(uuid()) @db.Uuid
+  userId                 String   @map("user_id") @db.Uuid
+  collectionId           String?  @map("collection_id") @db.Uuid
+  groupId                String?  @map("group_id") @db.Uuid
+  category               String?
+  enabled                Boolean  @default(true)
+  singleCollectionLimitMinor Int  @default(0) @map("single_collection_limit_minor")
+  dailyLimitMinor        Int      @default(0) @map("daily_limit_minor")
+  monthlyLimitMinor      Int      @default(0) @map("monthly_limit_minor")
+  requiresObjectionWindow Boolean @default(true) @map("requires_objection_window")
+  objectionWindowHours   Int      @default(2) @map("objection_window_hours")
+  allowGuests            Boolean  @default(false) @map("allow_guests")
+  allowChildren          Boolean  @default(true) @map("allow_children")
+  allowPartner           Boolean  @default(false) @map("allow_partner")
+  maxCoveredParticipants Int      @default(2) @map("max_covered_participants")
+  createdAt              DateTime @default(now()) @map("created_at")
+  updatedAt              DateTime @updatedAt @map("updated_at")
+
+  user       User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  collection Collection? @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([collectionId])
+  @@map("auto_payment_rules")
+}
+
+model ShareRuleChangeLog {
+  id                  String   @id @default(uuid()) @db.Uuid
+  collectionId        String   @map("collection_id") @db.Uuid
+  actorUserId         String   @map("actor_user_id") @db.Uuid
+  targetParticipantId String?  @map("target_participant_id") @db.Uuid
+  changeType          String   @map("change_type")
+  before              Json?
+  after               Json?
+  reason              String?
+  createdAt           DateTime @default(now()) @map("created_at")
+
+  collection Collection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+  actor      User       @relation(fields: [actorUserId], references: [id], onDelete: Restrict)
+
+  @@index([collectionId])
+  @@index([actorUserId])
+  @@map("share_rule_change_logs")
+}
+
+model AuditLog {
+  id          String          @id @default(uuid()) @db.Uuid
+  actorUserId String?         @map("actor_user_id") @db.Uuid
+  entityType  AuditEntityType @map("entity_type")
+  entityId    String          @map("entity_id")
+  collectionId String?        @map("collection_id") @db.Uuid
+  action      AuditAction
+  metadata    Json            @default("{}")
+  ipAddress   String?         @map("ip_address")
+  userAgent   String?         @map("user_agent")
+  createdAt   DateTime        @default(now()) @map("created_at")
+
+  actor      User?       @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+  collection Collection? @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+
+  @@index([collectionId])
+  @@index([actorUserId])
+  @@index([entityType, entityId])
+  @@map("audit_logs")
+}
+
+model Notification {
+  id           String             @id @default(uuid()) @db.Uuid
+  userId       String             @map("user_id") @db.Uuid
+  collectionId String?            @map("collection_id") @db.Uuid
+  type         NotificationType
+  title        String
+  body         String
+  status       NotificationStatus @default(unread)
+  createdAt    DateTime           @default(now()) @map("created_at")
+  readAt       DateTime?          @map("read_at")
+
+  user       User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  collection Collection? @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status])
+  @@index([collectionId])
+  @@map("notifications")
+}
+

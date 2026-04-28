@@ -20,6 +20,18 @@ npm run typecheck
 npm run build
 ```
 
+## Database
+
+```bash
+# PowerShell: Copy-Item .env.example .env
+cp .env.example .env
+docker compose up -d postgres
+npm run db:deploy
+npm run db:seed
+```
+
+Details: `docs/database.md`.
+
 По умолчанию API стартует на `http://localhost:3000`.
 
 ```bash

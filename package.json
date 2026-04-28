@@ -9,6 +9,8 @@
     "start": "node dist/api/server.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
+    "test:integration": "tsx scripts/runIntegrationTests.ts",
+    "test:integration:vitest": "vitest run --config vitest.integration.config.ts",
     "db:validate": "prisma validate",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",

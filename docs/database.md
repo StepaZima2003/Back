@@ -26,6 +26,7 @@ npm run db:generate
 npm run db:migrate
 npm run db:deploy
 npm run db:seed
+npm run test:integration
 ```
 
 Use `db:migrate` while changing the schema locally. Use `db:deploy` for applying checked-in migrations.
@@ -67,9 +68,18 @@ Direct Prisma read/write is already used here for the stable slice:
 
 Route-level smoke tests now exercise the same collection flows against `memory` and `prisma` providers through a shared stateful Prisma mock.
 
+There is also a live PostgreSQL lane:
+
+```bash
+docker compose up -d postgres
+npm run test:integration
+```
+
+`test:integration` resets a dedicated `integration` schema, applies checked-in Prisma migrations, and runs real API scenarios against `PrismaStore`.
+
 ## Persistence Roadmap
 
 1. Keep calculation logic pure and independent from Prisma.
-2. Add real integration coverage against a live PostgreSQL container in CI.
+2. Wire the live PostgreSQL integration lane into CI.
 3. Add idempotency and concurrency protection around calculation/payment mutations.
 4. Expand persistence coverage toward autopay and richer profile/template reuse flows.

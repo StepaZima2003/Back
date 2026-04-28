@@ -94,12 +94,17 @@ export function createSharedMockPrismaClient() {
         findMany: async () => state.groupParticipantProfiles
       },
       collectionTemplate: {
-        create: async ({ data }: { data: Record<string, unknown> & { categories?: { create?: Array<Record<string, unknown>> } } }) => {
-          state.templates.push({
+        create: async ({
+          data
+        }: {
+          data: Record<string, unknown> & { categories?: { create?: Array<Record<string, unknown>> } };
+        }) => {
+          const template = {
             ...data,
             categories: data.categories?.create ?? []
-          });
-          return data;
+          };
+          state.templates.push(template);
+          return template;
         },
         findMany: async () => state.templates
       },

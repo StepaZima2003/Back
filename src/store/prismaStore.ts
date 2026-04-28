@@ -1454,7 +1454,6 @@ export class PrismaStore implements AppStore {
     const seeds =
       data.categories?.map((category, index) => ({
         id: randomUUID(),
-        templateId,
         title: category.title,
         emoji: category.emoji ?? null,
         requiresManualConfirmation: category.requiresManualConfirmation ?? false,
@@ -1463,7 +1462,6 @@ export class PrismaStore implements AppStore {
       })) ??
       DEFAULT_COLLECTION_CATEGORIES[data.collectionType].map((category, index) => ({
         id: randomUUID(),
-        templateId,
         title: category.title,
         emoji: category.emoji ?? null,
         requiresManualConfirmation: category.requiresManualConfirmation,
@@ -1472,6 +1470,9 @@ export class PrismaStore implements AppStore {
       }));
 
     const template = await this.client.collectionTemplate.create({
+      include: {
+        categories: true
+      },
       data: {
         id: templateId,
         groupId,
@@ -1487,10 +1488,7 @@ export class PrismaStore implements AppStore {
       }
     });
 
-    return mapTemplateRecord({
-      ...template,
-      categories: seeds
-    });
+    return mapTemplateRecord(template);
   }
 
   async applyTemplateCategoriesToCollection(userId: string, collectionId: string, templateId: string): Promise<ExpenseCategory[]> {

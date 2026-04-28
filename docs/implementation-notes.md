@@ -14,5 +14,5 @@ Working notes for the next SocialSplitApp backend increment.
 
 ## Next backend step
 
-- add live integration coverage against a real PostgreSQL instance;
+- wire the new live PostgreSQL integration lane into CI;
 - start hardening Prisma mutations with idempotency/concurrency guards for calculation and payment flows.

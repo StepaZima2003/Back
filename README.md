@@ -16,6 +16,7 @@
 npm install
 npm run dev
 npm test
+npm run test:integration
 npm run typecheck
 npm run build
 ```
@@ -64,6 +65,15 @@ Direct Prisma write/read now covers:
 - audit log.
 
 API smoke parity is now covered in tests for `memory` and `prisma` providers using the same route-level scenarios.
+
+Live PostgreSQL integration coverage is now available separately:
+
+```bash
+docker compose up -d postgres
+npm run test:integration
+```
+
+The integration lane deploys checked-in Prisma migrations into a dedicated `integration` schema and then runs real Fastify + Prisma scenarios against PostgreSQL.
 
 Recent collection/group additions:
 

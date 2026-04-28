@@ -963,8 +963,10 @@ export class InMemoryStore {
     return this.getExpense(expenseId);
   }
 
-  debugLoadSnapshot(snapshot: InMemoryStoreSnapshot): void {
-    this.otpRequests.clear();
+  debugLoadSnapshot(snapshot: InMemoryStoreSnapshot, options?: { preserveOtpRequests?: boolean }): void {
+    if (!options?.preserveOtpRequests) {
+      this.otpRequests.clear();
+    }
     this.users.clear();
     this.usersByPhone.clear();
     this.friendships.clear();

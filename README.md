@@ -41,6 +41,15 @@ npm run dev
 
 `prisma-mirror` keeps in-memory execution semantics, dual-writes the current MVP flow into PostgreSQL, and hydrates persisted runtime state back on startup. Covered: users, friendships, groups, templates, collections, participants, categories, expenses, share rules, calculations, disputes, manual payments, audit log, and collection-scoped notifications.
 
+Direct Prisma-backed runtime facade:
+
+```bash
+$env:STORE_PROVIDER="prisma"
+npm run dev
+```
+
+`prisma` reloads runtime state from PostgreSQL before each operation and then executes the current business flow through the existing store logic. This moves request-time state sourcing onto Postgres while the domain logic is still being migrated away from the in-memory core.
+
 По умолчанию API стартует на `http://localhost:3000`.
 
 ```bash

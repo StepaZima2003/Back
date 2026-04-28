@@ -57,9 +57,18 @@ npm run dev
 
 On startup, `prisma-mirror` now hydrates persisted users, groups, templates, collections, participants, expenses, calculations, disputes, manual payments, audit logs, and notifications back into the in-memory runtime layer.
 
+There is also a more aggressive `STORE_PROVIDER=prisma` mode:
+
+```bash
+$env:STORE_PROVIDER="prisma"
+npm run dev
+```
+
+This mode reloads state from PostgreSQL before each operation and then runs the current business logic through the existing store layer. It is a transition step toward a full direct Prisma store: request-time state now comes from the database, but the domain mutations are still executed through the current in-memory-backed logic before being persisted.
+
 ## Persistence Roadmap
 
 1. Keep calculation logic pure and independent from Prisma.
-2. Run the same API smoke tests against both `InMemoryStore` and the Prisma-backed store contract.
-3. Switch production bootstrap to a full Prisma store behind an environment flag.
+2. Run the same API smoke tests against `memory`, `prisma-mirror`, and `prisma` providers.
+3. Replace remaining in-memory mutation logic with direct Prisma writes inside the store implementation.
 4. Remove the mirror transitional layer after the full Prisma store owns writes directly.

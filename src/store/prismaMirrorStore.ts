@@ -105,7 +105,7 @@ export class PrismaMirrorStore implements AppStore {
       notifications: notifications.map(mapNotificationRecord)
     };
 
-    this.memory.debugLoadSnapshot(snapshot);
+    this.memory.debugLoadSnapshot(snapshot, { preserveOtpRequests: true });
   }
 
   requestOtp(phone: string) {

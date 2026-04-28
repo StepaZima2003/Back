@@ -15,5 +15,5 @@ Working notes for the next SocialSplitApp backend increment.
 ## Next backend step
 
 - real provider adapter boundary: provider payment method token references, PSP status mapping, and external webhook schemas.
-- move internal sweep trigger from endpoint/script into a persistent scheduler or queue worker.
+- add provider-side execution metadata and richer retry policies for webhook-driven payment reconciliation.
 - tighten GitHub Actions further with migration drift / OpenAPI artifact checks if CI time stays reasonable.

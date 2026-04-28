@@ -87,6 +87,32 @@ The same backend now has a mock payment slice for non-production payment work:
 - signed mock-provider webhooks can finalize those intents into `succeeded`, `failed`, or `refunded`;
 - route-level parity and live PostgreSQL integration now cover the mock payment/autopay flow.
 
+There is now a dedicated background worker path for auto payments:
+
+```bash
+$env:STORE_PROVIDER="prisma"
+$env:AUTOPAY_SWEEP_ENABLED="true"
+$env:AUTOPAY_SWEEP_INTERVAL_MS="60000"
+npm run dev
+```
+
+That mode starts the API and an in-process scheduler together. For a separate worker process, use:
+
+```bash
+$env:STORE_PROVIDER="prisma"
+$env:AUTOPAY_SWEEP_ON_BOOT="true"
+$env:AUTOPAY_SWEEP_INTERVAL_MS="60000"
+npm run autopay:worker
+```
+
+Relevant worker env vars:
+
+- `AUTOPAY_SWEEP_ENABLED`: turns on the scheduler inside `src/api/server.ts`;
+- `AUTOPAY_SWEEP_ON_BOOT`: runs one sweep immediately after startup before polling;
+- `AUTOPAY_SWEEP_INTERVAL_MS`: poll interval for the persistent sweep loop;
+- `INTERNAL_API_TOKEN`: still protects the manual `/internal/autopay/run-due` trigger;
+- `MOCK_PROVIDER_WEBHOOK_SECRET`: signs and verifies mock PSP webhooks.
+
 There is also a live PostgreSQL lane:
 
 ```bash
@@ -104,5 +130,5 @@ This same split now runs in GitHub Actions:
 ## Persistence Roadmap
 
 1. Keep calculation logic pure and independent from Prisma.
-2. Replace simulated provider transitions with a real PSP adapter and webhook verification.
-3. Expand persistence coverage toward richer profile/template reuse flows.
+2. Replace simulated provider transitions with a real PSP adapter, stored provider references, and webhook verification.
+3. Move from polling-only orchestration to queue-backed execution if batch volume grows past one process.

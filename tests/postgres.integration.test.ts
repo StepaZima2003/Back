@@ -2,6 +2,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from
 import type { FastifyInstance } from "fastify";
 import { PrismaClient } from "@prisma/client";
 import { buildApp } from "../src/api/app";
+import { createAutoPaymentSweepWorker } from "../src/payments/autopayWorker";
 import { createMockProviderWebhookSignature } from "../src/payments/mockProvider";
 import { PrismaStore } from "../src/store";
 import { createIntegrationPrismaClient, resetIntegrationDatabase } from "./support/postgresIntegration";
@@ -787,5 +788,84 @@ describe("PostgreSQL integration", () => {
       headers: { authorization: organizer.authorization }
     });
     expect(updatedPaymentsResponse.json().some((payment: { id: string; status: string }) => payment.id === targetPayment.id && payment.status === "succeeded")).toBe(true);
+  });
+
+  it("executes the background auto payment worker against live PostgreSQL", async () => {
+    const organizer = await auth(app!, "+79990011061");
+    const participantUser = await auth(app!, "+79990011062");
+
+    const collectionResponse = await app!.inject({
+      method: "POST",
+      url: "/collections",
+      headers: { authorization: organizer.authorization },
+      payload: { title: "Worker live trip", type: "trip" }
+    });
+    const { collection, organizerParticipant } = collectionResponse.json();
+
+    const participantResponse = await app!.inject({
+      method: "POST",
+      url: `/collections/${collection.id}/participants`,
+      headers: { authorization: organizer.authorization },
+      payload: { linkedUserId: participantUser.user.id, displayName: "Friend" }
+    });
+    const participant = participantResponse.json();
+
+    await app!.inject({
+      method: "POST",
+      url: "/payment-methods/mock-bind",
+      headers: { authorization: participantUser.authorization },
+      payload: {
+        provider: "bank",
+        maskedPan: "2200 **** **** 6262",
+        brand: "mir",
+        setAsDefault: true
+      }
+    });
+
+    await app!.inject({
+      method: "POST",
+      url: `/collections/${collection.id}/expenses`,
+      headers: { authorization: organizer.authorization },
+      payload: {
+        title: "Villa",
+        amountMinor: 8000,
+        payments: [{ paidByParticipantId: organizerParticipant.id, amountMinor: 8000, paymentSource: "card" }]
+      }
+    });
+    await app!.inject({
+      method: "POST",
+      url: `/collections/${collection.id}/calculate`,
+      headers: { authorization: organizer.authorization }
+    });
+    await app!.inject({
+      method: "POST",
+      url: "/autopay-rules",
+      headers: { authorization: participantUser.authorization },
+      payload: {
+        collectionId: collection.id,
+        requiresObjectionWindow: false,
+        singleCollectionLimitMinor: 10000
+      }
+    });
+
+    const worker = createAutoPaymentSweepWorker({
+      store: await PrismaStore.create(client as never),
+      intervalMs: 1000,
+      runOnStart: false
+    });
+
+    const result = await worker.runNow();
+    expect(result.paymentsCreated).toBe(1);
+    expect(result.affectedCollectionIds).toContain(collection.id);
+
+    const paymentsResponse = await app!.inject({
+      method: "GET",
+      url: `/collections/${collection.id}/payments`,
+      headers: { authorization: organizer.authorization }
+    });
+    expect(paymentsResponse.statusCode).toBe(200);
+    expect(paymentsResponse.json().some((payment: { participantId: string; amountMinor: number }) => payment.participantId === participant.id && payment.amountMinor === 4000)).toBe(true);
+
+    await worker.stop();
   });
 });

@@ -18,6 +18,7 @@ npm run dev
 npm test
 npm run test:integration
 npm run autopay:sweep
+npm run autopay:worker
 npm run typecheck
 npm run build
 ```
@@ -104,8 +105,22 @@ Mock payment and autopay groundwork is now available without any real payment pr
 - organizer-side auto payment preview and batch execution against the latest calculation;
 - category-scoped auto payment segmentation plus collection/day/month rule limits;
 - internal due-autopay sweep endpoint and CLI script for background-style execution;
+- dedicated autopay worker loop with startup sweep and configurable polling interval;
 - signed mock-provider webhook endpoint for payment status transitions;
 - route-level parity tests and live PostgreSQL coverage for the new payment slice.
+
+Autopay orchestration can now run in two modes:
+
+```bash
+# API + in-process scheduler
+$env:STORE_PROVIDER="prisma"
+$env:AUTOPAY_SWEEP_ENABLED="true"
+npm run dev
+
+# Dedicated worker process
+$env:STORE_PROVIDER="prisma"
+npm run autopay:worker
+```
 
 По умолчанию API стартует на `http://localhost:3000`.
 

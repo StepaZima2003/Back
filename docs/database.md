@@ -84,6 +84,8 @@ Direct Prisma read/write is already used here for the stable slice:
 - notifications;
 - audit log.
 
+Route-level smoke tests now exercise the same collection flows against `memory`, `prisma-mirror`, and `prisma` providers through a shared stateful Prisma mock.
+
 ## Persistence Roadmap
 
 1. Keep calculation logic pure and independent from Prisma.

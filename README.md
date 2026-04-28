@@ -68,6 +68,8 @@ Direct Prisma write/read now covers:
 - notifications;
 - audit log.
 
+API smoke parity is now covered in tests for `memory`, `prisma-mirror`, and `prisma` providers using the same route-level scenarios.
+
 По умолчанию API стартует на `http://localhost:3000`.
 
 ```bash

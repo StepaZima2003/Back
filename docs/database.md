@@ -83,6 +83,8 @@ The same backend now has a mock payment slice for non-production payment work:
 - mock payment intent creation is also idempotent through the existing retry discipline;
 - the latest calculation can now be transformed into an organizer-reviewed auto payment preview/execution batch;
 - category-scoped rules can split one participant into multiple simulated payment intents when needed;
+- internal due-autopay sweep can traverse all eligible collections and create pending intents without user interaction;
+- signed mock-provider webhooks can finalize those intents into `succeeded`, `failed`, or `refunded`;
 - route-level parity and live PostgreSQL integration now cover the mock payment/autopay flow.
 
 There is also a live PostgreSQL lane:

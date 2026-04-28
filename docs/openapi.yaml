@@ -458,6 +458,12 @@ paths:
       responses:
         "200":
           description: Refunded payment intent
+  /payments/webhooks/mock-provider:
+    post:
+      summary: Apply signed mock-provider webhook event to payment intent
+      responses:
+        "200":
+          description: Updated payment intent
   /collections/{id}/audit-log:
     get:
       summary: List collection audit log
@@ -486,6 +492,12 @@ paths:
       responses:
         "200":
           description: Notification
+  /internal/autopay/run-due:
+    post:
+      summary: Run due auto-payment sweep across eligible collections
+      responses:
+        "200":
+          description: Sweep execution summary
 components:
   securitySchemes:
     bearerAuth:

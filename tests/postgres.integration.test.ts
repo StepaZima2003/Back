@@ -2,6 +2,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from
 import type { FastifyInstance } from "fastify";
 import { PrismaClient } from "@prisma/client";
 import { buildApp } from "../src/api/app";
+import { createMockProviderWebhookSignature } from "../src/payments/mockProvider";
 import { PrismaStore } from "../src/store";
 import { createIntegrationPrismaClient, resetIntegrationDatabase } from "./support/postgresIntegration";
 
@@ -37,6 +38,8 @@ describe("PostgreSQL integration", () => {
   });
 
   beforeEach(async () => {
+    process.env.INTERNAL_API_TOKEN = "test-internal-token";
+    process.env.MOCK_PROVIDER_WEBHOOK_SECRET = "test-webhook-secret";
     await resetIntegrationDatabase(client);
     app = await createApp();
   });
@@ -46,6 +49,8 @@ describe("PostgreSQL integration", () => {
       await app.close();
       app = null;
     }
+    delete process.env.INTERNAL_API_TOKEN;
+    delete process.env.MOCK_PROVIDER_WEBHOOK_SECRET;
   });
 
   afterAll(async () => {
@@ -683,5 +688,104 @@ describe("PostgreSQL integration", () => {
     expect(paymentsResponse.statusCode).toBe(200);
     expect(paymentsResponse.json()).toHaveLength(1);
     expect(paymentsResponse.json()[0].amountMinor).toBe(2000);
+  });
+
+  it("runs due autopay sweep and applies signed mock-provider webhook events on live PostgreSQL", async () => {
+    const organizer = await auth(app!, "+79990011051");
+    const participantUser = await auth(app!, "+79990011052");
+
+    const collectionResponse = await app!.inject({
+      method: "POST",
+      url: "/collections",
+      headers: { authorization: organizer.authorization },
+      payload: { title: "Sweep live trip", type: "trip" }
+    });
+    const { collection, organizerParticipant } = collectionResponse.json();
+
+    const participantResponse = await app!.inject({
+      method: "POST",
+      url: `/collections/${collection.id}/participants`,
+      headers: { authorization: organizer.authorization },
+      payload: { linkedUserId: participantUser.user.id, displayName: "Friend" }
+    });
+    const participant = participantResponse.json();
+
+    await app!.inject({
+      method: "POST",
+      url: "/payment-methods/mock-bind",
+      headers: { authorization: participantUser.authorization },
+      payload: {
+        provider: "bank",
+        maskedPan: "2200 **** **** 5151",
+        brand: "mir",
+        setAsDefault: true
+      }
+    });
+
+    await app!.inject({
+      method: "POST",
+      url: `/collections/${collection.id}/expenses`,
+      headers: { authorization: organizer.authorization },
+      payload: {
+        title: "Stay",
+        amountMinor: 6000,
+        payments: [{ paidByParticipantId: organizerParticipant.id, amountMinor: 6000, paymentSource: "card" }]
+      }
+    });
+    await app!.inject({
+      method: "POST",
+      url: `/collections/${collection.id}/calculate`,
+      headers: { authorization: organizer.authorization }
+    });
+    await app!.inject({
+      method: "POST",
+      url: "/autopay-rules",
+      headers: { authorization: participantUser.authorization },
+      payload: {
+        collectionId: collection.id,
+        requiresObjectionWindow: false,
+        singleCollectionLimitMinor: 10000
+      }
+    });
+
+    const sweepResponse = await app!.inject({
+      method: "POST",
+      url: "/internal/autopay/run-due",
+      headers: { "x-internal-token": "test-internal-token" }
+    });
+    expect(sweepResponse.statusCode).toBe(200);
+    expect(sweepResponse.json().paymentsCreated).toBe(1);
+    expect(sweepResponse.json().affectedCollectionIds).toContain(collection.id);
+
+    const paymentsResponse = await app!.inject({
+      method: "GET",
+      url: `/collections/${collection.id}/payments`,
+      headers: { authorization: organizer.authorization }
+    });
+    const targetPayment = paymentsResponse.json().find((payment: { participantId: string }) => payment.participantId === participant.id);
+    expect(targetPayment).toBeTruthy();
+
+    const webhookPayload = {
+      providerPaymentId: targetPayment.providerPaymentId,
+      eventType: "payment.succeeded" as const,
+      occurredAt: new Date().toISOString()
+    };
+    const webhookResponse = await app!.inject({
+      method: "POST",
+      url: "/payments/webhooks/mock-provider",
+      headers: {
+        "x-mock-provider-signature": createMockProviderWebhookSignature(webhookPayload, "test-webhook-secret")
+      },
+      payload: webhookPayload
+    });
+    expect(webhookResponse.statusCode).toBe(200);
+    expect(webhookResponse.json().status).toBe("succeeded");
+
+    const updatedPaymentsResponse = await app!.inject({
+      method: "GET",
+      url: `/collections/${collection.id}/payments`,
+      headers: { authorization: organizer.authorization }
+    });
+    expect(updatedPaymentsResponse.json().some((payment: { id: string; status: string }) => payment.id === targetPayment.id && payment.status === "succeeded")).toBe(true);
   });
 });

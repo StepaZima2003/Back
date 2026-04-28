@@ -1,6 +1,8 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { requireUser } from "../authContext";
+import { verifyMockProviderWebhookSignature, type MockProviderWebhookPayload } from "../../payments/mockProvider";
+import { AppError } from "../../store";
 import type { AppStore } from "../../store";
 
 const idParamsSchema = z.object({
@@ -48,6 +50,13 @@ const createMockPaymentSchema = z.object({
 });
 
 const paymentActionSchema = z.object({
+  reason: z.string().nullable().optional()
+});
+
+const mockProviderWebhookSchema = z.object({
+  providerPaymentId: z.string().min(1),
+  eventType: z.enum(["payment.succeeded", "payment.failed", "payment.refunded"]),
+  occurredAt: z.string().datetime().nullable().optional(),
   reason: z.string().nullable().optional()
 });
 
@@ -139,5 +148,15 @@ export function registerPaymentRoutes(app: FastifyInstance, store: AppStore): vo
     const params = idParamsSchema.parse(request.params);
     const body = paymentActionSchema.parse(request.body ?? {});
     return await store.refundPayment(user.id, params.id, body);
+  });
+
+  app.post("/payments/webhooks/mock-provider", async (request) => {
+    const body = mockProviderWebhookSchema.parse(request.body) as MockProviderWebhookPayload;
+    const signatureHeader = request.headers["x-mock-provider-signature"];
+    const signature = Array.isArray(signatureHeader) ? signatureHeader[0] : signatureHeader;
+    if (!verifyMockProviderWebhookSignature(body, signature)) {
+      throw new AppError(401, "Invalid mock provider signature.");
+    }
+    return await store.applyMockProviderWebhook(body);
   });
 }

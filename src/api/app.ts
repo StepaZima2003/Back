@@ -6,6 +6,7 @@ import { registerAuthRoutes } from "./routes/auth";
 import { registerCollectionRoutes } from "./routes/collections";
 import { registerFriendRoutes } from "./routes/friends";
 import { registerGroupRoutes } from "./routes/groups";
+import { registerInternalRoutes } from "./routes/internal";
 import { registerNotificationRoutes } from "./routes/notifications";
 import { registerPaymentRoutes } from "./routes/payments";
 import { registerUserRoutes } from "./routes/users";
@@ -61,6 +62,7 @@ export async function buildApp(options: BuildAppOptions = {}) {
   registerCollectionRoutes(app, store);
   registerPaymentRoutes(app, store);
   registerNotificationRoutes(app, store);
+  registerInternalRoutes(app, store);
 
   return app;
 }

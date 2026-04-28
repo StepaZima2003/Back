@@ -17,6 +17,7 @@ npm install
 npm run dev
 npm test
 npm run test:integration
+npm run autopay:sweep
 npm run typecheck
 npm run build
 ```
@@ -102,6 +103,8 @@ Mock payment and autopay groundwork is now available without any real payment pr
 - simulated success / failure / refund transitions for backend development;
 - organizer-side auto payment preview and batch execution against the latest calculation;
 - category-scoped auto payment segmentation plus collection/day/month rule limits;
+- internal due-autopay sweep endpoint and CLI script for background-style execution;
+- signed mock-provider webhook endpoint for payment status transitions;
 - route-level parity tests and live PostgreSQL coverage for the new payment slice.
 
 По умолчанию API стартует на `http://localhost:3000`.

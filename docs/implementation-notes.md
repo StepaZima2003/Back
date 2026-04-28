@@ -14,6 +14,6 @@ Working notes for the next SocialSplitApp backend increment.
 
 ## Next backend step
 
-- real provider adapter boundary: webhook verification, provider payment method token references, and PSP status mapping.
-- replace organizer-triggered mock autopay batches with scheduled/background execution policy.
+- real provider adapter boundary: provider payment method token references, PSP status mapping, and external webhook schemas.
+- move internal sweep trigger from endpoint/script into a persistent scheduler or queue worker.
 - tighten GitHub Actions further with migration drift / OpenAPI artifact checks if CI time stays reasonable.

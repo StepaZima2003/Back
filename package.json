@@ -11,6 +11,7 @@
     "test": "vitest run",
     "test:integration": "tsx scripts/runIntegrationTests.ts",
     "test:integration:vitest": "vitest run --config vitest.integration.config.ts",
+    "autopay:sweep": "tsx scripts/runAutoPaymentSweep.ts",
     "db:validate": "prisma validate",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",

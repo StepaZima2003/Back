@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { PrismaClient, type Prisma } from "@prisma/client";
 import { calculateCollection } from "../calculation";
 import { buildAutoPaymentPlan, type AutoPaymentExecutionPlan, type AutoPaymentPreviewItem } from "../payments/autopay";
+import type { MockProviderWebhookPayload } from "../payments/mockProvider";
 import type {
   AutoPaymentRule,
   AuditAction,
@@ -1942,6 +1943,124 @@ export class PrismaStore implements AppStore {
     });
   }
 
+  async runAutoPaymentSweep(): Promise<{
+    collectionsScanned: number;
+    collectionsWithEligibleItems: number;
+    paymentsCreated: number;
+    affectedCollectionIds: string[];
+  }> {
+    const candidates = (await this.client.collection.findMany())
+      .filter((collection) => !["draft", "cancelled", "closed", "blocked", "paid"].includes(collection.status));
+
+    const affectedCollectionIds = new Set<string>();
+    let collectionsWithEligibleItems = 0;
+    let paymentsCreated = 0;
+
+    for (const collection of candidates) {
+      const calculations = await this.getCalculationVersionRecords(collection.id);
+      if (calculations.length === 0) {
+        continue;
+      }
+
+      const preview = await this.buildAutoPaymentExecutionPlan(collection.id);
+      if (preview.preview.some((item) => item.status === "eligible")) {
+        collectionsWithEligibleItems += 1;
+      }
+
+      const result = await this.executeAutoPayments(collection.organizerId, collection.id);
+      if (result.createdPayments.length > 0) {
+        affectedCollectionIds.add(collection.id);
+        paymentsCreated += result.createdPayments.length;
+      }
+    }
+
+    return {
+      collectionsScanned: candidates.length,
+      collectionsWithEligibleItems,
+      paymentsCreated,
+      affectedCollectionIds: [...affectedCollectionIds]
+    };
+  }
+
+  async applyMockProviderWebhook(payload: MockProviderWebhookPayload): Promise<Payment> {
+    const payment = await this.findPaymentByProviderPaymentIdDirect(payload.providerPaymentId);
+    if (!payment) {
+      throw new AppError(404, "Payment not found for provider payment id.");
+    }
+
+    return await this.withAdvisoryLock(`payment-provider:${payload.providerPaymentId}`, async (store) => {
+      return await store.applyMockProviderWebhookLocked(payload);
+    });
+  }
+
+  private async applyMockProviderWebhookLocked(payload: MockProviderWebhookPayload): Promise<Payment> {
+    const payment = await this.findPaymentByProviderPaymentIdDirect(payload.providerPaymentId);
+    if (!payment) {
+      throw new AppError(404, "Payment not found for provider payment id.");
+    }
+
+    let nextStatus: Payment["status"];
+    let participantPaymentStatus: CollectionParticipant["paymentStatus"] | null;
+    let action: AuditAction;
+
+    switch (payload.eventType) {
+      case "payment.succeeded":
+        if (payment.status === "succeeded") {
+          return payment;
+        }
+        nextStatus = "succeeded";
+        participantPaymentStatus = "paid";
+        action = "paid";
+        break;
+      case "payment.failed":
+        if (payment.status === "failed") {
+          return payment;
+        }
+        if (payment.status === "refunded") {
+          throw new AppError(409, "Refunded payment cannot be marked as failed.");
+        }
+        nextStatus = "failed";
+        participantPaymentStatus = "failed";
+        action = "updated";
+        break;
+      case "payment.refunded":
+        if (payment.status === "refunded") {
+          return payment;
+        }
+        if (payment.status !== "succeeded") {
+          throw new AppError(409, "Only succeeded payment can be refunded.");
+        }
+        nextStatus = "refunded";
+        participantPaymentStatus = "pending";
+        action = "updated";
+        break;
+    }
+
+    const updated = await this.client.payment.upsert({
+      where: { id: payment.id },
+      update: {
+        status: nextStatus,
+        updatedAt: new Date()
+      },
+      create: paymentCreateInputFromRecord(payment, {
+        status: nextStatus,
+        updatedAt: new Date()
+      })
+    });
+    if (payment.participantId && participantPaymentStatus) {
+      await this.setParticipantPaymentStatusDirect(payment.collectionId, payment.participantId, participantPaymentStatus);
+    }
+    await this.syncCollectionPaymentStatusDirect(payment.collectionId);
+    await this.addAuditDirect(null, "payment", payment.id, payment.collectionId, action, {
+      providerPaymentId: payment.providerPaymentId,
+      eventType: payload.eventType,
+      reason: payload.reason ?? null,
+      occurredAt: payload.occurredAt ?? null,
+      webhook: true
+    });
+    return mapPaymentRecord(updated);
+  }
+
   async listAuditLogs(userId: string, collectionId: string): Promise<AuditLog[]> {
     await this.getCollectionForUser(userId, collectionId);
     return (await this.client.auditLog.findMany())
@@ -2385,6 +2504,11 @@ export class PrismaStore implements AppStore {
     await this.setParticipantPaymentStatusDirect(data.collectionId, data.participantId, "pending");
     await this.bumpCollectionStatus(data.collectionId, "payment_pending");
     return mapPaymentRecord(payment);
+  }
+
+  private async findPaymentByProviderPaymentIdDirect(providerPaymentId: string): Promise<Payment | null> {
+    const payment = (await this.client.payment.findMany()).find((item) => item.providerPaymentId === providerPaymentId);
+    return payment ? mapPaymentRecord(payment) : null;
   }
 
   private async getPaymentForActorDirect(userId: string, paymentId: string): Promise<Payment> {

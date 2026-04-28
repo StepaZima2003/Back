@@ -64,6 +64,8 @@ type AppStoreMethodName =
   | "refundPayment"
   | "previewAutoPayments"
   | "executeAutoPayments"
+  | "runAutoPaymentSweep"
+  | "applyMockProviderWebhook"
   | "listAuditLogs"
   | "listGroupTemplates"
   | "createGroupTemplate"

@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { calculateCollection } from "../calculation";
 import { buildAutoPaymentPlan, type AutoPaymentExecutionPlan, type AutoPaymentPreviewItem } from "../payments/autopay";
+import type { MockProviderWebhookPayload } from "../payments/mockProvider";
 import type {
   AutoPaymentRule,
   AuthResult,
@@ -1423,6 +1424,100 @@ export class InMemoryStore {
     };
   }
 
+  runAutoPaymentSweep(): {
+    collectionsScanned: number;
+    collectionsWithEligibleItems: number;
+    paymentsCreated: number;
+    affectedCollectionIds: string[];
+  } {
+    const candidates = [...this.collections.values()].filter((collection) =>
+      !["draft", "cancelled", "closed", "blocked", "paid"].includes(collection.status)
+    );
+
+    const affectedCollectionIds = new Set<string>();
+    let collectionsWithEligibleItems = 0;
+    let paymentsCreated = 0;
+
+    for (const collection of candidates) {
+      if (this.getCalculationVersions(collection.id).length === 0) {
+        continue;
+      }
+      const result = this.executeAutoPayments(collection.organizerId, collection.id);
+      if (result.preview.some((item) => item.status === "eligible")) {
+        collectionsWithEligibleItems += 1;
+      }
+      if (result.createdPayments.length > 0) {
+        affectedCollectionIds.add(collection.id);
+        paymentsCreated += result.createdPayments.length;
+      }
+    }
+
+    return {
+      collectionsScanned: candidates.length,
+      collectionsWithEligibleItems,
+      paymentsCreated,
+      affectedCollectionIds: [...affectedCollectionIds]
+    };
+  }
+
+  applyMockProviderWebhook(payload: MockProviderWebhookPayload): Payment {
+    const payment = this.findPaymentByProviderPaymentId(payload.providerPaymentId);
+    if (!payment) {
+      throw new AppError(404, "Payment not found for provider payment id.");
+    }
+
+    let nextStatus: Payment["status"];
+    let participantPaymentStatus: CollectionParticipant["paymentStatus"] | null;
+    let action: AuditAction;
+
+    switch (payload.eventType) {
+      case "payment.succeeded":
+        if (payment.status === "succeeded") {
+          return payment;
+        }
+        nextStatus = "succeeded";
+        participantPaymentStatus = "paid";
+        action = "paid";
+        break;
+      case "payment.failed":
+        if (payment.status === "failed") {
+          return payment;
+        }
+        if (payment.status === "refunded") {
+          throw new AppError(409, "Refunded payment cannot be marked as failed.");
+        }
+        nextStatus = "failed";
+        participantPaymentStatus = "failed";
+        action = "updated";
+        break;
+      case "payment.refunded":
+        if (payment.status === "refunded") {
+          return payment;
+        }
+        if (payment.status !== "succeeded") {
+          throw new AppError(409, "Only succeeded payment can be refunded.");
+        }
+        nextStatus = "refunded";
+        participantPaymentStatus = "pending";
+        action = "updated";
+        break;
+    }
+
+    const updated = this.updatePayment(payment, { status: nextStatus, updatedAt: now() });
+    if (updated.participantId && participantPaymentStatus) {
+      this.setParticipantPaymentStatus(updated.collectionId, updated.participantId, participantPaymentStatus);
+    }
+    this.syncCollectionPaymentStatus(updated.collectionId);
+    this.addAudit(null, "payment", updated.id, updated.collectionId, action, {
+      providerPaymentId: updated.providerPaymentId,
+      eventType: payload.eventType,
+      reason: payload.reason ?? null,
+      occurredAt: payload.occurredAt ?? null,
+      webhook: true
+    });
+    return updated;
+  }
+
   listAuditLogs(userId: string, collectionId: string): AuditLog[] {
     this.getCollectionForUser(userId, collectionId);
     return [...this.auditLogs.values()].filter((log) => log.collectionId === collectionId).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
@@ -1718,6 +1813,10 @@ export class InMemoryStore {
 
   private findPaymentByIdempotencyKey(collectionId: string, idempotencyKey: string): Payment | null {
     return this.getPayments(collectionId).find((payment) => payment.idempotencyKey === idempotencyKey) ?? null;
+  }
+
+  private findPaymentByProviderPaymentId(providerPaymentId: string): Payment | null {
+    return [...this.payments.values()].find((payment) => payment.providerPaymentId === providerPaymentId) ?? null;
   }
 
   private createAutoPaymentRecord(data: {

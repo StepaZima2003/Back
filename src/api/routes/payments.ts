@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { requireUser } from "../authContext";
-import { verifyMockProviderWebhookSignature, type MockProviderWebhookPayload } from "../../payments/mockProvider";
+import { getPaymentProviderAdapter } from "../../payments/providerAdapter";
 import { AppError } from "../../store";
 import type { AppStore } from "../../store";
 
@@ -53,11 +53,8 @@ const paymentActionSchema = z.object({
   reason: z.string().nullable().optional()
 });
 
-const mockProviderWebhookSchema = z.object({
-  providerPaymentId: z.string().min(1),
-  eventType: z.enum(["payment.succeeded", "payment.failed", "payment.refunded"]),
-  occurredAt: z.string().datetime().nullable().optional(),
-  reason: z.string().nullable().optional()
+const webhookProviderParamsSchema = z.object({
+  provider: z.enum(["yookassa", "bank", "sbp", "manual", "other"])
 });
 
 const executeAutopaySchema = z.object({
@@ -150,13 +147,36 @@ export function registerPaymentRoutes(app: FastifyInstance, store: AppStore): vo
     return await store.refundPayment(user.id, params.id, body);
   });
 
-  app.post("/payments/webhooks/mock-provider", async (request) => {
-    const body = mockProviderWebhookSchema.parse(request.body) as MockProviderWebhookPayload;
-    const signatureHeader = request.headers["x-mock-provider-signature"];
-    const signature = Array.isArray(signatureHeader) ? signatureHeader[0] : signatureHeader;
-    if (!verifyMockProviderWebhookSignature(body, signature)) {
-      throw new AppError(401, "Invalid mock provider signature.");
+  app.post("/payments/webhooks/:provider", async (request) => {
+    const params = webhookProviderParamsSchema.parse(request.params);
+    const adapter = getPaymentProviderAdapter(params.provider);
+    try {
+      const event = adapter.verifyAndNormalizeWebhook({
+        headers: request.headers,
+        body: request.body
+      });
+      return await store.applyPaymentWebhook(event);
+    } catch (error) {
+      if (error instanceof AppError) {
+        throw error;
+      }
+      throw new AppError(401, error instanceof Error ? error.message : "Invalid payment provider webhook.");
     }
-    return await store.applyMockProviderWebhook(body);
+  });
+
+  app.post("/payments/webhooks/mock-provider", async (request) => {
+    const adapter = getPaymentProviderAdapter("bank");
+    try {
+      const event = adapter.verifyAndNormalizeWebhook({
+        headers: request.headers,
+        body: request.body
+      });
+      return await store.applyPaymentWebhook(event);
+    } catch (error) {
+      if (error instanceof AppError) {
+        throw error;
+      }
+      throw new AppError(401, error instanceof Error ? error.message : "Invalid mock provider signature.");
+    }
   });
 }

@@ -44,6 +44,8 @@ export type ManualPaymentProofStatus = "submitted" | "confirmed" | "rejected";
 export type PaymentStatus = "pending" | "processing" | "succeeded" | "failed" | "cancelled" | "refunded" | "manual_marked_paid" | "disputed";
 export type PaymentMethodStatus = "pending_binding" | "active" | "failed" | "expired" | "revoked" | "requires_confirmation";
 export type PaymentCardBrand = "visa" | "mastercard" | "mir" | "unknown";
+export type PaymentProviderWebhookEventType = "payment.succeeded" | "payment.failed" | "payment.refunded";
+export type PaymentWebhookProcessingStatus = "received" | "processed" | "ignored" | "failed";
 export type AuditEntityType =
   | "collection"
   | "payment"
@@ -152,6 +154,7 @@ export interface PaymentMethod {
   userId: string;
   provider: string;
   providerPaymentMethodId: string;
+  providerMetadata: Record<string, unknown>;
   maskedPan: string;
   brand: PaymentCardBrand;
   status: PaymentMethodStatus;
@@ -183,14 +186,36 @@ export interface Payment {
   collectionId: string;
   participantId: string | null;
   responsibleUserId: string;
+  paymentMethodId: string | null;
   amountMinor: number;
   currency: "RUB";
   provider: PaymentProvider;
   providerPaymentId: string | null;
+  providerStatus: string | null;
+  providerMetadata: Record<string, unknown>;
   status: PaymentStatus;
+  lastErrorCode: string | null;
+  lastErrorMessage: string | null;
+  attemptCount: number;
+  lastWebhookEventId: string | null;
+  lastWebhookReceivedAt: string | null;
   idempotencyKey: string;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface PaymentWebhookEvent {
+  id: string;
+  provider: PaymentProvider;
+  externalEventId: string;
+  providerPaymentId: string;
+  paymentId: string | null;
+  eventType: PaymentProviderWebhookEventType;
+  status: PaymentWebhookProcessingStatus;
+  payload: Record<string, unknown>;
+  processingError: string | null;
+  receivedAt: string;
+  processedAt: string | null;
 }
 
 export interface Expense {

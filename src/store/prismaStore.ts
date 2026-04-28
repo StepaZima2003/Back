@@ -3,6 +3,11 @@ import { PrismaClient, type Prisma } from "@prisma/client";
 import { calculateCollection } from "../calculation";
 import { buildAutoPaymentPlan, type AutoPaymentExecutionPlan, type AutoPaymentPreviewItem } from "../payments/autopay";
 import type { MockProviderWebhookPayload } from "../payments/mockProvider";
+import {
+  getPaymentProviderAdapter,
+  normalizePaymentProvider,
+  type NormalizedPaymentWebhookEvent
+} from "../payments/providerAdapter";
 import type {
   AutoPaymentRule,
   AuditAction,
@@ -25,6 +30,7 @@ import type {
   GroupParticipantProfile,
   Payment,
   PaymentCardBrand,
+  PaymentWebhookEvent,
   PaymentMethod,
   ManualPaymentProof,
   Notification,
@@ -544,6 +550,14 @@ export class PrismaStore implements AppStore {
       await this.clearDefaultPaymentMethodDirect(userId);
     }
 
+    const provider = normalizePaymentProvider(data.provider);
+    const binding = getPaymentProviderAdapter(provider).createPaymentMethodBinding({
+      provider,
+      userId,
+      maskedPan: data.maskedPan,
+      brand: data.brand ?? "unknown"
+    });
+
     const createdAt = new Date();
     const method = await this.client.paymentMethod.upsert({
       where: { id: randomUUID() },
@@ -551,8 +565,9 @@ export class PrismaStore implements AppStore {
       create: {
         id: randomUUID(),
         userId,
-        provider: data.provider?.trim() || "mock_bank",
-        providerPaymentMethodId: `mock_pm_${randomUUID()}`,
+        provider,
+        providerPaymentMethodId: binding.providerPaymentMethodId,
+        providerMetadata: asJson(binding.providerMetadata),
         maskedPan: data.maskedPan,
         brand: data.brand ?? "unknown",
         status: "active",
@@ -1733,20 +1748,42 @@ export class PrismaStore implements AppStore {
       return existing;
     }
 
+    const provider = normalizePaymentProvider(data.provider ?? paymentMethod?.provider);
+    const paymentId = randomUUID();
+    const intent = getPaymentProviderAdapter(provider).createPaymentIntent({
+      provider,
+      paymentId,
+      collectionId,
+      participantId: participant.id,
+      responsibleUserId: userId,
+      amountMinor: data.amountMinor,
+      currency: "RUB",
+      idempotencyKey: normalizedIdempotencyKey,
+      paymentMethod
+    });
+
     const createdAt = new Date();
     const payment = await this.client.payment.upsert({
-      where: { id: randomUUID() },
+      where: { id: paymentId },
       update: {},
       create: {
-        id: randomUUID(),
+        id: paymentId,
         collectionId,
         participantId: participant.id,
         responsibleUserId: userId,
+        paymentMethodId: paymentMethod?.id ?? null,
         amountMinor: data.amountMinor,
         currency: "RUB",
-        provider: data.provider ?? normalizeMockPaymentProvider(paymentMethod?.provider),
-        providerPaymentId: `mock_pay_${randomUUID()}`,
+        provider,
+        providerPaymentId: intent.providerPaymentId,
+        providerStatus: intent.providerStatus,
+        providerMetadata: asJson(intent.providerMetadata),
         status: "pending",
+        lastErrorCode: null,
+        lastErrorMessage: null,
+        attemptCount: 1,
+        lastWebhookEventId: null,
+        lastWebhookReceivedAt: null,
         idempotencyKey: normalizedIdempotencyKey,
         createdAt,
         updatedAt: createdAt
@@ -1786,10 +1823,16 @@ export class PrismaStore implements AppStore {
       where: { id: payment.id },
       update: {
         status: "succeeded",
+        providerStatus: "succeeded",
+        lastErrorCode: null,
+        lastErrorMessage: null,
         updatedAt: new Date()
       },
       create: paymentCreateInputFromRecord(payment, {
         status: "succeeded",
+        providerStatus: "succeeded",
+        lastErrorCode: null,
+        lastErrorMessage: null,
         updatedAt: new Date()
       })
     });
@@ -1823,10 +1866,16 @@ export class PrismaStore implements AppStore {
       where: { id: payment.id },
       update: {
         status: "failed",
+        providerStatus: "failed",
+        lastErrorCode: "mock_failure",
+        lastErrorMessage: data?.reason ?? "Mock provider failure.",
         updatedAt: new Date()
       },
       create: paymentCreateInputFromRecord(payment, {
         status: "failed",
+        providerStatus: "failed",
+        lastErrorCode: "mock_failure",
+        lastErrorMessage: data?.reason ?? "Mock provider failure.",
         updatedAt: new Date()
       })
     });
@@ -1861,10 +1910,16 @@ export class PrismaStore implements AppStore {
       where: { id: payment.id },
       update: {
         status: "refunded",
+        providerStatus: "refunded",
+        lastErrorCode: null,
+        lastErrorMessage: data?.reason ?? null,
         updatedAt: new Date()
       },
       create: paymentCreateInputFromRecord(payment, {
         status: "refunded",
+        providerStatus: "refunded",
+        lastErrorCode: null,
+        lastErrorMessage: data?.reason ?? null,
         updatedAt: new Date()
       })
     });
@@ -1919,7 +1974,8 @@ export class PrismaStore implements AppStore {
           participantId: item.participantId,
           responsibleUserId,
           amountMinor: item.amountMinor,
-          provider: normalizeMockPaymentProvider(paymentMethod?.provider),
+          provider: normalizePaymentProvider(paymentMethod?.provider),
+          paymentMethod,
           idempotencyKey: item.idempotencyKey
         });
         await store.addAuditDirect(userId, "payment", payment.id, collectionId, "created", {
@@ -1983,19 +2039,39 @@ export class PrismaStore implements AppStore {
   }
 
   async applyMockProviderWebhook(payload: MockProviderWebhookPayload): Promise<Payment> {
-    const payment = await this.findPaymentByProviderPaymentIdDirect(payload.providerPaymentId);
-    if (!payment) {
-      throw new AppError(404, "Payment not found for provider payment id.");
-    }
-
     return await this.withAdvisoryLock(`payment-provider:${payload.providerPaymentId}`, async (store) => {
-      return await store.applyMockProviderWebhookLocked(payload);
+      return await store.applyPaymentWebhookLocked({
+        provider: "bank",
+        eventId: payload.eventId,
+        providerPaymentId: payload.providerPaymentId,
+        eventType: payload.eventType,
+        occurredAt: payload.occurredAt ?? null,
+        reason: payload.reason ?? null,
+        providerStatus: payload.providerStatus ?? payload.eventType.replace("payment.", ""),
+        metadata: payload.metadata ?? {},
+        rawPayload: payload as unknown as Record<string, unknown>
+      });
     });
   }
 
-  private async applyMockProviderWebhookLocked(payload: MockProviderWebhookPayload): Promise<Payment> {
-    const payment = await this.findPaymentByProviderPaymentIdDirect(payload.providerPaymentId);
+  async applyPaymentWebhook(event: NormalizedPaymentWebhookEvent): Promise<Payment> {
+    return await this.withAdvisoryLock(`payment-provider:${event.providerPaymentId}`, async (store) => {
+      return await store.applyPaymentWebhookLocked(event);
+    });
+  }
+
+  private async applyPaymentWebhookLocked(event: NormalizedPaymentWebhookEvent): Promise<Payment> {
+    const existingEvent = await this.findPaymentWebhookEventByExternalIdDirect(event.eventId);
+    if (existingEvent?.paymentId) {
+      const existingPayment = (await this.client.payment.findMany()).find((item) => item.id === existingEvent.paymentId);
+      if (existingPayment) {
+        return mapPaymentRecord(existingPayment);
+      }
+    }
+
+    const payment = await this.findPaymentByProviderPaymentIdDirect(event.providerPaymentId);
     if (!payment) {
+      await this.recordPaymentWebhookEventDirect(event, null, "failed", "Payment not found for provider payment id.");
       throw new AppError(404, "Payment not found for provider payment id.");
     }
 
@@ -2003,9 +2079,10 @@ export class PrismaStore implements AppStore {
     let participantPaymentStatus: CollectionParticipant["paymentStatus"] | null;
     let action: AuditAction;
 
-    switch (payload.eventType) {
+    switch (event.eventType) {
       case "payment.succeeded":
         if (payment.status === "succeeded") {
+          await this.recordPaymentWebhookEventDirect(event, payment.id, "processed");
           return payment;
         }
         nextStatus = "succeeded";
@@ -2014,9 +2091,11 @@ export class PrismaStore implements AppStore {
         break;
       case "payment.failed":
         if (payment.status === "failed") {
+          await this.recordPaymentWebhookEventDirect(event, payment.id, "processed");
           return payment;
         }
         if (payment.status === "refunded") {
+          await this.recordPaymentWebhookEventDirect(event, payment.id, "failed", "Refunded payment cannot be marked as failed.");
           throw new AppError(409, "Refunded payment cannot be marked as failed.");
         }
         nextStatus = "failed";
@@ -2025,9 +2104,11 @@ export class PrismaStore implements AppStore {
         break;
       case "payment.refunded":
         if (payment.status === "refunded") {
+          await this.recordPaymentWebhookEventDirect(event, payment.id, "processed");
           return payment;
         }
         if (payment.status !== "succeeded") {
+          await this.recordPaymentWebhookEventDirect(event, payment.id, "failed", "Only succeeded payment can be refunded.");
           throw new AppError(409, "Only succeeded payment can be refunded.");
         }
         nextStatus = "refunded";
@@ -2040,10 +2121,28 @@ export class PrismaStore implements AppStore {
       where: { id: payment.id },
       update: {
         status: nextStatus,
+        providerStatus: event.providerStatus,
+        providerMetadata: asJson({
+          ...payment.providerMetadata,
+          ...event.metadata
+        }),
+        lastErrorCode: event.eventType === "payment.failed" ? "provider_webhook_failure" : null,
+        lastErrorMessage: event.reason ?? null,
+        lastWebhookEventId: event.eventId,
+        lastWebhookReceivedAt: event.occurredAt ? new Date(event.occurredAt) : new Date(),
         updatedAt: new Date()
       },
       create: paymentCreateInputFromRecord(payment, {
         status: nextStatus,
+        providerStatus: event.providerStatus,
+        providerMetadata: {
+          ...payment.providerMetadata,
+          ...event.metadata
+        },
+        lastErrorCode: event.eventType === "payment.failed" ? "provider_webhook_failure" : null,
+        lastErrorMessage: event.reason ?? null,
+        lastWebhookEventId: event.eventId,
+        lastWebhookReceivedAt: event.occurredAt ? new Date(event.occurredAt) : new Date(),
         updatedAt: new Date()
       })
     });
@@ -2051,11 +2150,15 @@ export class PrismaStore implements AppStore {
       await this.setParticipantPaymentStatusDirect(payment.collectionId, payment.participantId, participantPaymentStatus);
     }
     await this.syncCollectionPaymentStatusDirect(payment.collectionId);
+    await this.recordPaymentWebhookEventDirect(event, payment.id, "processed");
     await this.addAuditDirect(null, "payment", payment.id, payment.collectionId, action, {
       providerPaymentId: payment.providerPaymentId,
-      eventType: payload.eventType,
-      reason: payload.reason ?? null,
-      occurredAt: payload.occurredAt ?? null,
+      eventId: event.eventId,
+      eventType: event.eventType,
+      provider: event.provider,
+      providerStatus: event.providerStatus,
+      reason: event.reason ?? null,
+      occurredAt: event.occurredAt ?? null,
       webhook: true
     });
     return mapPaymentRecord(updated);
@@ -2413,11 +2516,10 @@ export class PrismaStore implements AppStore {
           isDefault: false,
           updatedAt: new Date()
         },
-        create: {
-          ...method,
+        create: paymentMethodCreateInputFromRecord(mapPaymentMethodRecord(method), {
           isDefault: false,
           updatedAt: new Date()
-        }
+        })
       });
     }
   }
@@ -2435,11 +2537,10 @@ export class PrismaStore implements AppStore {
         isDefault: true,
         updatedAt: new Date()
       },
-      create: {
-        ...fallback,
+      create: paymentMethodCreateInputFromRecord(mapPaymentMethodRecord(fallback), {
         isDefault: true,
         updatedAt: new Date()
-      }
+      })
     });
   }
 
@@ -2480,22 +2581,43 @@ export class PrismaStore implements AppStore {
     responsibleUserId: string;
     amountMinor: number;
     provider: Payment["provider"];
+    paymentMethod: PaymentMethod | null;
     idempotencyKey: string;
   }): Promise<Payment> {
+    const paymentId = randomUUID();
+    const intent = getPaymentProviderAdapter(data.provider).createPaymentIntent({
+      provider: data.provider,
+      paymentId,
+      collectionId: data.collectionId,
+      participantId: data.participantId,
+      responsibleUserId: data.responsibleUserId,
+      amountMinor: data.amountMinor,
+      currency: "RUB",
+      idempotencyKey: data.idempotencyKey,
+      paymentMethod: data.paymentMethod
+    });
     const createdAt = new Date();
     const payment = await this.client.payment.upsert({
-      where: { id: randomUUID() },
+      where: { id: paymentId },
       update: {},
       create: {
-        id: randomUUID(),
+        id: paymentId,
         collectionId: data.collectionId,
         participantId: data.participantId,
         responsibleUserId: data.responsibleUserId,
+        paymentMethodId: data.paymentMethod?.id ?? null,
         amountMinor: data.amountMinor,
         currency: "RUB",
         provider: data.provider,
-        providerPaymentId: `mock_pay_${randomUUID()}`,
+        providerPaymentId: intent.providerPaymentId,
+        providerStatus: intent.providerStatus,
+        providerMetadata: asJson(intent.providerMetadata),
         status: "pending",
+        lastErrorCode: null,
+        lastErrorMessage: null,
+        attemptCount: 1,
+        lastWebhookEventId: null,
+        lastWebhookReceivedAt: null,
         idempotencyKey: data.idempotencyKey,
         createdAt,
         updatedAt: createdAt
@@ -2509,6 +2631,45 @@ export class PrismaStore implements AppStore {
   private async findPaymentByProviderPaymentIdDirect(providerPaymentId: string): Promise<Payment | null> {
     const payment = (await this.client.payment.findMany()).find((item) => item.providerPaymentId === providerPaymentId);
     return payment ? mapPaymentRecord(payment) : null;
+  }
+
+  private async findPaymentWebhookEventByExternalIdDirect(externalEventId: string): Promise<PaymentWebhookEvent | null> {
+    const event = (await this.client.paymentWebhookEvent.findMany()).find((item) => item.externalEventId === externalEventId);
+    return event ? mapPaymentWebhookEventRecord(event) : null;
+  }
+
+  private async recordPaymentWebhookEventDirect(
+    event: NormalizedPaymentWebhookEvent,
+    paymentId: string | null,
+    status: PaymentWebhookEvent["status"],
+    processingError: string | null = null
+  ): Promise<PaymentWebhookEvent> {
+    const existing = await this.findPaymentWebhookEventByExternalIdDirect(event.eventId);
+    const receivedAt = new Date();
+    const record = await this.client.paymentWebhookEvent.upsert({
+      where: { externalEventId: event.eventId },
+      update: {
+        paymentId,
+        status,
+        processingError,
+        processedAt: receivedAt,
+        payload: asJson(event.rawPayload)
+      },
+      create: {
+        id: existing?.id ?? randomUUID(),
+        provider: event.provider,
+        externalEventId: event.eventId,
+        providerPaymentId: event.providerPaymentId,
+        paymentId,
+        eventType: event.eventType,
+        status,
+        payload: asJson(event.rawPayload),
+        processingError,
+        receivedAt,
+        processedAt: receivedAt
+      }
+    });
+    return mapPaymentWebhookEventRecord(record);
   }
 
   private async getPaymentForActorDirect(userId: string, paymentId: string): Promise<Payment> {
@@ -2850,6 +3011,7 @@ function mapPaymentMethodRecord(record: {
   userId: string;
   provider: string;
   providerPaymentMethodId: string;
+  providerMetadata: Prisma.JsonValue;
   maskedPan: string;
   brand: PaymentMethod["brand"];
   status: PaymentMethod["status"];
@@ -2862,6 +3024,7 @@ function mapPaymentMethodRecord(record: {
     userId: record.userId,
     provider: record.provider,
     providerPaymentMethodId: record.providerPaymentMethodId,
+    providerMetadata: (record.providerMetadata ?? {}) as Record<string, unknown>,
     maskedPan: record.maskedPan,
     brand: record.brand,
     status: record.status,
@@ -2913,11 +3076,19 @@ function mapPaymentRecord(record: {
   collectionId: string;
   participantId: string | null;
   responsibleUserId: string;
+  paymentMethodId: string | null;
   amountMinor: number;
   currency: string;
   provider: Payment["provider"];
   providerPaymentId: string | null;
+  providerStatus: string | null;
+  providerMetadata: Prisma.JsonValue;
   status: Payment["status"];
+  lastErrorCode: string | null;
+  lastErrorMessage: string | null;
+  attemptCount: number;
+  lastWebhookEventId: string | null;
+  lastWebhookReceivedAt: Date | null;
   idempotencyKey: string;
   createdAt: Date;
   updatedAt: Date;
@@ -2927,14 +3098,50 @@ function mapPaymentRecord(record: {
     collectionId: record.collectionId,
     participantId: record.participantId,
     responsibleUserId: record.responsibleUserId,
+    paymentMethodId: record.paymentMethodId,
     amountMinor: record.amountMinor,
     currency: "RUB",
     provider: record.provider,
     providerPaymentId: record.providerPaymentId,
+    providerStatus: record.providerStatus,
+    providerMetadata: (record.providerMetadata ?? {}) as Record<string, unknown>,
     status: record.status,
+    lastErrorCode: record.lastErrorCode,
+    lastErrorMessage: record.lastErrorMessage,
+    attemptCount: record.attemptCount,
+    lastWebhookEventId: record.lastWebhookEventId,
+    lastWebhookReceivedAt: record.lastWebhookReceivedAt?.toISOString() ?? null,
     idempotencyKey: record.idempotencyKey,
     createdAt: record.createdAt.toISOString(),
     updatedAt: record.updatedAt.toISOString()
+  };
+}
+
+function mapPaymentWebhookEventRecord(record: {
+  id: string;
+  provider: string;
+  externalEventId: string;
+  providerPaymentId: string;
+  paymentId: string | null;
+  eventType: string;
+  status: string;
+  payload: Prisma.JsonValue;
+  processingError: string | null;
+  receivedAt: Date;
+  processedAt: Date | null;
+}): PaymentWebhookEvent {
+  return {
+    id: record.id,
+    provider: normalizePaymentProvider(record.provider),
+    externalEventId: record.externalEventId,
+    providerPaymentId: record.providerPaymentId,
+    paymentId: record.paymentId,
+    eventType: record.eventType as PaymentWebhookEvent["eventType"],
+    status: record.status as PaymentWebhookEvent["status"],
+    payload: (record.payload ?? {}) as Record<string, unknown>,
+    processingError: record.processingError,
+    receivedAt: record.receivedAt.toISOString(),
+    processedAt: record.processedAt?.toISOString() ?? null
   };
 }
 
@@ -3396,19 +3603,6 @@ function resolveMockPaymentIdempotencyKey(userId: string, collectionId: string, 
   return `payment:${collectionId}:${userId}:${idempotencyKey.trim()}`;
 }
 
-function normalizeMockPaymentProvider(provider: string | null | undefined): Payment["provider"] {
-  switch (provider) {
-    case "yookassa":
-    case "bank":
-    case "sbp":
-    case "manual":
-    case "other":
-      return provider;
-    default:
-      return "other";
-  }
-}
-
 function isSameMockPaymentRequest(
   payment: Payment,
   userId: string,
@@ -3425,7 +3619,8 @@ function isSameMockPaymentRequest(
     payment.responsibleUserId === userId &&
     payment.participantId === data.participantId &&
     payment.amountMinor === data.amountMinor &&
-    payment.provider === (data.provider ?? payment.provider)
+    payment.paymentMethodId === (data.paymentMethodId ?? null) &&
+    payment.provider === normalizePaymentProvider(data.provider ?? payment.provider)
   );
 }
 
@@ -3552,6 +3747,7 @@ function paymentMethodCreateInputFromRecord(
   overrides?: Partial<{
     status: PaymentMethod["status"];
     isDefault: boolean;
+    providerMetadata: Record<string, unknown>;
     updatedAt: Date;
   }>
 ) {
@@ -3560,6 +3756,7 @@ function paymentMethodCreateInputFromRecord(
     userId: method.userId,
     provider: method.provider,
     providerPaymentMethodId: method.providerPaymentMethodId,
+    providerMetadata: asJson(overrides?.providerMetadata ?? method.providerMetadata),
     maskedPan: method.maskedPan,
     brand: method.brand,
     status: overrides?.status ?? method.status,
@@ -3573,6 +3770,13 @@ function paymentCreateInputFromRecord(
   payment: Payment,
   overrides?: Partial<{
     status: Payment["status"];
+    providerStatus: string | null;
+    providerMetadata: Record<string, unknown>;
+    lastErrorCode: string | null;
+    lastErrorMessage: string | null;
+    attemptCount: number;
+    lastWebhookEventId: string | null;
+    lastWebhookReceivedAt: Date | null;
     updatedAt: Date;
   }>
 ) {
@@ -3581,11 +3785,24 @@ function paymentCreateInputFromRecord(
     collectionId: payment.collectionId,
     participantId: payment.participantId,
     responsibleUserId: payment.responsibleUserId,
+    paymentMethodId: payment.paymentMethodId,
     amountMinor: payment.amountMinor,
     currency: payment.currency,
     provider: payment.provider,
     providerPaymentId: payment.providerPaymentId,
+    providerStatus: overrides?.providerStatus ?? payment.providerStatus,
+    providerMetadata: asJson(overrides?.providerMetadata ?? payment.providerMetadata),
     status: overrides?.status ?? payment.status,
+    lastErrorCode: overrides?.lastErrorCode ?? payment.lastErrorCode,
+    lastErrorMessage: overrides?.lastErrorMessage ?? payment.lastErrorMessage,
+    attemptCount: overrides?.attemptCount ?? payment.attemptCount,
+    lastWebhookEventId: overrides?.lastWebhookEventId ?? payment.lastWebhookEventId,
+    lastWebhookReceivedAt:
+      overrides?.lastWebhookReceivedAt !== undefined
+        ? overrides.lastWebhookReceivedAt
+        : payment.lastWebhookReceivedAt
+          ? new Date(payment.lastWebhookReceivedAt)
+          : null,
     idempotencyKey: payment.idempotencyKey,
     createdAt: new Date(payment.createdAt),
     updatedAt: overrides?.updatedAt ?? new Date(payment.updatedAt)

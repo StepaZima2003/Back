@@ -65,6 +65,7 @@ type AppStoreMethodName =
   | "previewAutoPayments"
   | "executeAutoPayments"
   | "runAutoPaymentSweep"
+  | "applyPaymentWebhook"
   | "applyMockProviderWebhook"
   | "listAuditLogs"
   | "listGroupTemplates"

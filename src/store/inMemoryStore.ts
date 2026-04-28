@@ -2,6 +2,11 @@ import { randomUUID } from "node:crypto";
 import { calculateCollection } from "../calculation";
 import { buildAutoPaymentPlan, type AutoPaymentExecutionPlan, type AutoPaymentPreviewItem } from "../payments/autopay";
 import type { MockProviderWebhookPayload } from "../payments/mockProvider";
+import {
+  getPaymentProviderAdapter,
+  normalizePaymentProvider,
+  type NormalizedPaymentWebhookEvent
+} from "../payments/providerAdapter";
 import type {
   AutoPaymentRule,
   AuthResult,
@@ -26,6 +31,7 @@ import type {
   GroupParticipantProfile,
   Payment,
   PaymentCardBrand,
+  PaymentWebhookEvent,
   PaymentMethod,
   ManualPaymentMethod,
   ManualPaymentProof,
@@ -53,6 +59,7 @@ export interface InMemoryStoreSnapshot {
   manualPaymentProofs: ManualPaymentProof[];
   paymentMethods?: PaymentMethod[];
   payments?: Payment[];
+  paymentWebhookEvents?: PaymentWebhookEvent[];
   autoPaymentRules?: AutoPaymentRule[];
   auditLogs: AuditLog[];
   notifications: Notification[];
@@ -129,6 +136,7 @@ export class InMemoryStore {
   private readonly manualPaymentProofs = new Map<string, ManualPaymentProof>();
   private readonly paymentMethods = new Map<string, PaymentMethod>();
   private readonly payments = new Map<string, Payment>();
+  private readonly paymentWebhookEvents = new Map<string, PaymentWebhookEvent>();
   private readonly autoPaymentRules = new Map<string, AutoPaymentRule>();
   private readonly auditLogs = new Map<string, AuditLog>();
   private readonly notifications = new Map<string, Notification>();
@@ -476,11 +484,20 @@ export class InMemoryStore {
       this.clearDefaultPaymentMethod(userId);
     }
 
+    const provider = normalizePaymentProvider(data.provider);
+    const binding = getPaymentProviderAdapter(provider).createPaymentMethodBinding({
+      provider,
+      userId,
+      maskedPan: data.maskedPan,
+      brand: data.brand ?? "unknown"
+    });
+
     const method: PaymentMethod = {
       id: randomUUID(),
       userId,
-      provider: data.provider?.trim() || "mock_bank",
-      providerPaymentMethodId: `mock_pm_${randomUUID()}`,
+      provider,
+      providerPaymentMethodId: binding.providerPaymentMethodId,
+      providerMetadata: binding.providerMetadata,
       maskedPan: data.maskedPan,
       brand: data.brand ?? "unknown",
       status: "active",
@@ -1268,16 +1285,39 @@ export class InMemoryStore {
       return existing;
     }
 
-    const payment: Payment = {
-      id: randomUUID(),
+    const provider = normalizePaymentProvider(data.provider ?? paymentMethod?.provider);
+    const paymentId = randomUUID();
+    const adapter = getPaymentProviderAdapter(provider);
+    const intent = adapter.createPaymentIntent({
+      provider,
+      paymentId,
       collectionId,
       participantId: participant.id,
       responsibleUserId: userId,
       amountMinor: data.amountMinor,
       currency: "RUB",
-      provider: data.provider ?? normalizeMockPaymentProvider(paymentMethod?.provider),
-      providerPaymentId: `mock_pay_${randomUUID()}`,
+      idempotencyKey: normalizedIdempotencyKey,
+      paymentMethod
+    });
+
+    const payment: Payment = {
+      id: paymentId,
+      collectionId,
+      participantId: participant.id,
+      responsibleUserId: userId,
+      paymentMethodId: paymentMethod?.id ?? null,
+      amountMinor: data.amountMinor,
+      currency: "RUB",
+      provider,
+      providerPaymentId: intent.providerPaymentId,
+      providerStatus: intent.providerStatus,
+      providerMetadata: intent.providerMetadata,
       status: "pending",
+      lastErrorCode: null,
+      lastErrorMessage: null,
+      attemptCount: 1,
+      lastWebhookEventId: null,
+      lastWebhookReceivedAt: null,
       idempotencyKey: normalizedIdempotencyKey,
       createdAt: now(),
       updatedAt: now()
@@ -1307,7 +1347,13 @@ export class InMemoryStore {
       throw new AppError(409, "Terminal payment cannot be confirmed.");
     }
 
-    const updated = this.updatePayment(payment, { status: "succeeded", updatedAt: now() });
+    const updated = this.updatePayment(payment, {
+      status: "succeeded",
+      providerStatus: "succeeded",
+      lastErrorCode: null,
+      lastErrorMessage: null,
+      updatedAt: now()
+    });
     if (updated.participantId) {
       this.setParticipantPaymentStatus(updated.collectionId, updated.participantId, "paid");
     }
@@ -1328,7 +1374,13 @@ export class InMemoryStore {
       throw new AppError(409, "Completed payment cannot be failed.");
     }
 
-    const updated = this.updatePayment(payment, { status: "failed", updatedAt: now() });
+    const updated = this.updatePayment(payment, {
+      status: "failed",
+      providerStatus: "failed",
+      lastErrorCode: "mock_failure",
+      lastErrorMessage: data?.reason ?? "Mock provider failure.",
+      updatedAt: now()
+    });
     if (updated.participantId) {
       this.setParticipantPaymentStatus(updated.collectionId, updated.participantId, "failed");
     }
@@ -1350,7 +1402,13 @@ export class InMemoryStore {
       throw new AppError(409, "Only succeeded payment can be refunded.");
     }
 
-    const updated = this.updatePayment(payment, { status: "refunded", updatedAt: now() });
+    const updated = this.updatePayment(payment, {
+      status: "refunded",
+      providerStatus: "refunded",
+      lastErrorCode: null,
+      lastErrorMessage: data?.reason ?? null,
+      updatedAt: now()
+    });
     if (updated.participantId) {
       this.setParticipantPaymentStatus(updated.collectionId, updated.participantId, "pending");
     }
@@ -1401,7 +1459,8 @@ export class InMemoryStore {
         participantId: item.participantId,
         responsibleUserId,
         amountMinor: item.amountMinor,
-        provider: normalizeMockPaymentProvider(paymentMethod?.provider),
+        provider: normalizePaymentProvider(paymentMethod?.provider),
+        paymentMethod,
         idempotencyKey: item.idempotencyKey
       });
       this.addAudit(userId, "payment", payment.id, collectionId, "created", {
@@ -1460,9 +1519,31 @@ export class InMemoryStore {
     };
   }
 
-  applyMockProviderWebhook(payload: MockProviderWebhookPayload): Payment {
-    const payment = this.findPaymentByProviderPaymentId(payload.providerPaymentId);
+  applyPaymentWebhook(event: NormalizedPaymentWebhookEvent): Payment {
+    const existingEvent = [...this.paymentWebhookEvents.values()].find((item) => item.externalEventId === event.eventId);
+    if (existingEvent?.paymentId) {
+      const existingPayment = this.payments.get(existingEvent.paymentId);
+      if (existingPayment) {
+        return existingPayment;
+      }
+    }
+
+    const payment = this.findPaymentByProviderPaymentId(event.providerPaymentId);
     if (!payment) {
+      const failedEvent: PaymentWebhookEvent = {
+        id: randomUUID(),
+        provider: event.provider,
+        externalEventId: event.eventId,
+        providerPaymentId: event.providerPaymentId,
+        paymentId: null,
+        eventType: event.eventType,
+        status: "failed",
+        payload: event.rawPayload,
+        processingError: "Payment not found for provider payment id.",
+        receivedAt: now(),
+        processedAt: now()
+      };
+      this.paymentWebhookEvents.set(failedEvent.id, failedEvent);
       throw new AppError(404, "Payment not found for provider payment id.");
     }
 
@@ -1470,9 +1551,10 @@ export class InMemoryStore {
     let participantPaymentStatus: CollectionParticipant["paymentStatus"] | null;
     let action: AuditAction;
 
-    switch (payload.eventType) {
+    switch (event.eventType) {
       case "payment.succeeded":
         if (payment.status === "succeeded") {
+          this.recordProcessedWebhookEvent(event, payment.id, "processed");
           return payment;
         }
         nextStatus = "succeeded";
@@ -1481,9 +1563,11 @@ export class InMemoryStore {
         break;
       case "payment.failed":
         if (payment.status === "failed") {
+          this.recordProcessedWebhookEvent(event, payment.id, "processed");
           return payment;
         }
         if (payment.status === "refunded") {
+          this.recordProcessedWebhookEvent(event, payment.id, "failed", "Refunded payment cannot be marked as failed.");
           throw new AppError(409, "Refunded payment cannot be marked as failed.");
         }
         nextStatus = "failed";
@@ -1492,9 +1576,11 @@ export class InMemoryStore {
         break;
       case "payment.refunded":
         if (payment.status === "refunded") {
+          this.recordProcessedWebhookEvent(event, payment.id, "processed");
           return payment;
         }
         if (payment.status !== "succeeded") {
+          this.recordProcessedWebhookEvent(event, payment.id, "failed", "Only succeeded payment can be refunded.");
           throw new AppError(409, "Only succeeded payment can be refunded.");
         }
         nextStatus = "refunded";
@@ -1503,19 +1589,49 @@ export class InMemoryStore {
         break;
     }
 
-    const updated = this.updatePayment(payment, { status: nextStatus, updatedAt: now() });
+    const updated = this.updatePayment(payment, {
+      status: nextStatus,
+      providerStatus: event.providerStatus,
+      providerMetadata: {
+        ...payment.providerMetadata,
+        ...event.metadata
+      },
+      lastErrorCode: event.eventType === "payment.failed" ? "provider_webhook_failure" : null,
+      lastErrorMessage: event.reason ?? null,
+      lastWebhookEventId: event.eventId,
+      lastWebhookReceivedAt: event.occurredAt ?? now(),
+      updatedAt: now()
+    });
     if (updated.participantId && participantPaymentStatus) {
       this.setParticipantPaymentStatus(updated.collectionId, updated.participantId, participantPaymentStatus);
     }
     this.syncCollectionPaymentStatus(updated.collectionId);
+    this.recordProcessedWebhookEvent(event, updated.id, "processed");
     this.addAudit(null, "payment", updated.id, updated.collectionId, action, {
       providerPaymentId: updated.providerPaymentId,
-      eventType: payload.eventType,
-      reason: payload.reason ?? null,
-      occurredAt: payload.occurredAt ?? null,
+      eventId: event.eventId,
+      eventType: event.eventType,
+      provider: event.provider,
+      providerStatus: event.providerStatus,
+      reason: event.reason ?? null,
+      occurredAt: event.occurredAt ?? null,
       webhook: true
     });
     return updated;
+  }
+
+  applyMockProviderWebhook(payload: MockProviderWebhookPayload): Payment {
+    return this.applyPaymentWebhook({
+      provider: "bank",
+      eventId: payload.eventId,
+      providerPaymentId: payload.providerPaymentId,
+      eventType: payload.eventType,
+      occurredAt: payload.occurredAt ?? null,
+      reason: payload.reason ?? null,
+      providerStatus: payload.providerStatus ?? payload.eventType.replace("payment.", ""),
+      metadata: payload.metadata ?? {},
+      rawPayload: payload as unknown as Record<string, unknown>
+    });
   }
 
   listAuditLogs(userId: string, collectionId: string): AuditLog[] {
@@ -1825,18 +1941,39 @@ export class InMemoryStore {
     responsibleUserId: string;
     amountMinor: number;
     provider: Payment["provider"];
+    paymentMethod: PaymentMethod | null;
     idempotencyKey: string;
   }): Payment {
-    const payment: Payment = {
-      id: randomUUID(),
+    const paymentId = randomUUID();
+    const intent = getPaymentProviderAdapter(data.provider).createPaymentIntent({
+      provider: data.provider,
+      paymentId,
       collectionId: data.collectionId,
       participantId: data.participantId,
       responsibleUserId: data.responsibleUserId,
       amountMinor: data.amountMinor,
       currency: "RUB",
+      idempotencyKey: data.idempotencyKey,
+      paymentMethod: data.paymentMethod
+    });
+    const payment: Payment = {
+      id: paymentId,
+      collectionId: data.collectionId,
+      participantId: data.participantId,
+      responsibleUserId: data.responsibleUserId,
+      paymentMethodId: data.paymentMethod?.id ?? null,
+      amountMinor: data.amountMinor,
+      currency: "RUB",
       provider: data.provider,
-      providerPaymentId: `mock_pay_${randomUUID()}`,
+      providerPaymentId: intent.providerPaymentId,
+      providerStatus: intent.providerStatus,
+      providerMetadata: intent.providerMetadata,
       status: "pending",
+      lastErrorCode: null,
+      lastErrorMessage: null,
+      attemptCount: 1,
+      lastWebhookEventId: null,
+      lastWebhookReceivedAt: null,
       idempotencyKey: data.idempotencyKey,
       createdAt: now(),
       updatedAt: now()
@@ -1845,6 +1982,29 @@ export class InMemoryStore {
     this.setParticipantPaymentStatus(data.collectionId, data.participantId, "pending");
     this.markCollectionStatus(data.collectionId, "payment_pending");
     return payment;
+  }
+
+  private recordProcessedWebhookEvent(
+    event: NormalizedPaymentWebhookEvent,
+    paymentId: string | null,
+    status: PaymentWebhookEvent["status"],
+    processingError: string | null = null
+  ): PaymentWebhookEvent {
+    const webhookEvent: PaymentWebhookEvent = {
+      id: randomUUID(),
+      provider: event.provider,
+      externalEventId: event.eventId,
+      providerPaymentId: event.providerPaymentId,
+      paymentId,
+      eventType: event.eventType,
+      status,
+      payload: event.rawPayload,
+      processingError,
+      receivedAt: now(),
+      processedAt: now()
+    };
+    this.paymentWebhookEvents.set(webhookEvent.id, webhookEvent);
+    return webhookEvent;
   }
 
   private buildAutoPaymentExecutionPlan(collectionId: string): AutoPaymentExecutionPlan {
@@ -2307,19 +2467,6 @@ function resolveMockPaymentIdempotencyKey(userId: string, collectionId: string, 
   return `payment:${collectionId}:${userId}:${idempotencyKey.trim()}`;
 }
 
-function normalizeMockPaymentProvider(provider: string | undefined | null): Payment["provider"] {
-  switch (provider) {
-    case "yookassa":
-    case "bank":
-    case "sbp":
-    case "manual":
-    case "other":
-      return provider;
-    default:
-      return "other";
-  }
-}
-
 function isSameMockPaymentRequest(
   payment: Payment,
   userId: string,
@@ -2336,7 +2483,8 @@ function isSameMockPaymentRequest(
     payment.responsibleUserId === userId &&
     payment.participantId === data.participantId &&
     payment.amountMinor === data.amountMinor &&
-    payment.provider === (data.provider ?? payment.provider)
+    payment.paymentMethodId === (data.paymentMethodId ?? null) &&
+    payment.provider === normalizePaymentProvider(data.provider ?? payment.provider)
   );
 }
 

@@ -317,6 +317,7 @@ model PaymentMethod {
   userId                  String              @map("user_id") @db.Uuid
   provider                String
   providerPaymentMethodId String              @map("provider_payment_method_id")
+  providerMetadata        Json                @default("{}") @map("provider_metadata")
   maskedPan               String              @map("masked_pan")
   brand                   PaymentCardBrand    @default(unknown)
   status                  PaymentMethodStatus @default(pending_binding)
@@ -324,7 +325,8 @@ model PaymentMethod {
   createdAt               DateTime            @default(now()) @map("created_at")
   updatedAt               DateTime            @updatedAt @map("updated_at")
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  payments Payment[]
 
   @@index([userId])
   @@map("payment_methods")
@@ -719,23 +721,54 @@ model Payment {
   collectionId      String          @map("collection_id") @db.Uuid
   participantId     String?         @map("participant_id") @db.Uuid
   responsibleUserId String          @map("responsible_user_id") @db.Uuid
+  paymentMethodId   String?         @map("payment_method_id") @db.Uuid
   amountMinor       Int             @map("amount_minor")
   currency          String          @default("RUB")
   provider          PaymentProvider @default(manual)
   providerPaymentId String?         @map("provider_payment_id")
+  providerStatus    String?         @map("provider_status")
+  providerMetadata  Json            @default("{}") @map("provider_metadata")
   status            PaymentStatus   @default(pending)
+  lastErrorCode     String?         @map("last_error_code")
+  lastErrorMessage  String?         @map("last_error_message")
+  attemptCount      Int             @default(0) @map("attempt_count")
+  lastWebhookEventId String?        @map("last_webhook_event_id")
+  lastWebhookReceivedAt DateTime?   @map("last_webhook_received_at")
   idempotencyKey    String          @unique @map("idempotency_key")
   createdAt         DateTime        @default(now()) @map("created_at")
   updatedAt         DateTime        @updatedAt @map("updated_at")
 
-  collection  Collection             @relation(fields: [collectionId], references: [id], onDelete: Cascade)
-  participant CollectionParticipant? @relation(fields: [participantId], references: [id], onDelete: SetNull)
-  responsible User                   @relation(fields: [responsibleUserId], references: [id], onDelete: Restrict)
+  collection    Collection             @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+  participant   CollectionParticipant? @relation(fields: [participantId], references: [id], onDelete: SetNull)
+  responsible   User                   @relation(fields: [responsibleUserId], references: [id], onDelete: Restrict)
+  paymentMethod PaymentMethod?         @relation(fields: [paymentMethodId], references: [id], onDelete: SetNull)
+  webhookEvents PaymentWebhookEvent[]
 
   @@index([collectionId])
   @@index([responsibleUserId])
+  @@index([paymentMethodId])
   @@index([status])
   @@map("payments")
+}
+
+model PaymentWebhookEvent {
+  id               String   @id @default(uuid()) @db.Uuid
+  provider         String
+  externalEventId  String   @unique @map("external_event_id")
+  providerPaymentId String  @map("provider_payment_id")
+  paymentId        String?  @map("payment_id") @db.Uuid
+  eventType        String   @map("event_type")
+  status           String   @default("received")
+  payload          Json     @default("{}")
+  processingError  String?  @map("processing_error")
+  receivedAt       DateTime @default(now()) @map("received_at")
+  processedAt      DateTime? @map("processed_at")
+
+  payment Payment? @relation(fields: [paymentId], references: [id], onDelete: SetNull)
+
+  @@index([providerPaymentId])
+  @@index([paymentId])
+  @@map("payment_webhook_events")
 }
 
 model AutoPaymentRule {

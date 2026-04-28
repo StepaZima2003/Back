@@ -458,9 +458,22 @@ paths:
       responses:
         "200":
           description: Refunded payment intent
+  /payments/webhooks/{provider}:
+    post:
+      summary: Apply signed provider webhook event to payment intent
+      parameters:
+        - name: provider
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [yookassa, bank, sbp, manual, other]
+      responses:
+        "200":
+          description: Updated payment intent
   /payments/webhooks/mock-provider:
     post:
-      summary: Apply signed mock-provider webhook event to payment intent
+      summary: Legacy alias for mock bank-provider webhook event
       responses:
         "200":
           description: Updated payment intent

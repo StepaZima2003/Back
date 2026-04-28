@@ -106,7 +106,9 @@ Mock payment and autopay groundwork is now available without any real payment pr
 - category-scoped auto payment segmentation plus collection/day/month rule limits;
 - internal due-autopay sweep endpoint and CLI script for background-style execution;
 - dedicated autopay worker loop with startup sweep and configurable polling interval;
-- signed mock-provider webhook endpoint for payment status transitions;
+- provider adapter boundary with stored payment-method/payment execution metadata;
+- generic signed webhook endpoint at `/payments/webhooks/{provider}` plus legacy mock alias;
+- persisted webhook-event deduplication by provider `eventId`;
 - route-level parity tests and live PostgreSQL coverage for the new payment slice.
 
 Autopay orchestration can now run in two modes:

@@ -14,6 +14,6 @@ Working notes for the next SocialSplitApp backend increment.
 
 ## Next backend step
 
-- real provider adapter boundary: provider payment method token references, PSP status mapping, and external webhook schemas.
-- add provider-side execution metadata and richer retry policies for webhook-driven payment reconciliation.
+- add provider-side execution retries / dead-letter handling for webhook reconciliation failures.
+- introduce provider-specific token/customer references for real PSP onboarding flows.
 - tighten GitHub Actions further with migration drift / OpenAPI artifact checks if CI time stays reasonable.

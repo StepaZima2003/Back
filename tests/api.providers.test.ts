@@ -633,6 +633,7 @@ describe.each<ProviderName>(["memory", "prisma"])("api provider parity: %s", (pr
     expect(paymentMethodResponse.statusCode).toBe(201);
     const paymentMethod = paymentMethodResponse.json();
     expect(paymentMethod.status).toBe("active");
+    expect(paymentMethod.providerMetadata.mode).toBe("mock");
 
     await app.inject({
       method: "POST",
@@ -716,6 +717,10 @@ describe.each<ProviderName>(["memory", "prisma"])("api provider parity: %s", (pr
     expect(paymentIntentB.statusCode).toBe(201);
     expect(paymentIntentA.json().id).toBe(paymentIntentB.json().id);
     const firstPayment = paymentIntentA.json();
+    expect(firstPayment.paymentMethodId).toBe(paymentMethod.id);
+    expect(firstPayment.providerStatus).toBe("pending");
+    expect(firstPayment.providerMetadata.mode).toBe("mock");
+    expect(firstPayment.attemptCount).toBe(1);
 
     const successResponse = await app.inject({
       method: "POST",
@@ -1027,6 +1032,7 @@ describe.each<ProviderName>(["memory", "prisma"])("api provider parity: %s", (pr
     expect(targetPayment).toBeTruthy();
 
     const webhookPayload = {
+      eventId: "parity-webhook-1",
       providerPaymentId: targetPayment.providerPaymentId,
       eventType: "payment.succeeded" as const,
       occurredAt: new Date().toISOString()
@@ -1041,7 +1047,7 @@ describe.each<ProviderName>(["memory", "prisma"])("api provider parity: %s", (pr
 
     const webhookResponse = await app.inject({
       method: "POST",
-      url: "/payments/webhooks/mock-provider",
+      url: "/payments/webhooks/bank",
       headers: {
         "x-mock-provider-signature": createMockProviderWebhookSignature(webhookPayload, "test-webhook-secret")
       },
@@ -1050,12 +1056,33 @@ describe.each<ProviderName>(["memory", "prisma"])("api provider parity: %s", (pr
     expect(webhookResponse.statusCode).toBe(200);
     expect(webhookResponse.json().status).toBe("succeeded");
 
+    const duplicateWebhookResponse = await app.inject({
+      method: "POST",
+      url: "/payments/webhooks/bank",
+      headers: {
+        "x-mock-provider-signature": createMockProviderWebhookSignature(webhookPayload, "test-webhook-secret")
+      },
+      payload: webhookPayload
+    });
+    expect(duplicateWebhookResponse.statusCode).toBe(200);
+    expect(duplicateWebhookResponse.json().id).toBe(targetPayment.id);
+
     const updatedPaymentsResponse = await app.inject({
       method: "GET",
       url: `/collections/${collection.id}/payments`,
       headers: { authorization: organizer.authorization }
     });
-    expect(updatedPaymentsResponse.json().some((payment: { id: string; status: string }) => payment.id === targetPayment.id && payment.status === "succeeded")).toBe(true);
+    expect(
+      updatedPaymentsResponse
+        .json()
+        .some(
+          (payment: { id: string; status: string; lastWebhookEventId: string | null; providerStatus: string | null }) =>
+            payment.id === targetPayment.id &&
+            payment.status === "succeeded" &&
+            payment.lastWebhookEventId === "parity-webhook-1" &&
+            payment.providerStatus === "succeeded"
+        )
+    ).toBe(true);
 
     await app.close();
   });

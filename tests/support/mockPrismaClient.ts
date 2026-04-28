@@ -9,6 +9,7 @@ export function createSharedMockPrismaClient() {
     templates: [] as Array<Record<string, unknown>>,
     collections: [] as Array<Record<string, unknown>>,
     payments: [] as Array<Record<string, unknown>>,
+    paymentWebhookEvents: [] as Array<Record<string, unknown>>,
     autoPaymentRules: [] as Array<Record<string, unknown>>,
     notifications: [] as Array<Record<string, unknown>>
   };
@@ -190,6 +191,26 @@ export function createSharedMockPrismaClient() {
           return create;
         },
         findMany: async () => state.payments
+      },
+      paymentWebhookEvent: {
+        upsert: async ({
+          where,
+          create,
+          update
+        }: {
+          where: { externalEventId: string };
+          create: Record<string, unknown>;
+          update: Record<string, unknown>;
+        }) => {
+          const existing = state.paymentWebhookEvents.find((item) => item.externalEventId === where.externalEventId);
+          if (existing) {
+            Object.assign(existing, update);
+            return existing;
+          }
+          state.paymentWebhookEvents.push({ ...create });
+          return create;
+        },
+        findMany: async () => state.paymentWebhookEvents
       },
       autoPaymentRule: {
         upsert: async ({ where, create, update }: { where: { id: string }; create: Record<string, unknown>; update: Record<string, unknown> }) => {

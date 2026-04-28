@@ -1,10 +1,16 @@
 import { randomUUID } from "node:crypto";
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient, type Prisma } from "@prisma/client";
+import { calculateCollection } from "../calculation";
 import type {
+  AuditAction,
+  AuditEntityType,
+  AuditLog,
   AuthResult,
+  CalculationVersion,
   Collection,
   CollectionParticipant,
   CollectionTemplate,
+  Dispute,
   Expense,
   ExpenseCategory,
   ExpensePayment,
@@ -12,26 +18,23 @@ import type {
   Friendship,
   Group,
   GroupMember,
+  ManualPaymentProof,
   Notification,
+  NotificationType,
   User
 } from "../domain";
 import type { AppStore } from "./appStore";
 import { AppError, DEFAULT_COLLECTION_CATEGORIES } from "./inMemoryStore";
-import { PrismaMirrorStore } from "./prismaMirrorStore";
 
-type PrismaStoreClient = ConstructorParameters<typeof PrismaMirrorStore>[0];
+type PrismaStoreClient = PrismaClient;
 
 export class PrismaStore implements AppStore {
   private readonly otpRequests = new Map<string, string>();
 
-  private constructor(
-    private readonly client: PrismaStoreClient,
-    private readonly mirror: PrismaMirrorStore
-  ) {}
+  private constructor(private readonly client: PrismaStoreClient) {}
 
   static async create(client: PrismaStoreClient): Promise<PrismaStore> {
-    const mirror = await PrismaMirrorStore.create(client);
-    return new PrismaStore(client, mirror);
+    return new PrismaStore(client);
   }
 
   requestOtp(phone: string) {
@@ -726,74 +729,531 @@ export class PrismaStore implements AppStore {
     });
   }
 
-  async calculateCollection(userId: string, collectionId: string) {
-    await this.refresh();
-    return await this.mirror.calculateCollection(userId, collectionId);
+  async calculateCollection(userId: string, collectionId: string): Promise<CalculationVersion> {
+    const collection = await this.getOrganizerCollectionRecord(userId, collectionId);
+    const state = await this.getCollectionStateRecord(collectionId);
+    const previousVersions = await this.getCalculationVersionRecords(collectionId);
+
+    const result = calculateCollection({
+      collectionId,
+      currency: collection.currency,
+      participants: state.participants.map((participant) => ({
+        id: participant.id,
+        displayName: participant.displayNameSnapshot,
+        participantType: participant.participantType,
+        defaultWeight:
+          typeof participant.defaultWeight === "number" ? participant.defaultWeight : (participant.defaultWeight.toNumber?.() ?? 1),
+        responsiblePayerId: participant.paymentResponsibleParticipantId
+      })),
+      expenses: state.expenses.map((expense) => ({
+        id: expense.id,
+        title: expense.title,
+        amountMinor: expense.amountMinor,
+        currency: expense.currency,
+        categoryId: expense.categoryId,
+        payments: (expense.payments ?? []).map((payment) => ({
+          participantId: payment.paidByParticipantId,
+          amountMinor: payment.amountMinor
+        })),
+        shareRules: (expense.shareRules ?? []).map((rule) => ({
+          participantId: rule.participantId,
+          splitMode: rule.splitMode,
+          categoryId: rule.categoryId,
+          weight: typeof rule.weight === "number" ? rule.weight : (rule.weight?.toNumber?.() ?? null),
+          fixedAmountMinor: rule.fixedAmountMinor,
+          percent: typeof rule.percent === "number" ? rule.percent : (rule.percent?.toNumber?.() ?? null),
+          capAmountMinor: rule.capAmountMinor,
+          excluded: rule.excluded,
+          reason: rule.reason
+        }))
+      }))
+    });
+
+    for (const version of previousVersions) {
+      await this.client.calculationVersion.upsert({
+        where: { id: version.id },
+        update: {
+          status: "superseded",
+          result: asJson(version.result)
+        },
+        create: calculationVersionCreateInputFromRecord(version, { status: "superseded" })
+      });
+    }
+
+    const updatedAt = new Date();
+    const participantById = new Map(state.participants.map((participant) => [participant.id, participant]));
+    for (const participantCalculation of result.participantCalculations) {
+      const participant = participantById.get(participantCalculation.participantId);
+      if (!participant) {
+        continue;
+      }
+
+      await this.client.collectionParticipant.upsert({
+        where: { id: participant.id },
+        update: {
+          finalShareAmountMinor: participantCalculation.owesAmountMinor,
+          updatedAt
+        },
+        create: {
+          ...participantCreateInputFromRecord(participant),
+          finalShareAmountMinor: participantCalculation.owesAmountMinor,
+          updatedAt
+        }
+      });
+    }
+
+    const versionRecord = {
+      id: randomUUID(),
+      collectionId,
+      version: previousVersions.reduce((max, item) => Math.max(max, item.version), 0) + 1,
+      status: "draft" as const,
+      totalAmountMinor: result.totalAmountMinor,
+      createdByUserId: userId,
+      result,
+      createdAt: new Date()
+    };
+
+    await this.client.calculationVersion.upsert({
+      where: { id: versionRecord.id },
+      update: {
+        version: versionRecord.version,
+        status: versionRecord.status,
+        totalAmountMinor: versionRecord.totalAmountMinor,
+        createdByUserId: versionRecord.createdByUserId,
+        result: asJson(versionRecord.result)
+      },
+      create: {
+        id: versionRecord.id,
+        collectionId: versionRecord.collectionId,
+        version: versionRecord.version,
+        status: versionRecord.status,
+        totalAmountMinor: versionRecord.totalAmountMinor,
+        createdByUserId: versionRecord.createdByUserId,
+        result: asJson(versionRecord.result),
+        createdAt: versionRecord.createdAt
+      }
+    });
+
+    await this.client.participantCalculation.deleteMany({
+      where: { calculationVersionId: versionRecord.id }
+    });
+    if (result.participantCalculations.length > 0) {
+      await this.client.participantCalculation.createMany({
+        data: result.participantCalculations.map((item) => ({
+          id: randomUUID(),
+          calculationVersionId: versionRecord.id,
+          participantId: item.participantId,
+          paymentResponsibleParticipantId: item.responsiblePayerId,
+          owesAmountMinor: item.owesAmountMinor,
+          paidAmountMinor: item.paidAmountMinor,
+          netBalanceMinor: item.netBalanceMinor,
+          explanation: asJson(item.explanation)
+        }))
+      });
+    }
+
+    await this.client.responsiblePayerCalculation.deleteMany({
+      where: { calculationVersionId: versionRecord.id }
+    });
+    if (result.responsiblePayerCalculations.length > 0) {
+      await this.client.responsiblePayerCalculation.createMany({
+        data: result.responsiblePayerCalculations.map((item) => ({
+          id: randomUUID(),
+          calculationVersionId: versionRecord.id,
+          responsibleUserId: participantById.get(item.responsiblePayerId)?.linkedUserId ?? null,
+          responsibleParticipantId: item.responsiblePayerId,
+          totalOwesAmountMinor: item.totalOwesAmountMinor,
+          totalPaidAmountMinor: item.totalPaidAmountMinor,
+          netBalanceMinor: item.netBalanceMinor,
+          coveredParticipantIds: item.coveredParticipantIds,
+          explanationSummary: asJson(item.explanationSummary)
+        }))
+      });
+    }
+
+    await this.client.transferPlan.deleteMany({
+      where: { calculationVersionId: versionRecord.id }
+    });
+    if (result.transferPlan.length > 0) {
+      await this.client.transferPlan.createMany({
+        data: result.transferPlan.map((item) => ({
+          id: randomUUID(),
+          calculationVersionId: versionRecord.id,
+          fromResponsibleParticipantId: item.fromResponsiblePayerId,
+          toResponsibleParticipantId: item.toResponsiblePayerId,
+          amountMinor: item.amountMinor,
+          status: item.status,
+          confirmationRequiredBy: item.confirmationRequiredBy,
+          confirmedByUserId: null,
+          proofUrl: null,
+          comment: null
+        }))
+      });
+    }
+
+    await this.bumpCollectionStatus(collectionId, "rules_configured");
+    await this.addAuditDirect(userId, "collection", collectionId, collectionId, "recalculated", {
+      calculationVersionId: versionRecord.id,
+      version: versionRecord.version
+    });
+
+    return {
+      id: versionRecord.id,
+      collectionId: versionRecord.collectionId,
+      version: versionRecord.version,
+      status: versionRecord.status,
+      totalAmountMinor: versionRecord.totalAmountMinor,
+      createdByUserId: versionRecord.createdByUserId,
+      result: versionRecord.result,
+      createdAt: versionRecord.createdAt.toISOString()
+    };
   }
 
-  async getLatestCalculation(userId: string, collectionId: string) {
-    await this.refresh();
-    return this.mirror.getLatestCalculation(userId, collectionId);
+  async getLatestCalculation(userId: string, collectionId: string): Promise<CalculationVersion> {
+    await this.getCollectionForUser(userId, collectionId);
+    const latest = (await this.getCalculationVersionRecords(collectionId)).at(-1);
+    if (!latest) {
+      throw new AppError(404, "Calculation version not found.");
+    }
+    return latest;
   }
 
-  async confirmParticipantReview(userId: string, collectionId: string, participantId: string) {
-    await this.refresh();
-    return await this.mirror.confirmParticipantReview(userId, collectionId, participantId);
+  async confirmParticipantReview(userId: string, collectionId: string, participantId: string): Promise<CollectionParticipant> {
+    await this.getCollectionForUser(userId, collectionId);
+    const participant = await this.getParticipantRecord(collectionId, participantId);
+
+    if (!(await this.canActForParticipant(userId, participant))) {
+      throw new AppError(403, "User cannot confirm this participant share.");
+    }
+
+    const updated = await this.client.collectionParticipant.upsert({
+      where: { id: participant.id },
+      update: {
+        status: "confirmed",
+        updatedAt: new Date()
+      },
+      create: {
+        ...participantCreateInputFromRecord(participant),
+        status: "confirmed",
+        updatedAt: new Date()
+      }
+    });
+
+    await this.addAuditDirect(userId, "participant", participant.id, collectionId, "confirmed", { participantId });
+
+    const collection = await this.getCollectionRecord(collectionId);
+    await this.addNotificationDirect(
+      collection.organizerId,
+      collectionId,
+      "participant_confirmed",
+      "Participant confirmed calculation",
+      `${updated.displayNameSnapshot} confirmed the calculation.`
+    );
+
+    return mapParticipantRecord(updated);
   }
 
-  async createDispute(userId: string, collectionId: string, data: Parameters<AppStore["createDispute"]>[2]) {
-    await this.refresh();
-    return await this.mirror.createDispute(userId, collectionId, data);
+  async createDispute(userId: string, collectionId: string, data: Parameters<AppStore["createDispute"]>[2]): Promise<Dispute> {
+    const collection = await this.getCollectionForUser(userId, collectionId);
+    const participant = await this.getParticipantRecord(collectionId, data.participantId);
+
+    if (!(await this.canActForParticipant(userId, participant))) {
+      throw new AppError(403, "User cannot dispute this participant share.");
+    }
+
+    if (data.targetParticipantId) {
+      await this.getParticipantRecord(collectionId, data.targetParticipantId);
+    }
+
+    const now = new Date();
+    const dispute = await this.client.dispute.upsert({
+      where: { id: randomUUID() },
+      update: {},
+      create: {
+        id: randomUUID(),
+        collectionId,
+        participantId: data.participantId,
+        createdByUserId: userId,
+        targetParticipantId: data.targetParticipantId ?? null,
+        type: data.type,
+        message: data.message,
+        status: "created",
+        resolutionComment: null,
+        createdAt: now,
+        resolvedAt: null
+      }
+    });
+
+    await this.client.collectionParticipant.upsert({
+      where: { id: participant.id },
+      update: {
+        status: "disputed",
+        paymentStatus: "disputed",
+        updatedAt: now
+      },
+      create: {
+        ...participantCreateInputFromRecord(participant),
+        status: "disputed",
+        paymentStatus: "disputed",
+        updatedAt: now
+      }
+    });
+
+    await this.bumpCollectionStatus(collectionId, "dispute_pending");
+    await this.addAuditDirect(userId, "dispute", dispute.id, collectionId, "disputed", {
+      participantId: data.participantId,
+      type: data.type
+    });
+    await this.addNotificationDirect(
+      collection.organizerId,
+      collectionId,
+      "dispute_created",
+      "New dispute",
+      `${participant.displayNameSnapshot} disputed the calculation.`
+    );
+
+    return mapDisputeRecord(dispute);
   }
 
-  async listDisputes(userId: string, collectionId: string) {
-    await this.refresh();
-    return this.mirror.listDisputes(userId, collectionId);
+  async listDisputes(userId: string, collectionId: string): Promise<Dispute[]> {
+    await this.getCollectionForUser(userId, collectionId);
+    return (await this.client.dispute.findMany())
+      .filter((dispute) => dispute.collectionId === collectionId)
+      .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
+      .map(mapDisputeRecord);
   }
 
-  async acceptDispute(userId: string, disputeId: string, resolutionComment?: string | null) {
-    await this.refresh();
-    return await this.mirror.acceptDispute(userId, disputeId, resolutionComment);
+  async acceptDispute(userId: string, disputeId: string, resolutionComment?: string | null): Promise<Dispute> {
+    const dispute = await this.getDisputeRecord(disputeId);
+    await this.getOrganizerCollectionRecord(userId, dispute.collectionId);
+    const updated = await this.updateDisputeDirect(dispute, "accepted", resolutionComment ?? null);
+    await this.addAuditDirect(userId, "dispute", dispute.id, dispute.collectionId, "accepted", {
+      resolutionComment: updated.resolutionComment
+    });
+    await this.addNotificationDirect(
+      dispute.createdByUserId,
+      dispute.collectionId,
+      "dispute_updated",
+      "Dispute accepted",
+      "Organizer accepted your dispute."
+    );
+    return updated;
   }
 
-  async rejectDispute(userId: string, disputeId: string, resolutionComment?: string | null) {
-    await this.refresh();
-    return await this.mirror.rejectDispute(userId, disputeId, resolutionComment);
+  async rejectDispute(userId: string, disputeId: string, resolutionComment?: string | null): Promise<Dispute> {
+    const dispute = await this.getDisputeRecord(disputeId);
+    await this.getOrganizerCollectionRecord(userId, dispute.collectionId);
+    const updated = await this.updateDisputeDirect(dispute, "rejected", resolutionComment ?? null);
+    const participant = await this.getParticipantRecord(dispute.collectionId, dispute.participantId);
+    await this.client.collectionParticipant.upsert({
+      where: { id: participant.id },
+      update: {
+        status: "active",
+        paymentStatus: "pending",
+        updatedAt: new Date()
+      },
+      create: {
+        ...participantCreateInputFromRecord(participant),
+        status: "active",
+        paymentStatus: "pending",
+        updatedAt: new Date()
+      }
+    });
+    await this.addAuditDirect(userId, "dispute", dispute.id, dispute.collectionId, "rejected", {
+      resolutionComment: updated.resolutionComment
+    });
+    await this.addNotificationDirect(
+      dispute.createdByUserId,
+      dispute.collectionId,
+      "dispute_updated",
+      "Dispute rejected",
+      "Organizer rejected your dispute."
+    );
+    return updated;
   }
 
-  async resolveDispute(userId: string, disputeId: string, resolutionComment?: string | null) {
-    await this.refresh();
-    return await this.mirror.resolveDispute(userId, disputeId, resolutionComment);
+  async resolveDispute(
+    userId: string,
+    disputeId: string,
+    resolutionComment?: string | null
+  ): Promise<{ dispute: Dispute; calculationVersion: CalculationVersion }> {
+    const dispute = await this.getDisputeRecord(disputeId);
+    await this.getOrganizerCollectionRecord(userId, dispute.collectionId);
+    const updated = await this.updateDisputeDirect(dispute, "resolved_by_recalculation", resolutionComment ?? null);
+    const calculationVersion = await this.calculateCollection(userId, dispute.collectionId);
+    await this.addAuditDirect(userId, "dispute", dispute.id, dispute.collectionId, "recalculated", {
+      calculationVersionId: calculationVersion.id
+    });
+    await this.addNotificationDirect(
+      dispute.createdByUserId,
+      dispute.collectionId,
+      "dispute_updated",
+      "Dispute resolved",
+      "Organizer recalculated the collection after dispute review."
+    );
+    return { dispute: updated, calculationVersion };
   }
 
-  async markManualPaymentPaid(userId: string, collectionId: string, data: Parameters<AppStore["markManualPaymentPaid"]>[2]) {
-    await this.refresh();
-    return await this.mirror.markManualPaymentPaid(userId, collectionId, data);
+  async markManualPaymentPaid(
+    userId: string,
+    collectionId: string,
+    data: Parameters<AppStore["markManualPaymentPaid"]>[2]
+  ): Promise<ManualPaymentProof> {
+    await this.getCollectionForUser(userId, collectionId);
+    const payerParticipant = data.payerParticipantId ? await this.getParticipantRecord(collectionId, data.payerParticipantId) : null;
+    const receiverParticipant = data.receiverParticipantId ? await this.getParticipantRecord(collectionId, data.receiverParticipantId) : null;
+
+    if (payerParticipant && !(await this.canActForParticipant(userId, payerParticipant))) {
+      throw new AppError(403, "User cannot mark payment for this participant.");
+    }
+
+    const now = new Date();
+    const proof = await this.client.manualPaymentProof.upsert({
+      where: { id: randomUUID() },
+      update: {},
+      create: {
+        id: randomUUID(),
+        transferPlanId: data.transferPlanId ?? null,
+        collectionId,
+        payerUserId: userId,
+        payerParticipantId: payerParticipant?.id ?? null,
+        receiverUserId: receiverParticipant?.linkedUserId ?? null,
+        receiverParticipantId: receiverParticipant?.id ?? null,
+        amountMinor: data.amountMinor,
+        method: data.method,
+        comment: data.comment ?? null,
+        proofUrl: data.proofUrl ?? null,
+        status: "submitted",
+        createdAt: now,
+        updatedAt: now
+      }
+    });
+
+    if (payerParticipant) {
+      await this.client.collectionParticipant.upsert({
+        where: { id: payerParticipant.id },
+        update: {
+          paymentStatus: "manual_marked_paid",
+          updatedAt: now
+        },
+        create: {
+          ...participantCreateInputFromRecord(payerParticipant),
+          paymentStatus: "manual_marked_paid",
+          updatedAt: now
+        }
+      });
+    }
+
+    await this.bumpCollectionStatus(collectionId, "partially_paid");
+    await this.addAuditDirect(userId, "manual_payment", proof.id, collectionId, "paid", {
+      amountMinor: data.amountMinor,
+      method: data.method
+    });
+    await this.notifyManualPaymentReviewersDirect(
+      collectionId,
+      mapManualPaymentProofRecord(proof),
+      "manual_payment_submitted",
+      "Manual payment submitted",
+      "A participant marked a manual payment as paid."
+    );
+
+    return mapManualPaymentProofRecord(proof);
   }
 
-  async uploadManualPaymentProof(userId: string, proofId: string, data: Parameters<AppStore["uploadManualPaymentProof"]>[2]) {
-    await this.refresh();
-    return await this.mirror.uploadManualPaymentProof(userId, proofId, data);
+  async uploadManualPaymentProof(
+    userId: string,
+    proofId: string,
+    data: Parameters<AppStore["uploadManualPaymentProof"]>[2]
+  ): Promise<ManualPaymentProof> {
+    const proof = await this.getManualPaymentForUserDirect(userId, proofId);
+    const updated = await this.client.manualPaymentProof.upsert({
+      where: { id: proof.id },
+      update: {
+        proofUrl: data.proofUrl === undefined ? proof.proofUrl : data.proofUrl,
+        comment: data.comment === undefined ? proof.comment : data.comment,
+        updatedAt: new Date()
+      },
+      create: manualPaymentCreateInputFromRecord(proof, {
+        proofUrl: data.proofUrl === undefined ? proof.proofUrl : data.proofUrl,
+        comment: data.comment === undefined ? proof.comment : data.comment,
+        updatedAt: new Date()
+      })
+    });
+    await this.addAuditDirect(userId, "manual_payment", proof.id, proof.collectionId, "updated", {
+      proofUrlChanged: data.proofUrl !== undefined
+    });
+    return mapManualPaymentProofRecord(updated);
   }
 
-  async confirmManualPayment(userId: string, proofId: string) {
-    await this.refresh();
-    return await this.mirror.confirmManualPayment(userId, proofId);
+  async confirmManualPayment(userId: string, proofId: string): Promise<ManualPaymentProof> {
+    const proof = await this.getManualPaymentForReviewerDirect(userId, proofId);
+    const updated = await this.client.manualPaymentProof.upsert({
+      where: { id: proof.id },
+      update: {
+        status: "confirmed",
+        updatedAt: new Date()
+      },
+      create: manualPaymentCreateInputFromRecord(proof, {
+        status: "confirmed",
+        updatedAt: new Date()
+      })
+    });
+
+    await this.bumpCollectionStatus(proof.collectionId, (await this.hasOnlyConfirmedManualPaymentsDirect(proof.collectionId)) ? "paid" : "partially_paid");
+    await this.addAuditDirect(userId, "manual_payment", proof.id, proof.collectionId, "confirmed", {
+      amountMinor: proof.amountMinor
+    });
+    await this.addNotificationDirect(
+      proof.payerUserId,
+      proof.collectionId,
+      "manual_payment_confirmed",
+      "Manual payment confirmed",
+      "Your manual payment was confirmed."
+    );
+    return mapManualPaymentProofRecord(updated);
   }
 
-  async rejectManualPayment(userId: string, proofId: string) {
-    await this.refresh();
-    return await this.mirror.rejectManualPayment(userId, proofId);
+  async rejectManualPayment(userId: string, proofId: string): Promise<ManualPaymentProof> {
+    const proof = await this.getManualPaymentForReviewerDirect(userId, proofId);
+    const updated = await this.client.manualPaymentProof.upsert({
+      where: { id: proof.id },
+      update: {
+        status: "rejected",
+        updatedAt: new Date()
+      },
+      create: manualPaymentCreateInputFromRecord(proof, {
+        status: "rejected",
+        updatedAt: new Date()
+      })
+    });
+    await this.bumpCollectionStatus(proof.collectionId, "payment_pending");
+    await this.addAuditDirect(userId, "manual_payment", proof.id, proof.collectionId, "rejected", {
+      amountMinor: proof.amountMinor
+    });
+    await this.addNotificationDirect(
+      proof.payerUserId,
+      proof.collectionId,
+      "manual_payment_rejected",
+      "Manual payment rejected",
+      "Your manual payment proof was rejected."
+    );
+    return mapManualPaymentProofRecord(updated);
   }
 
-  async listManualPayments(userId: string, collectionId: string) {
-    await this.refresh();
-    return this.mirror.listManualPayments(userId, collectionId);
+  async listManualPayments(userId: string, collectionId: string): Promise<ManualPaymentProof[]> {
+    await this.getCollectionForUser(userId, collectionId);
+    return (await this.client.manualPaymentProof.findMany())
+      .filter((proof) => proof.collectionId === collectionId)
+      .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
+      .map(mapManualPaymentProofRecord);
   }
 
-  async listAuditLogs(userId: string, collectionId: string) {
-    await this.refresh();
-    return this.mirror.listAuditLogs(userId, collectionId);
+  async listAuditLogs(userId: string, collectionId: string): Promise<AuditLog[]> {
+    await this.getCollectionForUser(userId, collectionId);
+    return (await this.client.auditLog.findMany())
+      .filter((log) => log.collectionId === collectionId)
+      .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
+      .map(mapAuditLogRecord);
   }
 
   async listGroupTemplates(userId: string, groupId: string): Promise<CollectionTemplate[]> {
@@ -894,10 +1354,6 @@ export class PrismaStore implements AppStore {
     return mapNotificationRecord(updated);
   }
 
-  private async refresh(): Promise<void> {
-    await this.mirror.hydrateFromDatabase();
-  }
-
   private async getFriendshipForUser(userId: string, friendshipId: string): Promise<Friendship> {
     const friendship = (await this.client.friendship.findMany()).find((item) => item.id === friendshipId);
     if (!friendship || (friendship.userId !== userId && friendship.friendId !== userId)) {
@@ -924,6 +1380,26 @@ export class PrismaStore implements AppStore {
 
   private async getCollectionRecord(collectionId: string) {
     const collection = (await this.client.collection.findMany({ include: { participants: true } })).find((item) => item.id === collectionId);
+    if (!collection) {
+      throw new AppError(404, "Collection not found.");
+    }
+    return collection;
+  }
+
+  private async getCollectionStateRecord(collectionId: string) {
+    const collection = (
+      await this.client.collection.findMany({
+        include: {
+          participants: true,
+          expenses: {
+            include: {
+              payments: true,
+              shareRules: true
+            }
+          }
+        }
+      })
+    ).find((item) => item.id === collectionId);
     if (!collection) {
       throw new AppError(404, "Collection not found.");
     }
@@ -973,6 +1449,157 @@ export class PrismaStore implements AppStore {
       throw new AppError(404, "Expense not found.");
     }
     return expense;
+  }
+
+  private async getCalculationVersionRecords(collectionId: string): Promise<CalculationVersion[]> {
+    return (await this.client.calculationVersion.findMany())
+      .filter((item) => item.collectionId === collectionId)
+      .sort((a, b) => a.version - b.version || a.createdAt.getTime() - b.createdAt.getTime())
+      .map(mapCalculationVersionRecord);
+  }
+
+  private async getDisputeRecord(disputeId: string): Promise<Dispute> {
+    const dispute = (await this.client.dispute.findMany()).find((item) => item.id === disputeId);
+    if (!dispute) {
+      throw new AppError(404, "Dispute not found.");
+    }
+    return mapDisputeRecord(dispute);
+  }
+
+  private async updateDisputeDirect(
+    dispute: Dispute,
+    status: Dispute["status"],
+    resolutionComment: string | null
+  ): Promise<Dispute> {
+    const resolvedAt = ["accepted", "rejected", "resolved_by_recalculation", "cancelled"].includes(status) ? new Date() : null;
+    const updated = await this.client.dispute.upsert({
+      where: { id: dispute.id },
+      update: {
+        status,
+        resolutionComment,
+        resolvedAt
+      },
+      create: disputeCreateInputFromRecord(dispute, {
+        status,
+        resolutionComment,
+        resolvedAt
+      })
+    });
+    return mapDisputeRecord(updated);
+  }
+
+  private async getManualPaymentForUserDirect(userId: string, proofId: string): Promise<ManualPaymentProof> {
+    const proof = (await this.client.manualPaymentProof.findMany()).find((item) => item.id === proofId);
+    if (!proof || proof.payerUserId !== userId) {
+      throw new AppError(404, "Manual payment proof not found.");
+    }
+    return mapManualPaymentProofRecord(proof);
+  }
+
+  private async getManualPaymentForReviewerDirect(userId: string, proofId: string): Promise<ManualPaymentProof> {
+    const proof = (await this.client.manualPaymentProof.findMany()).find((item) => item.id === proofId);
+    if (!proof) {
+      throw new AppError(404, "Manual payment proof not found.");
+    }
+
+    const collection = await this.getCollectionRecord(proof.collectionId);
+    if (collection.organizerId === userId || proof.receiverUserId === userId) {
+      return mapManualPaymentProofRecord(proof);
+    }
+
+    throw new AppError(403, "User cannot review this manual payment.");
+  }
+
+  private async hasOnlyConfirmedManualPaymentsDirect(collectionId: string): Promise<boolean> {
+    const proofs = (await this.client.manualPaymentProof.findMany()).filter((proof) => proof.collectionId === collectionId);
+    return proofs.length > 0 && proofs.every((proof) => proof.status === "confirmed");
+  }
+
+  private async canActForParticipant(userId: string, participant: CollectionParticipant | Awaited<ReturnType<PrismaStore["getParticipantRecord"]>>): Promise<boolean> {
+    const collection = await this.getCollectionRecord(participant.collectionId);
+    if (collection.organizerId === userId || participant.linkedUserId === userId) {
+      return true;
+    }
+
+    if (!participant.paymentResponsibleParticipantId) {
+      return false;
+    }
+
+    const responsibleParticipant = await this.getParticipantRecord(participant.collectionId, participant.paymentResponsibleParticipantId);
+    return responsibleParticipant.linkedUserId === userId;
+  }
+
+  private async notifyManualPaymentReviewersDirect(
+    collectionId: string,
+    proof: ManualPaymentProof,
+    type: NotificationType,
+    title: string,
+    body: string
+  ): Promise<void> {
+    const collection = await this.getCollectionRecord(collectionId);
+    const userIds = new Set<string>([collection.organizerId]);
+    if (proof.receiverUserId) {
+      userIds.add(proof.receiverUserId);
+    }
+    userIds.delete(proof.payerUserId);
+
+    for (const targetUserId of userIds) {
+      await this.addNotificationDirect(targetUserId, collectionId, type, title, body);
+    }
+  }
+
+  private async addNotificationDirect(
+    userId: string,
+    collectionId: string | null,
+    type: NotificationType,
+    title: string,
+    body: string
+  ): Promise<Notification> {
+    const id = randomUUID();
+    const created = await this.client.notification.upsert({
+      where: { id },
+      update: {},
+      create: {
+        id,
+        userId,
+        collectionId,
+        type,
+        title,
+        body,
+        status: "unread",
+        createdAt: new Date(),
+        readAt: null
+      }
+    });
+    return mapNotificationRecord(created);
+  }
+
+  private async addAuditDirect(
+    actorUserId: string | null,
+    entityType: AuditEntityType,
+    entityId: string,
+    collectionId: string | null,
+    action: AuditAction,
+    metadata: Record<string, unknown>
+  ): Promise<AuditLog> {
+    const id = randomUUID();
+    const created = await this.client.auditLog.upsert({
+      where: { id },
+      update: {},
+      create: {
+        id,
+        actorUserId,
+        entityType,
+        entityId,
+        collectionId,
+        action,
+        metadata: asJson(metadata),
+        ipAddress: null,
+        userAgent: null,
+        createdAt: new Date()
+      }
+    });
+    return mapAuditLogRecord(created);
   }
 
   private async bumpCollectionStatus(collectionId: string, status: Collection["status"]): Promise<void> {
@@ -1258,6 +1885,116 @@ function mapShareRuleRecord(record: {
   };
 }
 
+function mapCalculationVersionRecord(record: {
+  id: string;
+  collectionId: string;
+  version: number;
+  status: CalculationVersion["status"];
+  totalAmountMinor: number;
+  createdByUserId: string;
+  result: Prisma.JsonValue;
+  createdAt: Date;
+}): CalculationVersion {
+  return {
+    id: record.id,
+    collectionId: record.collectionId,
+    version: record.version,
+    status: record.status,
+    totalAmountMinor: record.totalAmountMinor,
+    createdByUserId: record.createdByUserId,
+    result: record.result as unknown as CalculationVersion["result"],
+    createdAt: record.createdAt.toISOString()
+  };
+}
+
+function mapDisputeRecord(record: {
+  id: string;
+  collectionId: string;
+  participantId: string;
+  createdByUserId: string;
+  targetParticipantId: string | null;
+  type: Dispute["type"];
+  message: string;
+  status: Dispute["status"];
+  resolutionComment: string | null;
+  createdAt: Date;
+  resolvedAt: Date | null;
+}): Dispute {
+  return {
+    id: record.id,
+    collectionId: record.collectionId,
+    participantId: record.participantId,
+    createdByUserId: record.createdByUserId,
+    targetParticipantId: record.targetParticipantId,
+    type: record.type,
+    message: record.message,
+    status: record.status,
+    resolutionComment: record.resolutionComment,
+    createdAt: record.createdAt.toISOString(),
+    resolvedAt: record.resolvedAt?.toISOString() ?? null
+  };
+}
+
+function mapManualPaymentProofRecord(record: {
+  id: string;
+  transferPlanId: string | null;
+  collectionId: string;
+  payerUserId: string;
+  payerParticipantId: string | null;
+  receiverUserId: string | null;
+  receiverParticipantId: string | null;
+  amountMinor: number;
+  method: ManualPaymentProof["method"];
+  comment: string | null;
+  proofUrl: string | null;
+  status: ManualPaymentProof["status"];
+  createdAt: Date;
+  updatedAt: Date;
+}): ManualPaymentProof {
+  return {
+    id: record.id,
+    transferPlanId: record.transferPlanId,
+    collectionId: record.collectionId,
+    payerUserId: record.payerUserId,
+    payerParticipantId: record.payerParticipantId,
+    receiverUserId: record.receiverUserId,
+    receiverParticipantId: record.receiverParticipantId,
+    amountMinor: record.amountMinor,
+    method: record.method,
+    comment: record.comment,
+    proofUrl: record.proofUrl,
+    status: record.status,
+    createdAt: record.createdAt.toISOString(),
+    updatedAt: record.updatedAt.toISOString()
+  };
+}
+
+function mapAuditLogRecord(record: {
+  id: string;
+  actorUserId: string | null;
+  entityType: AuditLog["entityType"];
+  entityId: string;
+  collectionId: string | null;
+  action: AuditLog["action"];
+  metadata: Prisma.JsonValue;
+  ipAddress: string | null;
+  userAgent: string | null;
+  createdAt: Date;
+}): AuditLog {
+  return {
+    id: record.id,
+    actorUserId: record.actorUserId,
+    entityType: record.entityType,
+    entityId: record.entityId,
+    collectionId: record.collectionId,
+    action: record.action,
+    metadata: (record.metadata ?? {}) as Record<string, unknown>,
+    ipAddress: record.ipAddress,
+    userAgent: record.userAgent,
+    createdAt: record.createdAt.toISOString()
+  };
+}
+
 function mapTemplateRecord(record: {
   id: string;
   groupId: string;
@@ -1349,6 +2086,123 @@ function parseDevToken(token: string): string | null {
   } catch {
     return null;
   }
+}
+
+function asJson(value: unknown): Prisma.InputJsonValue {
+  return value as Prisma.InputJsonValue;
+}
+
+function participantCreateInputFromRecord(
+  participant: {
+    id: string;
+    collectionId: string;
+    participantType: CollectionParticipant["participantType"];
+    linkedUserId: string | null;
+    invitedPhone: string | null;
+    displayNameSnapshot: string;
+    invitedByUserId: string | null;
+    paymentResponsibleParticipantId: string | null;
+    relationshipHint: string;
+    defaultWeight: { toNumber?: () => number } | number;
+    status: CollectionParticipant["status"];
+    finalShareAmountMinor: number;
+    paymentStatus: CollectionParticipant["paymentStatus"];
+    createdAt: Date;
+    updatedAt: Date;
+  },
+  overrides?: Partial<{
+    paymentResponsibleParticipantId: string | null;
+    status: CollectionParticipant["status"];
+    finalShareAmountMinor: number;
+    paymentStatus: CollectionParticipant["paymentStatus"];
+    updatedAt: Date;
+  }>
+) {
+  return {
+    id: participant.id,
+    collectionId: participant.collectionId,
+    participantType: participant.participantType,
+    linkedUserId: participant.linkedUserId,
+    invitedPhone: participant.invitedPhone,
+    displayNameSnapshot: participant.displayNameSnapshot,
+    invitedByUserId: participant.invitedByUserId,
+    paymentResponsibleParticipantId: overrides?.paymentResponsibleParticipantId ?? participant.paymentResponsibleParticipantId,
+    relationshipHint: normalizeRelationshipHint(participant.relationshipHint),
+    defaultWeight: typeof participant.defaultWeight === "number" ? participant.defaultWeight : (participant.defaultWeight.toNumber?.() ?? 1),
+    status: overrides?.status ?? participant.status,
+    finalShareAmountMinor: overrides?.finalShareAmountMinor ?? participant.finalShareAmountMinor,
+    paymentStatus: overrides?.paymentStatus ?? participant.paymentStatus,
+    createdAt: participant.createdAt,
+    updatedAt: overrides?.updatedAt ?? participant.updatedAt
+  };
+}
+
+function calculationVersionCreateInputFromRecord(
+  version: CalculationVersion,
+  overrides?: Partial<{
+    status: CalculationVersion["status"];
+  }>
+) {
+  return {
+    id: version.id,
+    collectionId: version.collectionId,
+    version: version.version,
+    status: overrides?.status ?? version.status,
+    totalAmountMinor: version.totalAmountMinor,
+    createdByUserId: version.createdByUserId,
+    result: asJson(version.result),
+    createdAt: new Date(version.createdAt)
+  };
+}
+
+function disputeCreateInputFromRecord(
+  dispute: Dispute,
+  overrides?: Partial<{
+    status: Dispute["status"];
+    resolutionComment: string | null;
+    resolvedAt: Date | null;
+  }>
+) {
+  return {
+    id: dispute.id,
+    collectionId: dispute.collectionId,
+    participantId: dispute.participantId,
+    createdByUserId: dispute.createdByUserId,
+    targetParticipantId: dispute.targetParticipantId,
+    type: dispute.type,
+    message: dispute.message,
+    status: overrides?.status ?? dispute.status,
+    resolutionComment: overrides?.resolutionComment ?? dispute.resolutionComment,
+    createdAt: new Date(dispute.createdAt),
+    resolvedAt: overrides?.resolvedAt ?? (dispute.resolvedAt ? new Date(dispute.resolvedAt) : null)
+  };
+}
+
+function manualPaymentCreateInputFromRecord(
+  proof: ManualPaymentProof,
+  overrides?: Partial<{
+    comment: string | null;
+    proofUrl: string | null;
+    status: ManualPaymentProof["status"];
+    updatedAt: Date;
+  }>
+) {
+  return {
+    id: proof.id,
+    transferPlanId: proof.transferPlanId,
+    collectionId: proof.collectionId,
+    payerUserId: proof.payerUserId,
+    payerParticipantId: proof.payerParticipantId,
+    receiverUserId: proof.receiverUserId,
+    receiverParticipantId: proof.receiverParticipantId,
+    amountMinor: proof.amountMinor,
+    method: proof.method,
+    comment: overrides?.comment ?? proof.comment,
+    proofUrl: overrides?.proofUrl ?? proof.proofUrl,
+    status: overrides?.status ?? proof.status,
+    createdAt: new Date(proof.createdAt),
+    updatedAt: overrides?.updatedAt ?? new Date(proof.updatedAt)
+  };
 }
 
 function collectionCreateInputFromRecord(

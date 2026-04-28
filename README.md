@@ -48,7 +48,7 @@ $env:STORE_PROVIDER="prisma"
 npm run dev
 ```
 
-`prisma` reloads runtime state from PostgreSQL before each operation and then executes the current business flow through the existing store logic. This moves request-time state sourcing onto Postgres while the domain logic is still being migrated away from the in-memory core.
+`prisma` now uses PostgreSQL as the working source of truth for the current MVP store flow. The split-calculation engine remains pure and in-process, but collection mutations, calculations, disputes, manual payments, notifications, and audit writes are persisted directly through Prisma.
 
 Direct Prisma write/read now covers:
 
@@ -61,9 +61,12 @@ Direct Prisma write/read now covers:
 - collection categories;
 - expenses and expense payments;
 - expense share rules;
-- collection review notifications.
-
-Calculations, disputes, manual payments, audit log, and related review flows still go through the current fallback store path.
+- calculations with version snapshots, participant/responsible-payer rows, and transfer plans;
+- participant review confirmations;
+- disputes;
+- manual payments;
+- notifications;
+- audit log.
 
 По умолчанию API стартует на `http://localhost:3000`.
 

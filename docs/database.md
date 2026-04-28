@@ -64,7 +64,7 @@ $env:STORE_PROVIDER="prisma"
 npm run dev
 ```
 
-This mode reloads state from PostgreSQL before each operation and then runs the current business logic through the existing store layer. It is a transition step toward a full direct Prisma store: request-time state now comes from the database, but the domain mutations are still executed through the current in-memory-backed logic before being persisted.
+This mode now uses PostgreSQL as the working source of truth for the current MVP store flow. The calculation engine still runs as a pure in-process function, but reads/writes for collections, participants, expenses, calculations, disputes, manual payments, notifications, and audit records are persisted directly through Prisma.
 
 Direct Prisma read/write is already used here for the stable slice:
 
@@ -77,13 +77,16 @@ Direct Prisma read/write is already used here for the stable slice:
 - collection categories;
 - expenses and expense payments;
 - expense share rules;
-- collection review notifications.
-
-Calculations, disputes, manual payments, notifications outside that slice, and audit-heavy flows still use the fallback path.
+- calculations, participant calculations, responsible-payer calculations, and transfer plans;
+- participant review confirmations;
+- disputes;
+- manual payment proofs;
+- notifications;
+- audit log.
 
 ## Persistence Roadmap
 
 1. Keep calculation logic pure and independent from Prisma.
-2. Move calculations, disputes, manual payments, notifications, and audit flows onto direct Prisma mutations.
-3. Run the same API smoke tests against `memory`, `prisma-mirror`, and `prisma` providers.
-4. Remove the mirror transitional layer after the full Prisma store owns writes directly.
+2. Run the same API smoke tests against `memory`, `prisma-mirror`, and `prisma` providers.
+3. Remove the mirror transitional layer after provider parity is confirmed.
+4. Add real integration coverage against a live PostgreSQL container in CI.

@@ -34,29 +34,6 @@ Use `db:migrate` while changing the schema locally. Use `db:deploy` for applying
 
 Default bootstrap is `STORE_PROVIDER=memory`.
 
-There is also an experimental `STORE_PROVIDER=prisma-mirror` mode:
-
-```bash
-$env:STORE_PROVIDER="prisma-mirror"
-npm run dev
-```
-
-`prisma-mirror` keeps `InMemoryStore` as the execution source of truth and dual-writes a stable slice into PostgreSQL:
-
-- users and profile updates;
-- friendships;
-- groups and group members;
-- group templates with template categories;
-- collections, participants, and collection categories;
-- expenses, payments, and share rules;
-- calculation versions with participant/responsible-payer snapshots and transfer plans;
-- disputes;
-- manual payment proofs;
-- audit log;
-- collection-scoped notifications.
-
-On startup, `prisma-mirror` now hydrates persisted users, groups, templates, collections, participants, expenses, calculations, disputes, manual payments, audit logs, and notifications back into the in-memory runtime layer.
-
 There is also a more aggressive `STORE_PROVIDER=prisma` mode:
 
 ```bash
@@ -84,11 +61,11 @@ Direct Prisma read/write is already used here for the stable slice:
 - notifications;
 - audit log.
 
-Route-level smoke tests now exercise the same collection flows against `memory`, `prisma-mirror`, and `prisma` providers through a shared stateful Prisma mock.
+Route-level smoke tests now exercise the same collection flows against `memory` and `prisma` providers through a shared stateful Prisma mock.
 
 ## Persistence Roadmap
 
 1. Keep calculation logic pure and independent from Prisma.
-2. Run the same API smoke tests against `memory`, `prisma-mirror`, and `prisma` providers.
-3. Remove the mirror transitional layer after provider parity is confirmed.
-4. Add real integration coverage against a live PostgreSQL container in CI.
+2. Add real integration coverage against a live PostgreSQL container in CI.
+3. Add idempotency and concurrency protection around calculation/payment mutations.
+4. Expand persistence coverage toward autopay and receipt itemization flows.

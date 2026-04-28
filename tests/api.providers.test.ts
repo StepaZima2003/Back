@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { buildApp } from "../src/api/app";
-import { InMemoryStore, PrismaMirrorStore, PrismaStore } from "../src/store";
+import { InMemoryStore, PrismaStore } from "../src/store";
 import { createSharedMockPrismaClient } from "./support/mockPrismaClient";
 
-type ProviderName = "memory" | "prisma-mirror" | "prisma";
+type ProviderName = "memory" | "prisma";
 
 async function createStore(provider: ProviderName) {
   if (provider === "memory") {
@@ -11,14 +11,10 @@ async function createStore(provider: ProviderName) {
   }
 
   const shared = createSharedMockPrismaClient();
-  if (provider === "prisma-mirror") {
-    return await PrismaMirrorStore.create(shared.client as never);
-  }
-
   return await PrismaStore.create(shared.client as never);
 }
 
-describe.each<ProviderName>(["memory", "prisma-mirror", "prisma"])("api provider parity: %s", (provider) => {
+describe.each<ProviderName>(["memory", "prisma"])("api provider parity: %s", (provider) => {
   afterEach(() => {
     delete process.env.STORE_PROVIDER;
   });

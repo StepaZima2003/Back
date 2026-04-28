@@ -32,15 +32,6 @@ npm run db:seed
 
 Details: `docs/database.md`.
 
-Experimental persistence mirror:
-
-```bash
-$env:STORE_PROVIDER="prisma-mirror"
-npm run dev
-```
-
-`prisma-mirror` keeps in-memory execution semantics, dual-writes the current MVP flow into PostgreSQL, and hydrates persisted runtime state back on startup. Covered: users, friendships, groups, templates, collections, participants, categories, expenses, share rules, calculations, disputes, manual payments, audit log, and collection-scoped notifications.
-
 Direct Prisma-backed runtime facade:
 
 ```bash
@@ -68,7 +59,7 @@ Direct Prisma write/read now covers:
 - notifications;
 - audit log.
 
-API smoke parity is now covered in tests for `memory`, `prisma-mirror`, and `prisma` providers using the same route-level scenarios.
+API smoke parity is now covered in tests for `memory` and `prisma` providers using the same route-level scenarios.
 
 По умолчанию API стартует на `http://localhost:3000`.
 

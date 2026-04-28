@@ -1,7 +1,6 @@
 import { prisma } from "../db/client";
 import type { AppStore } from "./appStore";
 import { InMemoryStore } from "./inMemoryStore";
-import { PrismaMirrorStore } from "./prismaMirrorStore";
 import { PrismaStore } from "./prismaStore";
 
 export async function createAppStoreFromEnv(): Promise<AppStore> {
@@ -9,9 +8,9 @@ export async function createAppStoreFromEnv(): Promise<AppStore> {
   if (provider === "prisma") {
     return await PrismaStore.create(prisma);
   }
-  if (provider === "prisma-mirror") {
-    return await PrismaMirrorStore.create(prisma);
+  if (provider === "memory") {
+    return new InMemoryStore();
   }
 
-  return new InMemoryStore();
+  throw new Error(`Unsupported STORE_PROVIDER: ${provider}`);
 }

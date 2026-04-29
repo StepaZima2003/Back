@@ -45,7 +45,7 @@ export type PaymentStatus = "pending" | "processing" | "succeeded" | "failed" | 
 export type PaymentMethodStatus = "pending_binding" | "active" | "failed" | "expired" | "revoked" | "requires_confirmation";
 export type PaymentCardBrand = "visa" | "mastercard" | "mir" | "unknown";
 export type PaymentProviderWebhookEventType = "payment.succeeded" | "payment.failed" | "payment.refunded";
-export type PaymentWebhookProcessingStatus = "received" | "processed" | "ignored" | "failed";
+export type PaymentWebhookProcessingStatus = "received" | "processed" | "ignored" | "failed" | "dead_lettered";
 export type AuditEntityType =
   | "collection"
   | "payment"
@@ -214,6 +214,10 @@ export interface PaymentWebhookEvent {
   status: PaymentWebhookProcessingStatus;
   payload: Record<string, unknown>;
   processingError: string | null;
+  attemptCount: number;
+  lastAttemptedAt: string | null;
+  nextRetryAt: string | null;
+  deadLetteredAt: string | null;
   receivedAt: string;
   processedAt: string | null;
 }

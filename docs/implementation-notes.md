@@ -14,6 +14,6 @@ Working notes for the next SocialSplitApp backend increment.
 
 ## Next backend step
 
-- add provider-side execution retries / dead-letter handling for webhook reconciliation failures.
-- introduce provider-specific token/customer references for real PSP onboarding flows.
+- replace the mock PSP transport with a real provider adapter and provider-specific webhook payload validation;
+- add richer operator tooling on top of persisted webhook retry state: search, pagination, and alerting for stuck dead-letter events;
 - tighten GitHub Actions further with migration drift / OpenAPI artifact checks if CI time stays reasonable.

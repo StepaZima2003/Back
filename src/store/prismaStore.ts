@@ -2039,30 +2039,138 @@ export class PrismaStore implements AppStore {
   }
 
   async applyMockProviderWebhook(payload: MockProviderWebhookPayload): Promise<Payment> {
-    return await this.withAdvisoryLock(`payment-provider:${payload.providerPaymentId}`, async (store) => {
-      return await store.applyPaymentWebhookLocked({
-        provider: "bank",
-        eventId: payload.eventId,
-        providerPaymentId: payload.providerPaymentId,
-        eventType: payload.eventType,
-        occurredAt: payload.occurredAt ?? null,
-        reason: payload.reason ?? null,
-        providerStatus: payload.providerStatus ?? payload.eventType.replace("payment.", ""),
-        metadata: payload.metadata ?? {},
-        rawPayload: payload as unknown as Record<string, unknown>
-      });
+    return await this.applyPaymentWebhook({
+      provider: "bank",
+      eventId: payload.eventId,
+      providerPaymentId: payload.providerPaymentId,
+      eventType: payload.eventType,
+      occurredAt: payload.occurredAt ?? null,
+      reason: payload.reason ?? null,
+      providerStatus: payload.providerStatus ?? payload.eventType.replace("payment.", ""),
+      metadata: payload.metadata ?? {},
+      rawPayload: payload as unknown as Record<string, unknown>
     });
   }
 
+  async retryFailedPaymentWebhooks(options?: {
+    ignoreSchedule?: boolean;
+    maxEvents?: number;
+  }): Promise<{
+    dueEvents: number;
+    retried: number;
+    processed: number;
+    failed: number;
+    deadLettered: number;
+    eventIds: string[];
+  }> {
+    const dueEvents = await this.getRetryableWebhookEventsDirect(options);
+    let retried = 0;
+    let processed = 0;
+    let failed = 0;
+    let deadLettered = 0;
+    const eventIds: string[] = [];
+
+    for (const webhookEvent of dueEvents) {
+      const event = this.toNormalizedWebhookEvent(webhookEvent);
+      eventIds.push(webhookEvent.externalEventId);
+
+      try {
+        await this.applyPaymentWebhook(event);
+      } catch {
+        // The persisted webhook record carries the final retry status.
+      }
+
+      const updatedEvent = await this.findPaymentWebhookEventByExternalIdDirect(webhookEvent.externalEventId);
+      retried += 1;
+      if (updatedEvent?.status === "processed") {
+        processed += 1;
+      } else if (updatedEvent?.status === "dead_lettered") {
+        deadLettered += 1;
+      } else {
+        failed += 1;
+      }
+    }
+
+    return {
+      dueEvents: dueEvents.length,
+      retried,
+      processed,
+      failed,
+      deadLettered,
+      eventIds
+    };
+  }
+
+  async listPaymentWebhookEvents(filters?: {
+    status?: PaymentWebhookEvent["status"];
+    provider?: PaymentWebhookEvent["provider"];
+    collectionId?: string;
+    limit?: number;
+  }): Promise<PaymentWebhookEvent[]> {
+    let events = (await this.client.paymentWebhookEvent.findMany()).map(mapPaymentWebhookEventRecord);
+
+    if (filters?.status) {
+      events = events.filter((event) => event.status === filters.status);
+    }
+
+    if (filters?.provider) {
+      events = events.filter((event) => event.provider === filters.provider);
+    }
+
+    if (filters?.collectionId) {
+      const payments = await this.client.payment.findMany();
+      const paymentIds = new Set(
+        payments.filter((payment) => payment.collectionId === filters.collectionId).map((payment) => payment.id)
+      );
+      events = events.filter((event) => event.paymentId && paymentIds.has(event.paymentId));
+    }
+
+    events.sort((left, right) => right.receivedAt.localeCompare(left.receivedAt));
+    if (filters?.limit && filters.limit > 0) {
+      return events.slice(0, filters.limit);
+    }
+    return events;
+  }
+
+  async replayPaymentWebhookEvent(externalEventId: string): Promise<PaymentWebhookEvent> {
+    const existingEvent = await this.findPaymentWebhookEventByExternalIdDirect(externalEventId);
+    if (!existingEvent) {
+      throw new AppError(404, "Payment webhook event not found.");
+    }
+    if (existingEvent.status === "processed") {
+      return existingEvent;
+    }
+
+    try {
+      await this.applyPaymentWebhook(this.toNormalizedWebhookEvent(existingEvent));
+    } catch {
+      // The persisted webhook event row below reflects the latest replay attempt result.
+    }
+
+    const updatedEvent = await this.findPaymentWebhookEventByExternalIdDirect(externalEventId);
+    if (!updatedEvent) {
+      throw new AppError(500, "Payment webhook event disappeared after replay.");
+    }
+    return updatedEvent;
+  }
+
   async applyPaymentWebhook(event: NormalizedPaymentWebhookEvent): Promise<Payment> {
-    return await this.withAdvisoryLock(`payment-provider:${event.providerPaymentId}`, async (store) => {
-      return await store.applyPaymentWebhookLocked(event);
-    });
+    try {
+      return await this.withAdvisoryLock(`payment-provider:${event.providerPaymentId}`, async (store) => {
+        return await store.applyPaymentWebhookLocked(event);
+      });
+    } catch (error) {
+      if (error instanceof AppError) {
+        const payment = await this.findPaymentByProviderPaymentIdDirect(event.providerPaymentId);
+        await this.failPaymentWebhookEventDirect(event, payment?.id ?? null, error);
+      }
+      throw error;
+    }
   }
 
   private async applyPaymentWebhookLocked(event: NormalizedPaymentWebhookEvent): Promise<Payment> {
     const existingEvent = await this.findPaymentWebhookEventByExternalIdDirect(event.eventId);
-    if (existingEvent?.paymentId) {
+    if (existingEvent?.status === "processed" && existingEvent.paymentId) {
       const existingPayment = (await this.client.payment.findMany()).find((item) => item.id === existingEvent.paymentId);
       if (existingPayment) {
         return mapPaymentRecord(existingPayment);
@@ -2071,7 +2179,6 @@ export class PrismaStore implements AppStore {
 
     const payment = await this.findPaymentByProviderPaymentIdDirect(event.providerPaymentId);
     if (!payment) {
-      await this.recordPaymentWebhookEventDirect(event, null, "failed", "Payment not found for provider payment id.");
       throw new AppError(404, "Payment not found for provider payment id.");
     }
 
@@ -2095,7 +2202,6 @@ export class PrismaStore implements AppStore {
           return payment;
         }
         if (payment.status === "refunded") {
-          await this.recordPaymentWebhookEventDirect(event, payment.id, "failed", "Refunded payment cannot be marked as failed.");
           throw new AppError(409, "Refunded payment cannot be marked as failed.");
         }
         nextStatus = "failed";
@@ -2108,7 +2214,6 @@ export class PrismaStore implements AppStore {
           return payment;
         }
         if (payment.status !== "succeeded") {
-          await this.recordPaymentWebhookEventDirect(event, payment.id, "failed", "Only succeeded payment can be refunded.");
           throw new AppError(409, "Only succeeded payment can be refunded.");
         }
         nextStatus = "refunded";
@@ -2645,14 +2750,19 @@ export class PrismaStore implements AppStore {
     processingError: string | null = null
   ): Promise<PaymentWebhookEvent> {
     const existing = await this.findPaymentWebhookEventByExternalIdDirect(event.eventId);
-    const receivedAt = new Date();
+    const attemptedAt = new Date();
+    const attemptCount = (existing?.attemptCount ?? 0) + 1;
     const record = await this.client.paymentWebhookEvent.upsert({
       where: { externalEventId: event.eventId },
       update: {
         paymentId,
         status,
         processingError,
-        processedAt: receivedAt,
+        attemptCount,
+        lastAttemptedAt: attemptedAt,
+        nextRetryAt: null,
+        deadLetteredAt: null,
+        processedAt: attemptedAt,
         payload: asJson(event.rawPayload)
       },
       create: {
@@ -2665,11 +2775,94 @@ export class PrismaStore implements AppStore {
         status,
         payload: asJson(event.rawPayload),
         processingError,
-        receivedAt,
-        processedAt: receivedAt
+        attemptCount,
+        lastAttemptedAt: attemptedAt,
+        nextRetryAt: null,
+        deadLetteredAt: null,
+        receivedAt: existing?.receivedAt ? new Date(existing.receivedAt) : attemptedAt,
+        processedAt: attemptedAt
       }
     });
     return mapPaymentWebhookEventRecord(record);
+  }
+
+  private async failPaymentWebhookEventDirect(
+    event: NormalizedPaymentWebhookEvent,
+    paymentId: string | null,
+    error: AppError
+  ): Promise<never> {
+    const existing = await this.findPaymentWebhookEventByExternalIdDirect(event.eventId);
+    const attemptCount = (existing?.attemptCount ?? 0) + 1;
+    const attemptedAt = new Date();
+    const retryable = isRetryableWebhookError(error);
+    const deadLettered = !retryable || attemptCount >= WEBHOOK_RETRY_MAX_ATTEMPTS;
+    const nextRetryAt = !deadLettered && retryable ? new Date(attemptedAt.getTime() + getWebhookRetryDelayMs(attemptCount)) : null;
+
+    await this.client.paymentWebhookEvent.upsert({
+      where: { externalEventId: event.eventId },
+      update: {
+        paymentId,
+        status: deadLettered ? "dead_lettered" : "failed",
+        processingError: error.message,
+        attemptCount,
+        lastAttemptedAt: attemptedAt,
+        nextRetryAt,
+        deadLetteredAt: deadLettered ? attemptedAt : null,
+        processedAt: attemptedAt,
+        payload: asJson(event.rawPayload)
+      },
+      create: {
+        id: existing?.id ?? randomUUID(),
+        provider: event.provider,
+        externalEventId: event.eventId,
+        providerPaymentId: event.providerPaymentId,
+        paymentId,
+        eventType: event.eventType,
+        status: deadLettered ? "dead_lettered" : "failed",
+        payload: asJson(event.rawPayload),
+        processingError: error.message,
+        attemptCount,
+        lastAttemptedAt: attemptedAt,
+        nextRetryAt,
+        deadLetteredAt: deadLettered ? attemptedAt : null,
+        receivedAt: existing?.receivedAt ? new Date(existing.receivedAt) : attemptedAt,
+        processedAt: attemptedAt
+      }
+    });
+
+    throw error;
+  }
+
+  private async getRetryableWebhookEventsDirect(options?: {
+    ignoreSchedule?: boolean;
+    maxEvents?: number;
+  }): Promise<PaymentWebhookEvent[]> {
+    const nowIso = new Date().toISOString();
+    const candidates = (await this.client.paymentWebhookEvent.findMany())
+      .map(mapPaymentWebhookEventRecord)
+      .filter((event) => event.status === "failed")
+      .filter((event) => options?.ignoreSchedule || !event.nextRetryAt || event.nextRetryAt <= nowIso)
+      .sort((left, right) => (left.nextRetryAt ?? left.receivedAt).localeCompare(right.nextRetryAt ?? right.receivedAt));
+
+    if (!options?.maxEvents || options.maxEvents <= 0) {
+      return candidates;
+    }
+
+    return candidates.slice(0, options.maxEvents);
+  }
+
+  private toNormalizedWebhookEvent(event: PaymentWebhookEvent): NormalizedPaymentWebhookEvent {
+    return {
+      provider: event.provider,
+      eventId: event.externalEventId,
+      providerPaymentId: event.providerPaymentId,
+      eventType: event.eventType,
+      occurredAt: event.processedAt ?? event.receivedAt,
+      reason: typeof event.payload.reason === "string" ? event.payload.reason : null,
+      providerStatus: typeof event.payload.providerStatus === "string" ? event.payload.providerStatus : event.eventType.replace("payment.", ""),
+      metadata: isPlainRecord(event.payload.metadata) ? event.payload.metadata : {},
+      rawPayload: event.payload
+    };
   }
 
   private async getPaymentForActorDirect(userId: string, paymentId: string): Promise<Payment> {
@@ -3127,6 +3320,10 @@ function mapPaymentWebhookEventRecord(record: {
   status: string;
   payload: Prisma.JsonValue;
   processingError: string | null;
+  attemptCount: number;
+  lastAttemptedAt: Date | null;
+  nextRetryAt: Date | null;
+  deadLetteredAt: Date | null;
   receivedAt: Date;
   processedAt: Date | null;
 }): PaymentWebhookEvent {
@@ -3140,6 +3337,10 @@ function mapPaymentWebhookEventRecord(record: {
     status: record.status as PaymentWebhookEvent["status"],
     payload: (record.payload ?? {}) as Record<string, unknown>,
     processingError: record.processingError,
+    attemptCount: record.attemptCount,
+    lastAttemptedAt: record.lastAttemptedAt?.toISOString() ?? null,
+    nextRetryAt: record.nextRetryAt?.toISOString() ?? null,
+    deadLetteredAt: record.deadLetteredAt?.toISOString() ?? null,
     receivedAt: record.receivedAt.toISOString(),
     processedAt: record.processedAt?.toISOString() ?? null
   };
@@ -3518,6 +3719,9 @@ function asJson(value: unknown): Prisma.InputJsonValue {
   return value as Prisma.InputJsonValue;
 }
 
+const WEBHOOK_RETRY_DELAYS_MS = [60_000, 5 * 60_000, 15 * 60_000, 60 * 60_000, 6 * 60 * 60_000] as const;
+const WEBHOOK_RETRY_MAX_ATTEMPTS = WEBHOOK_RETRY_DELAYS_MS.length;
+
 function stableJson(value: unknown): string {
   return JSON.stringify(sortJsonValue(value));
 }
@@ -3626,6 +3830,18 @@ function isSameMockPaymentRequest(
 
 function toSqlLiteral(value: string): string {
   return `'${value.replace(/'/g, "''")}'`;
+}
+
+function getWebhookRetryDelayMs(attemptCount: number): number {
+  return WEBHOOK_RETRY_DELAYS_MS[Math.min(Math.max(attemptCount - 1, 0), WEBHOOK_RETRY_DELAYS_MS.length - 1)];
+}
+
+function isRetryableWebhookError(error: AppError): boolean {
+  return error.statusCode === 404 || error.statusCode >= 500;
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
 function participantCreateInputFromRecord(

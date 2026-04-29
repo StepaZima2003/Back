@@ -3,6 +3,7 @@ import type { FastifyInstance } from "fastify";
 import { PrismaClient } from "@prisma/client";
 import { buildApp } from "../src/api/app";
 import { createAutoPaymentSweepWorker } from "../src/payments/autopayWorker";
+import { createPaymentWebhookRetryWorker } from "../src/payments/webhookRetryWorker";
 import { createMockProviderWebhookSignature } from "../src/payments/mockProvider";
 import { PrismaStore } from "../src/store";
 import { createIntegrationPrismaClient, resetIntegrationDatabase } from "./support/postgresIntegration";
@@ -816,6 +817,198 @@ describe("PostgreSQL integration", () => {
     ).toBe(true);
   });
 
+  it("retries failed provider webhooks after the missing payment becomes available", async () => {
+    const organizer = await auth(app!, "+79990011071");
+    const participantUser = await auth(app!, "+79990011072");
+
+    const collectionResponse = await app!.inject({
+      method: "POST",
+      url: "/collections",
+      headers: { authorization: organizer.authorization },
+      payload: { title: "Webhook recovery trip", type: "trip" }
+    });
+    const { collection } = collectionResponse.json();
+
+    const participantResponse = await app!.inject({
+      method: "POST",
+      url: `/collections/${collection.id}/participants`,
+      headers: { authorization: organizer.authorization },
+      payload: { linkedUserId: participantUser.user.id, displayName: "Friend" }
+    });
+    const participant = participantResponse.json();
+
+    const providerPaymentId = "live-recovery-provider-payment";
+    const webhookPayload = {
+      eventId: "live-recovery-webhook-1",
+      providerPaymentId,
+      eventType: "payment.succeeded" as const,
+      occurredAt: new Date().toISOString()
+    };
+
+    const firstAttempt = await app!.inject({
+      method: "POST",
+      url: "/payments/webhooks/bank",
+      headers: {
+        "x-mock-provider-signature": createMockProviderWebhookSignature(webhookPayload, "test-webhook-secret")
+      },
+      payload: webhookPayload
+    });
+    expect(firstAttempt.statusCode).toBe(404);
+
+    const failedEvent = await client.paymentWebhookEvent.findUnique({
+      where: { externalEventId: webhookPayload.eventId }
+    });
+    expect(failedEvent?.status).toBe("failed");
+    expect(failedEvent?.attemptCount).toBe(1);
+
+    const createdPayment = await client.payment.create({
+      data: {
+        collectionId: collection.id,
+        participantId: participant.id,
+        responsibleUserId: participantUser.user.id,
+        paymentMethodId: null,
+        amountMinor: 3000,
+        currency: "RUB",
+        provider: "bank",
+        providerPaymentId,
+        providerStatus: "pending",
+        providerMetadata: { mode: "recovery-test" },
+        status: "pending",
+        lastErrorCode: null,
+        lastErrorMessage: null,
+        attemptCount: 1,
+        lastWebhookEventId: null,
+        lastWebhookReceivedAt: null,
+        idempotencyKey: "live-recovery-intent-1"
+      }
+    });
+
+    const retryResponse = await app!.inject({
+      method: "POST",
+      url: "/internal/payments/webhooks/retry-failed",
+      headers: { "x-internal-token": "test-internal-token" },
+      payload: { ignoreSchedule: true }
+    });
+    expect(retryResponse.statusCode).toBe(200);
+    expect(retryResponse.json().dueEvents).toBe(1);
+    expect(retryResponse.json().processed).toBe(1);
+    expect(retryResponse.json().deadLettered).toBe(0);
+
+    const recoveredPayment = await client.payment.findUnique({
+      where: { id: createdPayment.id }
+    });
+    expect(recoveredPayment?.status).toBe("succeeded");
+    expect(recoveredPayment?.providerStatus).toBe("succeeded");
+    expect(recoveredPayment?.lastWebhookEventId).toBe(webhookPayload.eventId);
+
+    const processedEvent = await client.paymentWebhookEvent.findUnique({
+      where: { externalEventId: webhookPayload.eventId }
+    });
+    expect(processedEvent?.status).toBe("processed");
+    expect(processedEvent?.attemptCount).toBe(2);
+    expect(processedEvent?.paymentId).toBe(createdPayment.id);
+    expect(processedEvent?.deadLetteredAt).toBeNull();
+  });
+
+  it("lists dead-letter webhook events internally and replays them after payment recovery", async () => {
+    const organizer = await auth(app!, "+79990011091");
+    const participantUser = await auth(app!, "+79990011092");
+
+    const collectionResponse = await app!.inject({
+      method: "POST",
+      url: "/collections",
+      headers: { authorization: organizer.authorization },
+      payload: { title: "Dead-letter recovery trip", type: "trip" }
+    });
+    const { collection } = collectionResponse.json();
+
+    const participantResponse = await app!.inject({
+      method: "POST",
+      url: `/collections/${collection.id}/participants`,
+      headers: { authorization: organizer.authorization },
+      payload: { linkedUserId: participantUser.user.id, displayName: "Friend" }
+    });
+    const participant = participantResponse.json();
+
+    const providerPaymentId = "live-dead-letter-provider-payment";
+    const webhookPayload = {
+      eventId: "live-dead-letter-webhook-1",
+      providerPaymentId,
+      eventType: "payment.succeeded" as const,
+      occurredAt: new Date().toISOString()
+    };
+
+    const firstAttempt = await app!.inject({
+      method: "POST",
+      url: "/payments/webhooks/bank",
+      headers: {
+        "x-mock-provider-signature": createMockProviderWebhookSignature(webhookPayload, "test-webhook-secret")
+      },
+      payload: webhookPayload
+    });
+    expect(firstAttempt.statusCode).toBe(404);
+
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      const replayResponse = await app!.inject({
+        method: "POST",
+        url: `/internal/payments/webhooks/${webhookPayload.eventId}/replay`,
+        headers: { "x-internal-token": "test-internal-token" }
+      });
+      expect(replayResponse.statusCode).toBe(200);
+    }
+
+    const deadLetterListResponse = await app!.inject({
+      method: "GET",
+      url: `/internal/payments/webhooks/events?status=dead_lettered&provider=bank`,
+      headers: { "x-internal-token": "test-internal-token" }
+    });
+    expect(deadLetterListResponse.statusCode).toBe(200);
+    expect(
+      deadLetterListResponse
+        .json()
+        .some((event: { externalEventId: string; attemptCount: number }) => event.externalEventId === webhookPayload.eventId && event.attemptCount === 5)
+    ).toBe(true);
+
+    const createdPayment = await client.payment.create({
+      data: {
+        collectionId: collection.id,
+        participantId: participant.id,
+        responsibleUserId: participantUser.user.id,
+        paymentMethodId: null,
+        amountMinor: 3500,
+        currency: "RUB",
+        provider: "bank",
+        providerPaymentId,
+        providerStatus: "pending",
+        providerMetadata: { mode: "dead-letter-recovery-test" },
+        status: "pending",
+        lastErrorCode: null,
+        lastErrorMessage: null,
+        attemptCount: 1,
+        lastWebhookEventId: null,
+        lastWebhookReceivedAt: null,
+        idempotencyKey: "live-dead-letter-recovery-intent-1"
+      }
+    });
+
+    const replayRecoveredResponse = await app!.inject({
+      method: "POST",
+      url: `/internal/payments/webhooks/${webhookPayload.eventId}/replay`,
+      headers: { "x-internal-token": "test-internal-token" }
+    });
+    expect(replayRecoveredResponse.statusCode).toBe(200);
+    expect(replayRecoveredResponse.json().status).toBe("processed");
+    expect(replayRecoveredResponse.json().paymentId).toBe(createdPayment.id);
+    expect(replayRecoveredResponse.json().attemptCount).toBe(6);
+    expect(replayRecoveredResponse.json().deadLetteredAt).toBeNull();
+
+    const recoveredPayment = await client.payment.findUnique({
+      where: { id: createdPayment.id }
+    });
+    expect(recoveredPayment?.status).toBe("succeeded");
+    expect(recoveredPayment?.lastWebhookEventId).toBe(webhookPayload.eventId);
+  });
+
   it("executes the background auto payment worker against live PostgreSQL", async () => {
     const organizer = await auth(app!, "+79990011061");
     const participantUser = await auth(app!, "+79990011062");
@@ -891,6 +1084,94 @@ describe("PostgreSQL integration", () => {
     });
     expect(paymentsResponse.statusCode).toBe(200);
     expect(paymentsResponse.json().some((payment: { participantId: string; amountMinor: number }) => payment.participantId === participant.id && payment.amountMinor === 4000)).toBe(true);
+
+    await worker.stop();
+  });
+
+  it("executes the payment webhook retry worker against live PostgreSQL", async () => {
+    const organizer = await auth(app!, "+79990011081");
+    const participantUser = await auth(app!, "+79990011082");
+
+    const collectionResponse = await app!.inject({
+      method: "POST",
+      url: "/collections",
+      headers: { authorization: organizer.authorization },
+      payload: { title: "Webhook worker trip", type: "trip" }
+    });
+    const { collection } = collectionResponse.json();
+
+    const participantResponse = await app!.inject({
+      method: "POST",
+      url: `/collections/${collection.id}/participants`,
+      headers: { authorization: organizer.authorization },
+      payload: { linkedUserId: participantUser.user.id, displayName: "Friend" }
+    });
+    const participant = participantResponse.json();
+
+    const providerPaymentId = "live-worker-provider-payment";
+    const webhookPayload = {
+      eventId: "live-worker-webhook-1",
+      providerPaymentId,
+      eventType: "payment.succeeded" as const,
+      occurredAt: new Date().toISOString()
+    };
+
+    const firstAttempt = await app!.inject({
+      method: "POST",
+      url: "/payments/webhooks/bank",
+      headers: {
+        "x-mock-provider-signature": createMockProviderWebhookSignature(webhookPayload, "test-webhook-secret")
+      },
+      payload: webhookPayload
+    });
+    expect(firstAttempt.statusCode).toBe(404);
+
+    await client.paymentWebhookEvent.update({
+      where: { externalEventId: webhookPayload.eventId },
+      data: {
+        nextRetryAt: new Date(Date.now() - 1_000)
+      }
+    });
+
+    const createdPayment = await client.payment.create({
+      data: {
+        collectionId: collection.id,
+        participantId: participant.id,
+        responsibleUserId: participantUser.user.id,
+        paymentMethodId: null,
+        amountMinor: 2500,
+        currency: "RUB",
+        provider: "bank",
+        providerPaymentId,
+        providerStatus: "pending",
+        providerMetadata: { mode: "worker-test" },
+        status: "pending",
+        lastErrorCode: null,
+        lastErrorMessage: null,
+        attemptCount: 1,
+        lastWebhookEventId: null,
+        lastWebhookReceivedAt: null,
+        idempotencyKey: "live-worker-intent-1"
+      }
+    });
+
+    const worker = createPaymentWebhookRetryWorker({
+      store: await PrismaStore.create(client as never),
+      intervalMs: 1000,
+      runOnStart: false
+    });
+
+    const result = await worker.runNow();
+    expect(result.dueEvents).toBe(1);
+    expect(result.processed).toBe(1);
+    expect(result.deadLettered).toBe(0);
+    expect(result.eventIds).toContain(webhookPayload.eventId);
+
+    const recoveredPayment = await client.payment.findUnique({
+      where: { id: createdPayment.id }
+    });
+    expect(recoveredPayment?.status).toBe("succeeded");
+    expect(recoveredPayment?.lastWebhookEventId).toBe(webhookPayload.eventId);
 
     await worker.stop();
   });

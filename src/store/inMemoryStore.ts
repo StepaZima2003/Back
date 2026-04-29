@@ -1519,9 +1519,117 @@ export class InMemoryStore {
     };
   }
 
+  retryFailedPaymentWebhooks(options?: {
+    ignoreSchedule?: boolean;
+    maxEvents?: number;
+  }): {
+    dueEvents: number;
+    retried: number;
+    processed: number;
+    failed: number;
+    deadLettered: number;
+    eventIds: string[];
+  } {
+    const dueEvents = this.getRetryableWebhookEvents(options);
+    let retried = 0;
+    let processed = 0;
+    let failed = 0;
+    let deadLettered = 0;
+    const eventIds: string[] = [];
+
+    for (const webhookEvent of dueEvents) {
+      const normalizedEvent = this.toNormalizedWebhookEvent(webhookEvent);
+      eventIds.push(webhookEvent.externalEventId);
+
+      try {
+        this.applyPaymentWebhookInternal(normalizedEvent);
+      } catch {
+        // The retry summary is derived from the persisted webhook event record below.
+      }
+
+      const updatedEvent = this.findPaymentWebhookEventByExternalId(webhookEvent.externalEventId);
+      retried += 1;
+      if (updatedEvent?.status === "processed") {
+        processed += 1;
+      } else if (updatedEvent?.status === "dead_lettered") {
+        deadLettered += 1;
+      } else {
+        failed += 1;
+      }
+    }
+
+    return {
+      dueEvents: dueEvents.length,
+      retried,
+      processed,
+      failed,
+      deadLettered,
+      eventIds
+    };
+  }
+
+  listPaymentWebhookEvents(filters?: {
+    status?: PaymentWebhookEvent["status"];
+    provider?: PaymentWebhookEvent["provider"];
+    collectionId?: string;
+    limit?: number;
+  }): PaymentWebhookEvent[] {
+    let events = [...this.paymentWebhookEvents.values()];
+
+    if (filters?.status) {
+      events = events.filter((event) => event.status === filters.status);
+    }
+
+    if (filters?.provider) {
+      events = events.filter((event) => event.provider === filters.provider);
+    }
+
+    if (filters?.collectionId) {
+      events = events.filter((event) => {
+        if (!event.paymentId) {
+          return false;
+        }
+        const payment = this.payments.get(event.paymentId);
+        return payment?.collectionId === filters.collectionId;
+      });
+    }
+
+    events.sort((left, right) => right.receivedAt.localeCompare(left.receivedAt));
+    if (filters?.limit && filters.limit > 0) {
+      return events.slice(0, filters.limit);
+    }
+    return events;
+  }
+
+  replayPaymentWebhookEvent(externalEventId: string): PaymentWebhookEvent {
+    const existingEvent = this.findPaymentWebhookEventByExternalId(externalEventId);
+    if (!existingEvent) {
+      throw new AppError(404, "Payment webhook event not found.");
+    }
+    if (existingEvent.status === "processed") {
+      return existingEvent;
+    }
+
+    try {
+      this.applyPaymentWebhook(this.toNormalizedWebhookEvent(existingEvent));
+    } catch {
+      // The persisted webhook event row below reflects the latest replay attempt result.
+    }
+
+    const updatedEvent = this.findPaymentWebhookEventByExternalId(externalEventId);
+    if (!updatedEvent) {
+      throw new AppError(500, "Payment webhook event disappeared after replay.");
+    }
+    return updatedEvent;
+  }
+
   applyPaymentWebhook(event: NormalizedPaymentWebhookEvent): Payment {
+    return this.applyPaymentWebhookInternal(event);
+  }
+
+  private applyPaymentWebhookInternal(event: NormalizedPaymentWebhookEvent): Payment {
     const existingEvent = [...this.paymentWebhookEvents.values()].find((item) => item.externalEventId === event.eventId);
-    if (existingEvent?.paymentId) {
+    if (existingEvent?.status === "processed" && existingEvent.paymentId) {
       const existingPayment = this.payments.get(existingEvent.paymentId);
       if (existingPayment) {
         return existingPayment;
@@ -1530,21 +1638,7 @@ export class InMemoryStore {
 
     const payment = this.findPaymentByProviderPaymentId(event.providerPaymentId);
     if (!payment) {
-      const failedEvent: PaymentWebhookEvent = {
-        id: randomUUID(),
-        provider: event.provider,
-        externalEventId: event.eventId,
-        providerPaymentId: event.providerPaymentId,
-        paymentId: null,
-        eventType: event.eventType,
-        status: "failed",
-        payload: event.rawPayload,
-        processingError: "Payment not found for provider payment id.",
-        receivedAt: now(),
-        processedAt: now()
-      };
-      this.paymentWebhookEvents.set(failedEvent.id, failedEvent);
-      throw new AppError(404, "Payment not found for provider payment id.");
+      return this.failPaymentWebhookEvent(event, null, new AppError(404, "Payment not found for provider payment id."));
     }
 
     let nextStatus: Payment["status"];
@@ -1554,7 +1648,7 @@ export class InMemoryStore {
     switch (event.eventType) {
       case "payment.succeeded":
         if (payment.status === "succeeded") {
-          this.recordProcessedWebhookEvent(event, payment.id, "processed");
+          this.recordProcessedWebhookEvent(event, payment.id);
           return payment;
         }
         nextStatus = "succeeded";
@@ -1563,12 +1657,11 @@ export class InMemoryStore {
         break;
       case "payment.failed":
         if (payment.status === "failed") {
-          this.recordProcessedWebhookEvent(event, payment.id, "processed");
+          this.recordProcessedWebhookEvent(event, payment.id);
           return payment;
         }
         if (payment.status === "refunded") {
-          this.recordProcessedWebhookEvent(event, payment.id, "failed", "Refunded payment cannot be marked as failed.");
-          throw new AppError(409, "Refunded payment cannot be marked as failed.");
+          return this.failPaymentWebhookEvent(event, payment.id, new AppError(409, "Refunded payment cannot be marked as failed."));
         }
         nextStatus = "failed";
         participantPaymentStatus = "failed";
@@ -1576,12 +1669,11 @@ export class InMemoryStore {
         break;
       case "payment.refunded":
         if (payment.status === "refunded") {
-          this.recordProcessedWebhookEvent(event, payment.id, "processed");
+          this.recordProcessedWebhookEvent(event, payment.id);
           return payment;
         }
         if (payment.status !== "succeeded") {
-          this.recordProcessedWebhookEvent(event, payment.id, "failed", "Only succeeded payment can be refunded.");
-          throw new AppError(409, "Only succeeded payment can be refunded.");
+          return this.failPaymentWebhookEvent(event, payment.id, new AppError(409, "Only succeeded payment can be refunded."));
         }
         nextStatus = "refunded";
         participantPaymentStatus = "pending";
@@ -1606,7 +1698,7 @@ export class InMemoryStore {
       this.setParticipantPaymentStatus(updated.collectionId, updated.participantId, participantPaymentStatus);
     }
     this.syncCollectionPaymentStatus(updated.collectionId);
-    this.recordProcessedWebhookEvent(event, updated.id, "processed");
+    this.recordProcessedWebhookEvent(event, updated.id);
     this.addAudit(null, "payment", updated.id, updated.collectionId, action, {
       providerPaymentId: updated.providerPaymentId,
       eventId: event.eventId,
@@ -1765,6 +1857,7 @@ export class InMemoryStore {
     this.manualPaymentProofs.clear();
     this.paymentMethods.clear();
     this.payments.clear();
+    this.paymentWebhookEvents.clear();
     this.autoPaymentRules.clear();
     this.auditLogs.clear();
     this.notifications.clear();
@@ -1823,6 +1916,9 @@ export class InMemoryStore {
     }
     for (const payment of snapshot.payments ?? []) {
       this.payments.set(payment.id, payment);
+    }
+    for (const event of snapshot.paymentWebhookEvents ?? []) {
+      this.paymentWebhookEvents.set(event.id, event);
     }
     for (const rule of snapshot.autoPaymentRules ?? []) {
       this.autoPaymentRules.set(rule.id, rule);
@@ -1984,27 +2080,89 @@ export class InMemoryStore {
     return payment;
   }
 
-  private recordProcessedWebhookEvent(
-    event: NormalizedPaymentWebhookEvent,
-    paymentId: string | null,
-    status: PaymentWebhookEvent["status"],
-    processingError: string | null = null
-  ): PaymentWebhookEvent {
+  private recordProcessedWebhookEvent(event: NormalizedPaymentWebhookEvent, paymentId: string | null): PaymentWebhookEvent {
+    const existing = this.findPaymentWebhookEventByExternalId(event.eventId);
+    const timestamp = now();
     const webhookEvent: PaymentWebhookEvent = {
-      id: randomUUID(),
+      id: existing?.id ?? randomUUID(),
       provider: event.provider,
       externalEventId: event.eventId,
       providerPaymentId: event.providerPaymentId,
       paymentId,
       eventType: event.eventType,
-      status,
+      status: "processed",
       payload: event.rawPayload,
-      processingError,
-      receivedAt: now(),
-      processedAt: now()
+      processingError: null,
+      attemptCount: (existing?.attemptCount ?? 0) + 1,
+      lastAttemptedAt: timestamp,
+      nextRetryAt: null,
+      deadLetteredAt: null,
+      receivedAt: existing?.receivedAt ?? timestamp,
+      processedAt: timestamp
     };
     this.paymentWebhookEvents.set(webhookEvent.id, webhookEvent);
     return webhookEvent;
+  }
+
+  private failPaymentWebhookEvent(event: NormalizedPaymentWebhookEvent, paymentId: string | null, error: AppError): never {
+    const existing = this.findPaymentWebhookEventByExternalId(event.eventId);
+    const attemptCount = (existing?.attemptCount ?? 0) + 1;
+    const timestamp = now();
+    const retryable = isRetryableWebhookError(error);
+    const deadLettered = !retryable || attemptCount >= WEBHOOK_RETRY_MAX_ATTEMPTS;
+    const nextRetryAt = !deadLettered && retryable ? new Date(Date.now() + getWebhookRetryDelayMs(attemptCount)).toISOString() : null;
+
+    const webhookEvent: PaymentWebhookEvent = {
+      id: existing?.id ?? randomUUID(),
+      provider: event.provider,
+      externalEventId: event.eventId,
+      providerPaymentId: event.providerPaymentId,
+      paymentId,
+      eventType: event.eventType,
+      status: deadLettered ? "dead_lettered" : "failed",
+      payload: event.rawPayload,
+      processingError: error.message,
+      attemptCount,
+      lastAttemptedAt: timestamp,
+      nextRetryAt,
+      deadLetteredAt: deadLettered ? timestamp : null,
+      receivedAt: existing?.receivedAt ?? timestamp,
+      processedAt: timestamp
+    };
+    this.paymentWebhookEvents.set(webhookEvent.id, webhookEvent);
+    throw error;
+  }
+
+  private findPaymentWebhookEventByExternalId(externalEventId: string): PaymentWebhookEvent | null {
+    return [...this.paymentWebhookEvents.values()].find((event) => event.externalEventId === externalEventId) ?? null;
+  }
+
+  private toNormalizedWebhookEvent(event: PaymentWebhookEvent): NormalizedPaymentWebhookEvent {
+    return {
+      provider: event.provider,
+      eventId: event.externalEventId,
+      providerPaymentId: event.providerPaymentId,
+      eventType: event.eventType,
+      occurredAt: event.processedAt ?? event.receivedAt,
+      reason: typeof event.payload.reason === "string" ? event.payload.reason : null,
+      providerStatus: typeof event.payload.providerStatus === "string" ? event.payload.providerStatus : event.eventType.replace("payment.", ""),
+      metadata: isPlainRecord(event.payload.metadata) ? event.payload.metadata : {},
+      rawPayload: event.payload
+    };
+  }
+
+  private getRetryableWebhookEvents(options?: { ignoreSchedule?: boolean; maxEvents?: number }): PaymentWebhookEvent[] {
+    const nowIso = now();
+    const candidates = [...this.paymentWebhookEvents.values()]
+      .filter((event) => event.status === "failed")
+      .filter((event) => options?.ignoreSchedule || !event.nextRetryAt || event.nextRetryAt <= nowIso)
+      .sort((left, right) => (left.nextRetryAt ?? left.receivedAt).localeCompare(right.nextRetryAt ?? right.receivedAt));
+
+    if (!options?.maxEvents || options.maxEvents <= 0) {
+      return candidates;
+    }
+
+    return candidates.slice(0, options.maxEvents);
   }
 
   private buildAutoPaymentExecutionPlan(collectionId: string): AutoPaymentExecutionPlan {
@@ -2413,6 +2571,9 @@ function now(): string {
   return new Date().toISOString();
 }
 
+const WEBHOOK_RETRY_DELAYS_MS = [60_000, 5 * 60_000, 15 * 60_000, 60 * 60_000, 6 * 60 * 60_000] as const;
+const WEBHOOK_RETRY_MAX_ATTEMPTS = WEBHOOK_RETRY_DELAYS_MS.length;
+
 function stableJson(value: unknown): string {
   return JSON.stringify(sortJsonValue(value));
 }
@@ -2527,4 +2688,16 @@ function parseDevToken(token: string): string | null {
   } catch {
     return null;
   }
+}
+
+function getWebhookRetryDelayMs(attemptCount: number): number {
+  return WEBHOOK_RETRY_DELAYS_MS[Math.min(Math.max(attemptCount - 1, 0), WEBHOOK_RETRY_DELAYS_MS.length - 1)];
+}
+
+function isRetryableWebhookError(error: AppError): boolean {
+  return error.statusCode === 404 || error.statusCode >= 500;
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }

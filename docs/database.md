@@ -88,6 +88,10 @@ The same backend now has a mock payment slice for non-production payment work:
 - internal due-autopay sweep can traverse all eligible collections and create pending intents without user interaction;
 - generic signed provider webhooks can finalize those intents into `succeeded`, `failed`, or `refunded`;
 - inbound provider webhook events are persisted and deduplicated by external `eventId`;
+- failed webhook events now keep retry metadata (`attemptCount`, `lastAttemptedAt`, `nextRetryAt`, `deadLetteredAt`);
+- retry-safe replay can recover previously failed webhook events after the matching payment appears later;
+- terminal webhook misses now move into a dead-letter state instead of retrying forever;
+- internal operators can now inspect persisted webhook events by status/provider and manually replay one specific event;
 - route-level parity and live PostgreSQL integration now cover the mock payment/autopay flow.
 
 There is now a dedicated background worker path for auto payments:
@@ -113,8 +117,23 @@ Relevant worker env vars:
 - `AUTOPAY_SWEEP_ENABLED`: turns on the scheduler inside `src/api/server.ts`;
 - `AUTOPAY_SWEEP_ON_BOOT`: runs one sweep immediately after startup before polling;
 - `AUTOPAY_SWEEP_INTERVAL_MS`: poll interval for the persistent sweep loop;
+- `PAYMENT_WEBHOOK_RETRY_ENABLED`: turns on the failed-webhook retry scheduler inside `src/api/server.ts`;
+- `PAYMENT_WEBHOOK_RETRY_ON_BOOT`: runs one webhook retry sweep immediately after startup;
+- `PAYMENT_WEBHOOK_RETRY_INTERVAL_MS`: poll interval for the persistent webhook retry loop;
 - `INTERNAL_API_TOKEN`: still protects the manual `/internal/autopay/run-due` trigger;
 - `MOCK_PROVIDER_WEBHOOK_SECRET`: signs and verifies mock PSP webhooks.
+
+There is also a one-shot replay command for operational recovery:
+
+```bash
+$env:STORE_PROVIDER="prisma"
+npm run payments:webhooks:retry
+```
+
+For targeted recovery, the internal HTTP surface now also exposes:
+
+- `GET /internal/payments/webhooks/events`
+- `POST /internal/payments/webhooks/{eventId}/replay`
 
 There is also a live PostgreSQL lane:
 
@@ -133,5 +152,6 @@ This same split now runs in GitHub Actions:
 ## Persistence Roadmap
 
 1. Keep calculation logic pure and independent from Prisma.
-2. Replace simulated provider transitions with a real PSP adapter, stored provider references, and webhook verification.
-3. Move from polling-only orchestration to queue-backed execution if batch volume grows past one process.
+2. Replace the mock PSP transport with a real adapter, stored provider references, and provider-specific webhook schemas.
+3. Add alerting / dead-letter inspection tooling around failed webhook events.
+4. Move from polling-only orchestration to queue-backed execution if batch volume grows past one process.

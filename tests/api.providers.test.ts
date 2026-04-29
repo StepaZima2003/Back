@@ -1086,4 +1086,113 @@ describe.each<ProviderName>(["memory", "prisma"])("api provider parity: %s", (pr
 
     await app.close();
   });
+
+  it("retries failed provider webhooks and dead-letters terminal misses", async () => {
+    process.env.INTERNAL_API_TOKEN = "test-internal-token";
+    process.env.MOCK_PROVIDER_WEBHOOK_SECRET = "test-webhook-secret";
+
+    const app = await buildApp({ store: await createStore(provider) });
+
+    const webhookPayload = {
+      eventId: "retry-missing-event",
+      providerPaymentId: "missing-provider-payment",
+      eventType: "payment.succeeded" as const,
+      occurredAt: new Date().toISOString()
+    };
+
+    const firstAttempt = await app.inject({
+      method: "POST",
+      url: "/payments/webhooks/bank",
+      headers: {
+        "x-mock-provider-signature": createMockProviderWebhookSignature(webhookPayload, "test-webhook-secret")
+      },
+      payload: webhookPayload
+    });
+    expect(firstAttempt.statusCode).toBe(404);
+
+    const retrySummaries = [];
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      retrySummaries.push(
+        await app.inject({
+          method: "POST",
+          url: "/internal/payments/webhooks/retry-failed",
+          headers: { "x-internal-token": "test-internal-token" },
+          payload: { ignoreSchedule: true }
+        })
+      );
+    }
+
+    expect(retrySummaries[0].statusCode).toBe(200);
+    expect(retrySummaries.at(-1)?.json().deadLettered).toBe(1);
+
+    const noMoreDueEvents = await app.inject({
+      method: "POST",
+      url: "/internal/payments/webhooks/retry-failed",
+      headers: { "x-internal-token": "test-internal-token" },
+      payload: { ignoreSchedule: true }
+    });
+    expect(noMoreDueEvents.statusCode).toBe(200);
+    expect(noMoreDueEvents.json().dueEvents).toBe(0);
+
+    await app.close();
+  });
+
+  it("lists webhook events internally and replays a specific failed event until dead-letter", async () => {
+    process.env.INTERNAL_API_TOKEN = "test-internal-token";
+    process.env.MOCK_PROVIDER_WEBHOOK_SECRET = "test-webhook-secret";
+
+    const app = await buildApp({ store: await createStore(provider) });
+
+    const webhookPayload = {
+      eventId: "replay-missing-event",
+      providerPaymentId: "replay-missing-provider-payment",
+      eventType: "payment.succeeded" as const,
+      occurredAt: new Date().toISOString()
+    };
+
+    const firstAttempt = await app.inject({
+      method: "POST",
+      url: "/payments/webhooks/bank",
+      headers: {
+        "x-mock-provider-signature": createMockProviderWebhookSignature(webhookPayload, "test-webhook-secret")
+      },
+      payload: webhookPayload
+    });
+    expect(firstAttempt.statusCode).toBe(404);
+
+    const listResponse = await app.inject({
+      method: "GET",
+      url: "/internal/payments/webhooks/events?status=failed&provider=bank",
+      headers: { "x-internal-token": "test-internal-token" }
+    });
+    expect(listResponse.statusCode).toBe(200);
+    const events = listResponse.json();
+    expect(events).toHaveLength(1);
+    expect(events[0].externalEventId).toBe(webhookPayload.eventId);
+    expect(events[0].attemptCount).toBe(1);
+
+    const replayA = await app.inject({
+      method: "POST",
+      url: `/internal/payments/webhooks/${webhookPayload.eventId}/replay`,
+      headers: { "x-internal-token": "test-internal-token" }
+    });
+    expect(replayA.statusCode).toBe(200);
+    expect(replayA.json().status).toBe("failed");
+    expect(replayA.json().attemptCount).toBe(2);
+
+    let replayResult = replayA;
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      replayResult = await app.inject({
+        method: "POST",
+        url: `/internal/payments/webhooks/${webhookPayload.eventId}/replay`,
+        headers: { "x-internal-token": "test-internal-token" }
+      });
+    }
+
+    expect(replayResult.statusCode).toBe(200);
+    expect(replayResult.json().status).toBe("dead_lettered");
+    expect(replayResult.json().attemptCount).toBe(5);
+
+    await app.close();
+  });
 });

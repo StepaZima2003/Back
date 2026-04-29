@@ -511,6 +511,30 @@ paths:
       responses:
         "200":
           description: Sweep execution summary
+  /internal/payments/webhooks/retry-failed:
+    post:
+      summary: Retry due failed provider webhooks and dead-letter terminal misses
+      responses:
+        "200":
+          description: Webhook retry execution summary
+  /internal/payments/webhooks/events:
+    get:
+      summary: List persisted provider webhook events for internal inspection
+      responses:
+        "200":
+          description: Provider webhook events
+  /internal/payments/webhooks/{eventId}/replay:
+    post:
+      summary: Replay one persisted provider webhook event regardless of retry schedule
+      parameters:
+        - name: eventId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Updated provider webhook event
 components:
   securitySchemes:
     bearerAuth:

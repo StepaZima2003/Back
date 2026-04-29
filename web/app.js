@@ -32,6 +32,9 @@ const navItems = [...document.querySelectorAll(".nav-item")];
 const statusDot = document.querySelector(".status-dot");
 const apiStatusText = document.getElementById("api-status-text");
 const disputeCommentInput = document.getElementById("dispute-comment");
+const collectionNameInput = document.getElementById("collection-name");
+const friendPhoneInput = document.getElementById("friend-phone");
+const groupNameInput = document.getElementById("group-name");
 
 document.addEventListener("click", async (event) => {
   const target = event.target instanceof Element
@@ -102,19 +105,32 @@ function setActiveScreen(screenName, navName) {
 }
 
 async function runAction(action) {
-  switch (action) {
-    case "open-pay":
-      setActiveScreen("pay", "home");
-      renderPayScreen();
-      break;
-    case "pay-now":
-      await submitPayment();
-      break;
-    case "submit-dispute":
-      await submitDispute();
-      break;
-    default:
-      break;
+  try {
+    switch (action) {
+      case "open-pay":
+        setActiveScreen("pay", "home");
+        renderPayScreen();
+        break;
+      case "pay-now":
+        await submitPayment();
+        break;
+      case "submit-dispute":
+        await submitDispute();
+        break;
+      case "create-collection":
+        await createCollectionFromForm();
+        break;
+      case "invite-friend":
+        await inviteFriendFromForm();
+        break;
+      case "create-group":
+        await createGroupFromForm();
+        break;
+      default:
+        break;
+    }
+  } catch (error) {
+    setStatus(error instanceof Error ? error.message : "Action failed", false);
   }
 }
 
@@ -844,12 +860,102 @@ async function submitDispute() {
   setActiveScreen("dispute-sent", "home");
 }
 
+async function createCollectionFromForm() {
+  const title = collectionNameInput?.value?.trim();
+  if (!title) {
+    setStatus("Укажи название сбора", false);
+    return;
+  }
+
+  const createdCollection = await fetchJson("/collections", {
+    method: "POST",
+    token: state.session.accessToken,
+    body: {
+      title,
+      type: getSelectedCollectionType(),
+      paymentMode: "manual"
+    }
+  });
+
+  if (collectionNameInput) {
+    collectionNameInput.value = "";
+  }
+
+  await refreshAppData();
+  state.selectedCollectionId = createdCollection.id;
+  state.selectedOrganizerCollectionId = createdCollection.id;
+  renderAll();
+  setActiveScreen("organizer", "collections");
+  renderScreenDependents();
+  setStatus(`Создан сбор «${createdCollection.title}»`, true);
+}
+
+async function inviteFriendFromForm() {
+  const phone = friendPhoneInput?.value?.trim();
+  if (!phone) {
+    setStatus("Укажи номер друга", false);
+    return;
+  }
+
+  const friendship = await fetchJson("/friends/invite", {
+    method: "POST",
+    token: state.session.accessToken,
+    body: { phone }
+  });
+
+  const matchedActor = Object.entries(DEMO).find(([, actor]) => actor.phone === phone);
+  if (matchedActor) {
+    const [actorKey] = matchedActor;
+    await fetchJson(`/friends/${friendship.id}/accept`, {
+      method: "POST",
+      token: state.actors[actorKey].accessToken
+    });
+  }
+
+  if (friendPhoneInput) {
+    friendPhoneInput.value = "";
+  }
+
+  await refreshAppData();
+  renderAll();
+  setStatus(matchedActor ? "Друг добавлен и подтвержден" : "Приглашение другу отправлено", true);
+}
+
+async function createGroupFromForm() {
+  const title = groupNameInput?.value?.trim();
+  if (!title) {
+    setStatus("Укажи название группы", false);
+    return;
+  }
+
+  const group = await fetchJson("/groups", {
+    method: "POST",
+    token: state.session.accessToken,
+    body: {
+      title,
+      groupType: "other"
+    }
+  });
+
+  if (groupNameInput) {
+    groupNameInput.value = "";
+  }
+
+  await refreshAppData();
+  renderAll();
+  setStatus(`Создана группа «${group.title}»`, true);
+}
+
 function getSelectedCollectionBundle() {
   return state.collectionBundles.find((bundle) => bundle.collection.id === state.selectedCollectionId) ?? state.collectionBundles[0] ?? null;
 }
 
 function getSelectedOrganizerBundle() {
   return state.organizerBundles.find((bundle) => bundle.collection.id === state.selectedOrganizerCollectionId) ?? state.organizerBundles[0] ?? null;
+}
+
+function getSelectedCollectionType() {
+  return document.querySelector('[data-screen="new"] [data-collection-type].is-selected')?.getAttribute("data-collection-type") ?? "picnic";
 }
 
 function renderCollectionCard(bundle, options) {

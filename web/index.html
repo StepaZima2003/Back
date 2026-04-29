@@ -247,10 +247,10 @@
               <div class="form-block">
                 <label class="field-label">Тип</label>
                 <div class="chip-wrap">
-                  <button class="chip is-selected" type="button">Пикник</button>
-                  <button class="chip" type="button">Подарок</button>
-                  <button class="chip" type="button">Поездка</button>
-                  <button class="chip" type="button">Ужин</button>
+                  <button class="chip is-selected" type="button" data-collection-type="picnic">Пикник</button>
+                  <button class="chip" type="button" data-collection-type="gift">Подарок</button>
+                  <button class="chip" type="button" data-collection-type="trip">Поездка</button>
+                  <button class="chip" type="button" data-collection-type="restaurant">Ужин</button>
                 </div>
               </div>
 
@@ -276,7 +276,7 @@
                 </div>
               </div>
 
-              <button class="primary-button" type="button" data-go="home" data-nav="home">Создать сбор</button>
+              <button class="primary-button" type="button" data-action="create-collection">Создать сбор</button>
             </div>
           </section>
 
@@ -336,10 +336,10 @@
                 </div>
               </header>
 
-              <input class="text-input" placeholder="Поиск по имени или телефону" />
+              <input class="text-input" id="friend-phone" placeholder="+7 999 000-00-00" />
               <div id="friends-list"></div>
 
-              <button class="secondary-button" type="button">Добавить по номеру</button>
+              <button class="secondary-button" type="button" data-action="invite-friend">Добавить по номеру</button>
               <button class="secondary-button" type="button">Пригласить ссылкой</button>
             </div>
           </section>
@@ -353,9 +353,10 @@
                 </div>
               </header>
 
+              <input class="text-input" id="group-name" placeholder="Название группы" />
               <div id="groups-list"></div>
 
-              <button class="secondary-button" type="button">Создать группу</button>
+              <button class="secondary-button" type="button" data-action="create-group">Создать группу</button>
             </div>
           </section>
 

@@ -35,6 +35,10 @@ const disputeCommentInput = document.getElementById("dispute-comment");
 const collectionNameInput = document.getElementById("collection-name");
 const friendPhoneInput = document.getElementById("friend-phone");
 const groupNameInput = document.getElementById("group-name");
+const organizerFriendSelect = document.getElementById("organizer-friend-select");
+const organizerGuestNameInput = document.getElementById("organizer-guest-name");
+const organizerExpenseTitleInput = document.getElementById("organizer-expense-title");
+const organizerExpenseAmountInput = document.getElementById("organizer-expense-amount");
 
 document.addEventListener("click", async (event) => {
   const target = event.target instanceof Element
@@ -125,6 +129,21 @@ async function runAction(action) {
         break;
       case "create-group":
         await createGroupFromForm();
+        break;
+      case "add-collection-friend":
+        await addCollectionFriend();
+        break;
+      case "add-collection-guest":
+        await addCollectionGuest();
+        break;
+      case "add-expense":
+        await addCollectionExpense();
+        break;
+      case "calculate-collection":
+        await calculateSelectedCollection();
+        break;
+      case "send-review":
+        await sendCollectionToReview();
         break;
       default:
         break;
@@ -532,8 +551,9 @@ async function buildFriendDirectory() {
 
 async function loadCollectionBundle(collection) {
   const token = state.session.accessToken;
-  const [participants, calculation, payments, disputes] = await Promise.all([
+  const [participants, expenses, calculation, payments, disputes] = await Promise.all([
     fetchJson(`/collections/${collection.id}/participants`, { token }),
+    fetchJson(`/collections/${collection.id}/expenses`, { token, allow404: true }).then((value) => value ?? []),
     fetchJson(`/collections/${collection.id}/calculations/latest`, { token, allow404: true }),
     fetchJson(`/collections/${collection.id}/payments`, { token, allow404: true }).then((value) => value ?? []),
     fetchJson(`/collections/${collection.id}/disputes`, { token, allow404: true }).then((value) => value ?? [])
@@ -563,6 +583,7 @@ async function loadCollectionBundle(collection) {
   return {
     collection,
     participants,
+    expenses,
     calculation,
     payments,
     disputes,
@@ -707,10 +728,20 @@ function renderOrganizerScreen() {
     return;
   }
 
+  text("organizer-title", bundle.collection.title);
   text("organizer-subtitle", `Ты организатор · ${bundle.participants.length} участников`);
   text("organizer-dispute-pill", `${bundle.disputes.length} споров`);
   text("organizer-collected-main", formatMoney(bundle.collectedMinor));
   text("organizer-remaining-main", formatMoney(Math.max(bundle.collection.totalAmountMinor - bundle.collectedMinor, 0)));
+  text("organizer-status-note", labelizeCollectionStatus(bundle.collection.status));
+  text(
+    "organizer-calculate-button",
+    bundle.expenses.length ? `Пересчитать (${bundle.expenses.length} расходов)` : "Пересчитать сбор"
+  );
+  text(
+    "organizer-review-button",
+    bundle.calculation ? "Отправить на review" : "Сначала пересчитать"
+  );
 
   const attention = document.getElementById("organizer-attention-list");
   const items = [];
@@ -732,6 +763,69 @@ function renderOrganizerScreen() {
     `);
   }
   attention.innerHTML = items.join("");
+
+  if (organizerFriendSelect) {
+    const availableFriends = state.friends.filter(
+      (friend) => !bundle.participants.some((participant) => participant.linkedUserId === friend.userId)
+    );
+    organizerFriendSelect.innerHTML = availableFriends.length
+      ? availableFriends
+          .map((friend) => `<option value="${friend.userId}">${escapeHtml(friend.displayName)} · ${escapeHtml(friend.phone || "друг")}</option>`)
+          .join("")
+      : '<option value="">Нет друзей вне этого сбора</option>';
+    organizerFriendSelect.disabled = !availableFriends.length;
+  }
+
+  const organizerParticipants = document.getElementById("organizer-participants-list");
+  organizerParticipants.innerHTML = bundle.participants.length
+    ? bundle.participants
+        .map((participant) => {
+          const role = participant.linkedUserId === bundle.collection.organizerId
+            ? "организатор"
+            : participant.participantType === "guest"
+              ? "гость"
+              : participant.participantType === "child"
+                ? "ребенок"
+                : "участник";
+          return `
+            <div class="line-item">
+              <span>${escapeHtml(participant.displayNameSnapshot)} · ${escapeHtml(role)}</span>
+              <strong>${escapeHtml(paymentStatusLabel(participant.paymentStatus))}</strong>
+            </div>
+          `;
+        })
+        .join("")
+    : renderEmptyCard("Участников пока нет.");
+
+  const organizerExpenses = document.getElementById("organizer-expenses-list");
+  organizerExpenses.innerHTML = bundle.expenses.length
+    ? bundle.expenses
+        .map(
+          (expense) => `
+            <div class="line-item">
+              <span>${escapeHtml(expense.title)}</span>
+              <strong>${formatMoney(expense.amountMinor)}</strong>
+            </div>
+          `
+        )
+        .join("")
+    : renderEmptyCard("Расходов пока нет.");
+
+  const organizerTransferPlan = document.getElementById("organizer-transfer-plan");
+  organizerTransferPlan.innerHTML = bundle.calculation?.result.transferPlan.length
+    ? bundle.calculation.result.transferPlan
+        .map((transfer) => {
+          const fromName = displayNameByParticipantId(bundle.participants, transfer.fromResponsiblePayerId);
+          const toName = displayNameByParticipantId(bundle.participants, transfer.toResponsiblePayerId);
+          return `
+            <div class="line-item">
+              <span>${escapeHtml(fromName)} → ${escapeHtml(toName)}</span>
+              <strong>${formatMoney(transfer.amountMinor)}</strong>
+            </div>
+          `;
+        })
+        .join("")
+    : renderEmptyCard("После расчета здесь появятся переводы.");
 }
 
 function renderFriendsScreen() {
@@ -877,6 +971,15 @@ async function createCollectionFromForm() {
     }
   });
 
+  await fetchJson(`/collections/${createdCollection.id}/participants`, {
+    method: "POST",
+    token: state.session.accessToken,
+    body: {
+      linkedUserId: state.me.id,
+      displayName: state.me.displayName
+    }
+  });
+
   if (collectionNameInput) {
     collectionNameInput.value = "";
   }
@@ -944,6 +1047,125 @@ async function createGroupFromForm() {
   await refreshAppData();
   renderAll();
   setStatus(`Создана группа «${group.title}»`, true);
+}
+
+async function addCollectionFriend() {
+  const bundle = getSelectedOrganizerBundle();
+  const linkedUserId = organizerFriendSelect?.value;
+  if (!bundle || !linkedUserId) {
+    setStatus("Выбери друга для добавления", false);
+    return;
+  }
+
+  const friend = state.friends.find((item) => item.userId === linkedUserId);
+  await fetchJson(`/collections/${bundle.collection.id}/participants`, {
+    method: "POST",
+    token: state.session.accessToken,
+    body: {
+      linkedUserId,
+      displayName: friend?.displayName ?? "Участник"
+    }
+  });
+
+  await refreshAppData();
+  renderAll();
+  renderScreenDependents();
+  setStatus(friend ? `${friend.displayName} добавлен в сбор` : "Участник добавлен", true);
+}
+
+async function addCollectionGuest() {
+  const bundle = getSelectedOrganizerBundle();
+  const displayName = organizerGuestNameInput?.value?.trim();
+  if (!bundle || !displayName) {
+    setStatus("Укажи имя гостя", false);
+    return;
+  }
+
+  await fetchJson(`/collections/${bundle.collection.id}/participants/add-guest`, {
+    method: "POST",
+    token: state.session.accessToken,
+    body: { displayName }
+  });
+
+  if (organizerGuestNameInput) {
+    organizerGuestNameInput.value = "";
+  }
+
+  await refreshAppData();
+  renderAll();
+  renderScreenDependents();
+  setStatus(`Гость «${displayName}» добавлен`, true);
+}
+
+async function addCollectionExpense() {
+  const bundle = getSelectedOrganizerBundle();
+  const title = organizerExpenseTitleInput?.value?.trim();
+  const amountMinor = parseMoneyToMinor(organizerExpenseAmountInput?.value ?? "");
+  if (!bundle || !title || amountMinor <= 0) {
+    setStatus("Заполни название и сумму расхода", false);
+    return;
+  }
+
+  await fetchJson(`/collections/${bundle.collection.id}/expenses`, {
+    method: "POST",
+    token: state.session.accessToken,
+    body: {
+      title,
+      amountMinor,
+      expenseType: "expense"
+    }
+  });
+
+  if (organizerExpenseTitleInput) {
+    organizerExpenseTitleInput.value = "";
+  }
+  if (organizerExpenseAmountInput) {
+    organizerExpenseAmountInput.value = "";
+  }
+
+  await refreshAppData();
+  renderAll();
+  renderScreenDependents();
+  setStatus(`Расход «${title}» добавлен`, true);
+}
+
+async function calculateSelectedCollection() {
+  const bundle = getSelectedOrganizerBundle();
+  if (!bundle) {
+    return;
+  }
+
+  await fetchJson(`/collections/${bundle.collection.id}/calculate`, {
+    method: "POST",
+    token: state.session.accessToken
+  });
+
+  await refreshAppData();
+  renderAll();
+  renderScreenDependents();
+  setStatus("Сбор пересчитан", true);
+}
+
+async function sendCollectionToReview() {
+  const bundle = getSelectedOrganizerBundle();
+  if (!bundle) {
+    return;
+  }
+
+  if (!bundle.calculation) {
+    setStatus("Сначала пересчитай сбор", false);
+    return;
+  }
+
+  await fetchJson(`/collections/${bundle.collection.id}/send-to-review`, {
+    method: "POST",
+    token: state.session.accessToken
+  });
+
+  await refreshAppData();
+  renderAll();
+  renderScreenDependents();
+  setStatus("Сбор отправлен на review", true);
 }
 
 function getSelectedCollectionBundle() {
@@ -1095,6 +1317,25 @@ function labelizeGroupType(type) {
   return labels[type] ?? type;
 }
 
+function labelizeCollectionStatus(status) {
+  const labels = {
+    draft: "draft",
+    participants_selected: "участники",
+    expenses_added: "расходы",
+    rules_configured: "правила",
+    review: "review",
+    dispute_pending: "спор",
+    finalized: "final",
+    payment_pending: "к оплате",
+    partially_paid: "частично оплачено",
+    paid: "оплачено",
+    closed: "закрыт",
+    cancelled: "отменен",
+    blocked: "blocked"
+  };
+  return labels[status] ?? status;
+}
+
 function paymentStatusLabel(status) {
   const labels = {
     pending: "ждет оплаты",
@@ -1184,6 +1425,18 @@ function setStatus(message, ready) {
   if (apiStatusText) {
     apiStatusText.textContent = message;
   }
+}
+
+function parseMoneyToMinor(value) {
+  const normalized = String(value).trim().replace(/\s+/g, "").replace(",", ".");
+  if (!normalized) {
+    return 0;
+  }
+  const amount = Number(normalized);
+  if (!Number.isFinite(amount) || amount <= 0) {
+    return 0;
+  }
+  return Math.round(amount * 100);
 }
 
 async function fetchJson(path, options = {}) {

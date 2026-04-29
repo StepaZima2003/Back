@@ -191,7 +191,7 @@
               </div>
               <header class="detail-header">
                 <div>
-                  <h1>Дача на майские</h1>
+                  <h1 id="organizer-title">Сбор</h1>
                   <p id="organizer-subtitle">Загрузка</p>
                 </div>
                 <span class="pill pill-danger" id="organizer-dispute-pill">0 споров</span>
@@ -213,9 +213,50 @@
                 <div id="organizer-attention-list"></div>
               </section>
 
+              <section class="section-block">
+                <div class="section-head">
+                  <h2>Участники</h2>
+                  <span class="section-note" id="organizer-status-note">draft</span>
+                </div>
+                <div class="form-block">
+                  <label class="field-label" for="organizer-friend-select">Добавить друга</label>
+                  <select id="organizer-friend-select" class="text-input"></select>
+                  <button class="secondary-button" type="button" data-action="add-collection-friend">Добавить в сбор</button>
+                </div>
+                <div class="form-block">
+                  <label class="field-label" for="organizer-guest-name">Гость по имени</label>
+                  <input id="organizer-guest-name" class="text-input" placeholder="Например, Аня" />
+                  <button class="secondary-button" type="button" data-action="add-collection-guest">Добавить гостя</button>
+                </div>
+                <div id="organizer-participants-list"></div>
+              </section>
+
+              <section class="section-block">
+                <div class="section-head">
+                  <h2>Расходы</h2>
+                  <span class="section-note">Живой CRUD</span>
+                </div>
+                <div class="form-block">
+                  <label class="field-label" for="organizer-expense-title">Название расхода</label>
+                  <input id="organizer-expense-title" class="text-input" placeholder="Например, Мясо и овощи" />
+                </div>
+                <div class="form-block">
+                  <label class="field-label" for="organizer-expense-amount">Сумма, ₽</label>
+                  <input id="organizer-expense-amount" class="text-input" inputmode="decimal" placeholder="2500" />
+                </div>
+                <button class="secondary-button" type="button" data-action="add-expense">Добавить расход</button>
+                <div id="organizer-expenses-list"></div>
+              </section>
+
+              <section class="detail-panel">
+                <div class="panel-title">План переводов</div>
+                <div id="organizer-transfer-plan"></div>
+              </section>
+
               <section class="detail-panel">
                 <div class="panel-title">Быстрые действия</div>
-                <button class="primary-button" type="button">Пересчитать сбор</button>
+                <button class="primary-button" id="organizer-calculate-button" type="button" data-action="calculate-collection">Пересчитать сбор</button>
+                <button class="secondary-button" id="organizer-review-button" type="button" data-action="send-review">Отправить на review</button>
                 <button class="secondary-button" type="button">Отправить напоминание</button>
               </section>
             </div>

@@ -50,6 +50,19 @@ export async function buildApp(options: BuildAppOptions = {}) {
     service: "social-split-api"
   }));
 
+  app.get("/", async (request) => {
+    const host = request.headers.host ?? "localhost:3000";
+    const protocol = host.includes("localhost") || host.startsWith("127.0.0.1") ? "http" : "https";
+    const baseUrl = `${protocol}://${host}`;
+
+    return {
+      service: "social-split-api",
+      status: "ok",
+      docs: `${baseUrl}/openapi.yaml`,
+      health: `${baseUrl}/health`
+    };
+  });
+
   app.get("/openapi.yaml", async (_request, reply) => {
     const openApi = await readFile(join(process.cwd(), "docs", "openapi.yaml"), "utf8");
     reply.type("application/yaml").send(openApi);

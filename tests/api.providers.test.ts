@@ -22,6 +22,28 @@ describe.each<ProviderName>(["memory", "prisma"])("api provider parity: %s", (pr
     delete process.env.MOCK_PROVIDER_WEBHOOK_SECRET;
   });
 
+  it("serves API entrypoint on root path", async () => {
+    const app = await buildApp({ store: await createStore(provider) });
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/",
+      headers: {
+        host: "localhost:3000"
+      }
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({
+      service: "social-split-api",
+      status: "ok",
+      docs: "http://localhost:3000/openapi.yaml",
+      health: "http://localhost:3000/health"
+    });
+
+    await app.close();
+  });
+
   it("registers user, creates collection, adds guest, expense, and calculation", async () => {
     const app = await buildApp({ store: await createStore(provider) });
 

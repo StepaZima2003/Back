@@ -22,19 +22,27 @@ describe.each<ProviderName>(["memory", "prisma"])("api provider parity: %s", (pr
     delete process.env.MOCK_PROVIDER_WEBHOOK_SECRET;
   });
 
-  it("serves API entrypoint on root path", async () => {
+  it("serves frontend app on root path and keeps API entrypoint on /api", async () => {
     const app = await buildApp({ store: await createStore(provider) });
 
-    const response = await app.inject({
+    const rootResponse = await app.inject({
       method: "GET",
       url: "/",
-      headers: {
-        host: "localhost:3000"
-      }
+      headers: { host: "localhost:3000" }
+    });
+    expect(rootResponse.statusCode).toBe(200);
+    expect(rootResponse.headers["content-type"]).toContain("text/html");
+    expect(rootResponse.body).toContain("<title>SplitFriends</title>");
+    expect(rootResponse.body).toContain("Создать сбор");
+
+    const apiResponse = await app.inject({
+      method: "GET",
+      url: "/api",
+      headers: { host: "localhost:3000" }
     });
 
-    expect(response.statusCode).toBe(200);
-    expect(response.json()).toEqual({
+    expect(apiResponse.statusCode).toBe(200);
+    expect(apiResponse.json()).toEqual({
       service: "social-split-api",
       status: "ok",
       docs: "http://localhost:3000/openapi.yaml",

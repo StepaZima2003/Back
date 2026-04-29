@@ -50,7 +50,7 @@ export async function buildApp(options: BuildAppOptions = {}) {
     service: "social-split-api"
   }));
 
-  app.get("/", async (request) => {
+  app.get("/api", async (request) => {
     const host = request.headers.host ?? "localhost:3000";
     const protocol = host.includes("localhost") || host.startsWith("127.0.0.1") ? "http" : "https";
     const baseUrl = `${protocol}://${host}`;
@@ -61,6 +61,21 @@ export async function buildApp(options: BuildAppOptions = {}) {
       docs: `${baseUrl}/openapi.yaml`,
       health: `${baseUrl}/health`
     };
+  });
+
+  app.get("/", async (_request, reply) => {
+    const html = await readFile(join(process.cwd(), "web", "index.html"), "utf8");
+    reply.type("text/html; charset=utf-8").send(html);
+  });
+
+  app.get("/app.css", async (_request, reply) => {
+    const css = await readFile(join(process.cwd(), "web", "app.css"), "utf8");
+    reply.type("text/css; charset=utf-8").send(css);
+  });
+
+  app.get("/app.js", async (_request, reply) => {
+    const js = await readFile(join(process.cwd(), "web", "app.js"), "utf8");
+    reply.type("application/javascript; charset=utf-8").send(js);
   });
 
   app.get("/openapi.yaml", async (_request, reply) => {

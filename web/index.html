@@ -85,6 +85,7 @@
               </div>
 
               <button class="primary-button" id="collection-pay-button" type="button" data-go="pay" data-nav="home" data-action="open-pay">Оплатить</button>
+              <button class="secondary-button" id="collection-review-button" type="button" data-action="confirm-review" hidden>Подтвердить review</button>
               <button class="secondary-button" type="button" data-go="dispute" data-nav="home">Попросить изменить</button>
 
               <section class="section-block">
@@ -93,6 +94,11 @@
                   <span class="section-note">Ответственный плательщик виден сразу</span>
                 </div>
                 <div id="collection-participants-list"></div>
+              </section>
+
+              <section class="detail-panel">
+                <div class="panel-title">Статус споров</div>
+                <div id="collection-disputes-list"></div>
               </section>
             </div>
           </section>
@@ -151,18 +157,18 @@
               <header class="detail-header">
                 <div>
                   <h1>Изменить расчет</h1>
-                  <p>Шашлыки в субботу</p>
+                  <p id="dispute-subtitle">Сбор</p>
                 </div>
               </header>
 
               <div class="form-block">
                 <label class="field-label">Что нужно изменить?</label>
                 <div class="chip-wrap">
-                  <button class="chip is-selected" type="button">Я не ел часть заказа</button>
-                  <button class="chip" type="button">Был не все время</button>
-                  <button class="chip" type="button">Аня не пила</button>
-                  <button class="chip" type="button">Я уже платил</button>
-                  <button class="chip" type="button">Другое</button>
+                  <button class="chip is-selected" type="button" data-dispute-type="not_eat">Я не ел часть заказа</button>
+                  <button class="chip" type="button" data-dispute-type="partial_time">Был не все время</button>
+                  <button class="chip" type="button" data-dispute-type="guest_absent">Гость не участвовал</button>
+                  <button class="chip" type="button" data-dispute-type="already_paid">Я уже платил</button>
+                  <button class="chip" type="button" data-dispute-type="other">Другое</button>
                 </div>
               </div>
 
@@ -211,6 +217,11 @@
               <section class="detail-panel">
                 <div class="panel-title">Что требует внимания</div>
                 <div id="organizer-attention-list"></div>
+              </section>
+
+              <section class="detail-panel">
+                <div class="panel-title">Споры</div>
+                <div id="organizer-disputes-list"></div>
               </section>
 
               <section class="section-block">

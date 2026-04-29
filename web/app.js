@@ -77,7 +77,7 @@ document.addEventListener("click", async (event) => {
 
   const action = target.getAttribute("data-action");
   if (action) {
-    await runAction(action);
+    await runAction(action, target);
     return;
   }
 
@@ -108,7 +108,7 @@ function setActiveScreen(screenName, navName) {
   navItems.forEach((item) => item.classList.toggle("is-active", item.dataset.nav === navName));
 }
 
-async function runAction(action) {
+async function runAction(action, source) {
   try {
     switch (action) {
       case "open-pay":
@@ -144,6 +144,18 @@ async function runAction(action) {
         break;
       case "send-review":
         await sendCollectionToReview();
+        break;
+      case "confirm-review":
+        await confirmCurrentParticipantReview();
+        break;
+      case "accept-dispute":
+        await updateDisputeFromAction(source, "accept");
+        break;
+      case "reject-dispute":
+        await updateDisputeFromAction(source, "reject");
+        break;
+      case "resolve-dispute":
+        await updateDisputeFromAction(source, "resolve");
         break;
       default:
         break;
@@ -665,6 +677,7 @@ function renderCollectionScreen() {
   text("collection-progress-copy", `${formatMoney(bundle.collectedMinor)} / ${formatMoney(bundle.collection.totalAmountMinor)}`);
   text("collection-progress-percent", `${bundle.progressPercent}%`);
   text("collection-pay-button", bundle.userDueMinor > 0 ? `Оплатить ${formatMoney(bundle.userDueMinor)}` : "Уже оплачено");
+  text("dispute-subtitle", bundle.collection.title);
   setProgress("collection-progress-fill", bundle.progressPercent);
   setCollectionBalancePill("collection-balance-pill", bundle.userDueMinor);
 
@@ -683,6 +696,33 @@ function renderCollectionScreen() {
       return renderParticipantRow(participant, subLabel);
     })
     .join("");
+
+  const reviewButton = document.getElementById("collection-review-button");
+  if (reviewButton) {
+    const canConfirmReview =
+      bundle.collection.status === "review" &&
+      bundle.currentParticipant &&
+      bundle.currentParticipant.status !== "confirmed";
+    reviewButton.hidden = !canConfirmReview;
+    reviewButton.textContent = canConfirmReview
+      ? `Подтвердить ${formatMoney(bundle.userDueMinor || 0)}`
+      : "Подтверждено";
+  }
+
+  const disputesList = document.getElementById("collection-disputes-list");
+  disputesList.innerHTML = bundle.disputes.length
+    ? bundle.disputes
+        .map((dispute) => {
+          const disputeParticipant = bundle.participants.find((participant) => participant.id === dispute.participantId);
+          return `
+            <div class="line-item">
+              <span>${escapeHtml(disputeParticipant?.displayNameSnapshot ?? "Участник")}: ${escapeHtml(disputeStatusLabel(dispute.status))}</span>
+              <strong>${escapeHtml(labelizeDisputeType(dispute.type))}</strong>
+            </div>
+          `;
+        })
+        .join("")
+    : renderEmptyCard("Споров по этому сбору пока нет.");
 }
 
 function renderPayScreen() {
@@ -763,6 +803,36 @@ function renderOrganizerScreen() {
     `);
   }
   attention.innerHTML = items.join("");
+
+  const organizerDisputes = document.getElementById("organizer-disputes-list");
+  organizerDisputes.innerHTML = bundle.disputes.length
+    ? bundle.disputes
+        .map((dispute) => {
+          const participant = bundle.participants.find((item) => item.id === dispute.participantId);
+          const actionButtons = dispute.status === "created" || dispute.status === "under_review"
+            ? `
+                <div class="inline-actions">
+                  <button class="mini-action primary" type="button" data-action="accept-dispute" data-dispute-id="${dispute.id}">Принять</button>
+                  <button class="mini-action" type="button" data-action="resolve-dispute" data-dispute-id="${dispute.id}">Пересчитать</button>
+                  <button class="mini-action danger" type="button" data-action="reject-dispute" data-dispute-id="${dispute.id}">Отклонить</button>
+                </div>
+              `
+            : "";
+          return `
+            <div class="dispute-card">
+              <div class="line-item">
+                <div class="line-item-copy">
+                  <span>${escapeHtml(participant?.displayNameSnapshot ?? "Участник")} · ${escapeHtml(labelizeDisputeType(dispute.type))}</span>
+                  <div class="section-note">${escapeHtml(dispute.message)}</div>
+                </div>
+                <strong>${escapeHtml(disputeStatusLabel(dispute.status))}</strong>
+              </div>
+              ${actionButtons}
+            </div>
+          `;
+        })
+        .join("")
+    : renderEmptyCard("Активных споров нет.");
 
   if (organizerFriendSelect) {
     const availableFriends = state.friends.filter(
@@ -943,7 +1013,7 @@ async function submitDispute() {
     token: state.session.accessToken,
     body: {
       participantId: bundle.currentParticipant.id,
-      type: "other",
+      type: getSelectedDisputeType(),
       message
     }
   });
@@ -952,6 +1022,23 @@ async function submitDispute() {
   await refreshAppData();
   renderAll();
   setActiveScreen("dispute-sent", "home");
+}
+
+async function confirmCurrentParticipantReview() {
+  const bundle = getSelectedCollectionBundle();
+  if (!bundle?.currentParticipant) {
+    return;
+  }
+
+  await fetchJson(`/collections/${bundle.collection.id}/participants/${bundle.currentParticipant.id}/confirm-review`, {
+    method: "POST",
+    token: state.session.accessToken
+  });
+
+  await refreshAppData();
+  renderAll();
+  renderScreenDependents();
+  setStatus("Review подтвержден", true);
 }
 
 async function createCollectionFromForm() {
@@ -1168,6 +1255,40 @@ async function sendCollectionToReview() {
   setStatus("Сбор отправлен на review", true);
 }
 
+async function updateDisputeFromAction(source, action) {
+  const disputeId = source?.getAttribute("data-dispute-id");
+  if (!disputeId) {
+    return;
+  }
+
+  const pathByAction = {
+    accept: `/disputes/${disputeId}/accept`,
+    reject: `/disputes/${disputeId}/reject`,
+    resolve: `/disputes/${disputeId}/resolve`
+  };
+
+  await fetchJson(pathByAction[action], {
+    method: "POST",
+    token: state.session.accessToken,
+    body: {
+      resolutionComment:
+        action === "accept"
+          ? "Organizer accepted from frontend"
+          : action === "reject"
+            ? "Organizer rejected from frontend"
+            : "Organizer recalculated from frontend"
+    }
+  });
+
+  await refreshAppData();
+  renderAll();
+  renderScreenDependents();
+  setStatus(
+    action === "accept" ? "Спор принят" : action === "reject" ? "Спор отклонен" : "Сбор пересчитан по спору",
+    true
+  );
+}
+
 function getSelectedCollectionBundle() {
   return state.collectionBundles.find((bundle) => bundle.collection.id === state.selectedCollectionId) ?? state.collectionBundles[0] ?? null;
 }
@@ -1178,6 +1299,10 @@ function getSelectedOrganizerBundle() {
 
 function getSelectedCollectionType() {
   return document.querySelector('[data-screen="new"] [data-collection-type].is-selected')?.getAttribute("data-collection-type") ?? "picnic";
+}
+
+function getSelectedDisputeType() {
+  return document.querySelector('[data-screen="dispute"] [data-dispute-type].is-selected')?.getAttribute("data-dispute-type") ?? "other";
 }
 
 function renderCollectionCard(bundle, options) {
@@ -1332,6 +1457,33 @@ function labelizeCollectionStatus(status) {
     closed: "закрыт",
     cancelled: "отменен",
     blocked: "blocked"
+  };
+  return labels[status] ?? status;
+}
+
+function labelizeDisputeType(type) {
+  const labels = {
+    not_eat: "не ел",
+    not_drink: "не пил",
+    partial_time: "не все время",
+    already_paid: "уже платил",
+    bought_something: "купил отдельно",
+    absent: "отсутствовал",
+    guest_absent: "гость отсутствовал",
+    payer_changed: "другой плательщик",
+    other: "другое"
+  };
+  return labels[type] ?? type;
+}
+
+function disputeStatusLabel(status) {
+  const labels = {
+    created: "создан",
+    under_review: "на рассмотрении",
+    accepted: "принят",
+    rejected: "отклонен",
+    resolved_by_recalculation: "решен пересчетом",
+    cancelled: "отменен"
   };
   return labels[status] ?? status;
 }

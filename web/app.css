@@ -461,6 +461,11 @@ h2 {
   font-size: 13px;
 }
 
+.line-item-copy {
+  flex: 1;
+  min-width: 0;
+}
+
 .line-item.muted span,
 .line-item.muted em {
   color: #aaa39b;
@@ -624,6 +629,45 @@ h2 {
 .option-card.selected {
   border-color: #bbaef7;
   box-shadow: 0 0 0 3px rgba(111, 93, 231, 0.08);
+}
+
+.inline-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.mini-action {
+  min-height: 34px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid var(--stroke);
+  background: #fff;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.mini-action.primary {
+  background: var(--violet-soft);
+  border-color: #cfc5fb;
+  color: #4d3fb2;
+}
+
+.mini-action.danger {
+  background: #fff4f1;
+  border-color: #ffd8ce;
+  color: #b34935;
+}
+
+.dispute-card {
+  padding: 12px 0;
+  border-bottom: 1px solid #f3eee7;
+}
+
+.dispute-card:last-child {
+  border-bottom: 0;
 }
 
 .check-dot {

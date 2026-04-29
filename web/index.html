@@ -23,67 +23,25 @@
               <header class="page-header">
                 <div>
                   <p class="eyebrow">Привет</p>
-                  <h1>Алексей</h1>
+                  <h1 id="home-user-name">Загрузка</h1>
                 </div>
-                <button class="avatar-chip" type="button">АЛ</button>
+                <button class="avatar-chip" id="home-user-avatar" type="button">--</button>
               </header>
 
               <section class="section-block">
                 <div class="section-head">
                   <h2>Нужно оплатить</h2>
-                  <span class="section-note">2 активных сбора</span>
+                  <span class="section-note" id="home-due-note">Загрузка</span>
                 </div>
-
-                <button class="collection-card" type="button" data-go="collection" data-nav="home">
-                  <div class="card-row">
-                    <div>
-                      <div class="card-title">Шашлыки в субботу</div>
-                      <div class="card-subtitle">За тебя и Аню</div>
-                    </div>
-                    <div class="amount-stack">
-                      <span class="amount-main" data-balance-amount>3 500 ₽</span>
-                      <span class="pill pill-warn" data-balance-pill>Не оплачено</span>
-                    </div>
-                  </div>
-                  <div class="progress-bar"><span style="width: 78%"></span></div>
-                  <div class="progress-meta">
-                    <span>18 400 / 23 600 ₽</span>
-                    <span>5 из 7 оплатили</span>
-                  </div>
-                </button>
-
-                <button class="collection-card compact" type="button" data-go="gift" data-nav="collections">
-                  <div class="card-row">
-                    <div>
-                      <div class="card-title">Подарок Ире</div>
-                      <div class="card-subtitle">Ждем еще 3 участника</div>
-                    </div>
-                    <span class="amount-main">500 ₽</span>
-                  </div>
-                  <div class="progress-bar"><span style="width: 40%"></span></div>
-                </button>
+                <div id="home-due-list"></div>
               </section>
 
               <section class="section-block">
                 <div class="section-head">
                   <h2>Я организатор</h2>
-                  <span class="section-note">1 спорный кейс</span>
+                  <span class="section-note" id="home-organizer-note">Загрузка</span>
                 </div>
-
-                <button class="collection-card organizer" type="button" data-go="organizer" data-nav="collections">
-                  <div class="card-row">
-                    <div>
-                      <div class="card-title">Дача на майские</div>
-                      <div class="card-subtitle">Расчет отправлен, 6 участников</div>
-                    </div>
-                    <span class="pill pill-danger">Возражение</span>
-                  </div>
-                  <div class="progress-bar"><span style="width: 50%"></span></div>
-                  <div class="progress-meta">
-                    <span>15 000 / 30 000 ₽</span>
-                    <span>3 из 6</span>
-                  </div>
-                </button>
+                <div id="home-organizer-list"></div>
               </section>
 
               <section class="section-block">
@@ -100,49 +58,33 @@
 
               <header class="detail-header">
                 <div>
-                  <h1>Шашлыки в субботу</h1>
-                  <p>Организатор Саша · 7 участников</p>
+                  <h1 id="collection-title">Сбор</h1>
+                  <p id="collection-subtitle">Загрузка</p>
                 </div>
-                <span class="pill pill-muted">пикник</span>
+                <span class="pill pill-muted" id="collection-type-pill">тип</span>
               </header>
 
               <article class="hero-card">
                 <div class="hero-copy">
                   <span class="eyebrow">К оплате</span>
-                  <strong data-balance-amount-large>3 500 ₽</strong>
-                  <p>За тебя и Аню</p>
+                  <strong id="collection-balance-main">0 ₽</strong>
+                  <p id="collection-balance-sub">Загрузка</p>
                 </div>
-                <span class="pill pill-warn" data-balance-pill-large>Не оплачено</span>
+                <span class="pill pill-warn" id="collection-balance-pill">Не оплачено</span>
               </article>
 
-              <section class="detail-panel">
+              <section class="detail-panel" id="collection-explanation-panel">
                 <div class="panel-title">Почему столько</div>
-                <div class="mini-section">
-                  <div class="mini-heading">За тебя — 1 750 ₽</div>
-                  <div class="line-item"><span>Общая еда</span><strong>620 ₽</strong></div>
-                  <div class="line-item"><span>Напитки</span><strong>230 ₽</strong></div>
-                  <div class="line-item"><span>Уголь и посуда</span><strong>210 ₽</strong></div>
-                  <div class="line-item"><span>Беседка</span><strong>690 ₽</strong></div>
-                  <div class="line-item muted"><span>Мясо</span><em>ты не ешь</em></div>
-                </div>
-                <div class="divider"></div>
-                <div class="mini-section">
-                  <div class="mini-heading">За Аню — 1 750 ₽</div>
-                  <div class="line-item"><span>Общая еда</span><strong>620 ₽</strong></div>
-                  <div class="line-item"><span>Напитки</span><strong>230 ₽</strong></div>
-                  <div class="line-item"><span>Уголь и посуда</span><strong>210 ₽</strong></div>
-                  <div class="line-item"><span>Беседка</span><strong>690 ₽</strong></div>
-                  <div class="line-item muted"><span>Алкоголь</span><em>не пьет</em></div>
-                </div>
+                <div id="collection-explanation-list"></div>
               </section>
 
-              <div class="progress-bar large"><span style="width: 78%"></span></div>
+              <div class="progress-bar large"><span id="collection-progress-fill" style="width: 0%"></span></div>
               <div class="progress-meta bottom-gap">
-                <span>18 400 / 23 600 ₽ собрано</span>
-                <span>78%</span>
+                <span id="collection-progress-copy">0 / 0 ₽</span>
+                <span id="collection-progress-percent">0%</span>
               </div>
 
-              <button class="primary-button" type="button" data-go="pay" data-nav="home" data-action="open-pay">Оплатить 3 500 ₽</button>
+              <button class="primary-button" id="collection-pay-button" type="button" data-go="pay" data-nav="home" data-action="open-pay">Оплатить</button>
               <button class="secondary-button" type="button" data-go="dispute" data-nav="home">Попросить изменить</button>
 
               <section class="section-block">
@@ -150,30 +92,7 @@
                   <h2>Участники</h2>
                   <span class="section-note">Ответственный плательщик виден сразу</span>
                 </div>
-
-                <div class="person-row">
-                  <div class="avatar violet">АЛ</div>
-                  <div class="person-meta">
-                    <div class="person-name">Алексей</div>
-                    <div class="person-sub">+ Аня как гость</div>
-                  </div>
-                  <span class="pill pill-warn" data-balance-pill-row>3 500 ₽</span>
-                </div>
-                <div class="person-row">
-                  <div class="avatar teal">МА</div>
-                  <div class="person-meta">
-                    <div class="person-name">Маша</div>
-                  </div>
-                  <span class="pill pill-success">Оплачено</span>
-                </div>
-                <div class="person-row">
-                  <div class="avatar orange">ДИ</div>
-                  <div class="person-meta">
-                    <div class="person-name">Дима</div>
-                    <div class="person-sub">Просит перерасчет</div>
-                  </div>
-                  <span class="pill pill-danger">Возражение</span>
-                </div>
+                <div id="collection-participants-list"></div>
               </section>
             </div>
           </section>
@@ -186,42 +105,24 @@
               <header class="detail-header">
                 <div>
                   <h1>Оплата</h1>
-                  <p>Шашлыки в субботу</p>
+                  <p id="pay-subtitle">Сбор</p>
                 </div>
               </header>
 
               <article class="hero-card centered">
                 <span class="eyebrow">К оплате</span>
-                <strong data-balance-amount-pay>3 500 ₽</strong>
-                <p>За тебя 1 750 ₽ + Аня 1 750 ₽</p>
+                <strong id="pay-balance-main">0 ₽</strong>
+                <p id="pay-balance-sub">Загрузка</p>
               </article>
 
               <section class="section-block">
                 <div class="section-head">
                   <h2>Способ оплаты</h2>
                 </div>
-                <button class="option-card selected" type="button">
-                  <div>
-                    <div class="card-title">Карта •••• 4821</div>
-                    <div class="card-subtitle">Visa · привязана</div>
-                  </div>
-                  <span class="check-dot">✓</span>
-                </button>
-                <button class="option-card" type="button">
-                  <div>
-                    <div class="card-title">СБП</div>
-                    <div class="card-subtitle">Быстрый перевод</div>
-                  </div>
-                </button>
-                <button class="option-card" type="button">
-                  <div>
-                    <div class="card-title">Я уже оплатил</div>
-                    <div class="card-subtitle">Наличными или переводом</div>
-                  </div>
-                </button>
+                <div id="pay-methods-list"></div>
               </section>
 
-              <button class="primary-button" type="button" data-action="pay-now">Оплатить 3 500 ₽</button>
+              <button class="primary-button" id="pay-submit-button" type="button" data-action="pay-now">Оплатить</button>
             </div>
           </section>
 
@@ -229,13 +130,13 @@
             <div class="screen-scroll centered-screen">
               <div class="success-mark">✓</div>
               <h1>Оплачено</h1>
-              <p class="success-copy">3 500 ₽ переведены по сбору «Шашлыки в субботу».</p>
+              <p class="success-copy" id="paid-success-copy">Платеж подтвержден.</p>
               <article class="detail-panel">
                 <div class="panel-title">Прогресс сбора</div>
-                <div class="progress-bar large"><span style="width: 93%"></span></div>
+                <div class="progress-bar large"><span id="paid-progress-fill" style="width: 0%"></span></div>
                 <div class="progress-meta">
-                  <span>21 900 / 23 600 ₽</span>
-                  <span>Остался Дима</span>
+                  <span id="paid-progress-copy">0 / 0 ₽</span>
+                  <span id="paid-progress-tail">Обновлено</span>
                 </div>
               </article>
               <button class="primary-button" type="button" data-go="home" data-nav="home">На главную</button>
@@ -291,32 +192,25 @@
               <header class="detail-header">
                 <div>
                   <h1>Дача на майские</h1>
-                  <p>Ты организатор · 6 участников</p>
+                  <p id="organizer-subtitle">Загрузка</p>
                 </div>
-                <span class="pill pill-danger">1 спор</span>
+                <span class="pill pill-danger" id="organizer-dispute-pill">0 споров</span>
               </header>
 
               <article class="hero-card split">
                 <div>
                   <span class="eyebrow">Собрано</span>
-                  <strong>15 000 ₽</strong>
+                  <strong id="organizer-collected-main">0 ₽</strong>
                 </div>
                 <div>
                   <span class="eyebrow">Осталось</span>
-                  <strong>15 000 ₽</strong>
+                  <strong id="organizer-remaining-main">0 ₽</strong>
                 </div>
               </article>
 
               <section class="detail-panel">
                 <div class="panel-title">Что требует внимания</div>
-                <div class="line-item">
-                  <span>Дима: "Не был на ужине"</span>
-                  <span class="pill pill-danger">Спор</span>
-                </div>
-                <div class="line-item">
-                  <span>Катя: ручное подтверждение</span>
-                  <span class="pill pill-muted">Чек</span>
-                </div>
+                <div id="organizer-attention-list"></div>
               </section>
 
               <section class="detail-panel">
@@ -429,38 +323,7 @@
                 <button class="chip" type="button">История</button>
                 <button class="chip" type="button">Организую</button>
               </div>
-
-              <button class="collection-card" type="button" data-go="collection" data-nav="home">
-                <div class="card-row">
-                  <div>
-                    <div class="card-title">Шашлыки в субботу</div>
-                    <div class="card-subtitle">За тебя и Аню</div>
-                  </div>
-                  <span class="amount-main" data-balance-amount-list>3 500 ₽</span>
-                </div>
-                <div class="progress-bar"><span style="width: 78%"></span></div>
-              </button>
-
-              <button class="collection-card compact" type="button" data-go="gift" data-nav="collections">
-                <div class="card-row">
-                  <div>
-                    <div class="card-title">Подарок Ире</div>
-                    <div class="card-subtitle">Нужно добрать участников</div>
-                  </div>
-                  <span class="amount-main">500 ₽</span>
-                </div>
-                <div class="progress-bar"><span style="width: 40%"></span></div>
-              </button>
-
-              <button class="collection-card organizer" type="button" data-go="organizer" data-nav="collections">
-                <div class="card-row">
-                  <div>
-                    <div class="card-title">Дача на майские</div>
-                    <div class="card-subtitle">Ты организатор</div>
-                  </div>
-                  <span class="pill pill-danger">Возражение</span>
-                </div>
-              </button>
+              <div id="collections-list"></div>
             </div>
           </section>
 
@@ -474,31 +337,7 @@
               </header>
 
               <input class="text-input" placeholder="Поиск по имени или телефону" />
-
-              <div class="friend-row">
-                <div class="avatar teal">МА</div>
-                <div class="person-meta">
-                  <div class="person-name">Маша</div>
-                  <div class="person-sub">3 общих сбора</div>
-                </div>
-                <span class="status-chip online"></span>
-              </div>
-              <div class="friend-row">
-                <div class="avatar blue">КА</div>
-                <div class="person-meta">
-                  <div class="person-name">Катя</div>
-                  <div class="person-sub">1 незакрытый сбор</div>
-                </div>
-                <span class="pill pill-danger">!</span>
-              </div>
-              <div class="friend-row">
-                <div class="avatar orange">ДИ</div>
-                <div class="person-meta">
-                  <div class="person-name">Дима</div>
-                  <div class="person-sub">Возражение в шашлыках</div>
-                </div>
-                <span class="pill pill-muted">спор</span>
-              </div>
+              <div id="friends-list"></div>
 
               <button class="secondary-button" type="button">Добавить по номеру</button>
               <button class="secondary-button" type="button">Пригласить ссылкой</button>
@@ -514,28 +353,7 @@
                 </div>
               </header>
 
-              <button class="group-card" type="button">
-                <div class="group-icon violet-soft">Р</div>
-                <div class="group-copy">
-                  <div class="group-name">Работа</div>
-                  <div class="group-sub">12 участников · авто до 1 500 ₽</div>
-                </div>
-                <span class="pill pill-danger">2</span>
-              </button>
-              <button class="group-card" type="button">
-                <div class="group-icon teal-soft">Д</div>
-                <div class="group-copy">
-                  <div class="group-name">Дача</div>
-                  <div class="group-sub">6 участников · 1 активный сбор</div>
-                </div>
-              </button>
-              <button class="group-card" type="button">
-                <div class="group-icon amber-soft">Н</div>
-                <div class="group-copy">
-                  <div class="group-name">Настолки</div>
-                  <div class="group-sub">8 участников</div>
-                </div>
-              </button>
+              <div id="groups-list"></div>
 
               <button class="secondary-button" type="button">Создать группу</button>
             </div>
@@ -551,10 +369,10 @@
               </header>
 
               <article class="profile-card">
-                <div class="avatar-chip large">АЛ</div>
+                <div class="avatar-chip large" id="profile-avatar">--</div>
                 <div>
-                  <div class="profile-name">Алексей</div>
-                  <div class="profile-sub">+7 999 000-00-00</div>
+                  <div class="profile-name" id="profile-name">Загрузка</div>
+                  <div class="profile-sub" id="profile-phone">Загрузка</div>
                 </div>
               </article>
 

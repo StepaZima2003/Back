@@ -44,7 +44,7 @@ const payManualCommentInput = document.getElementById("pay-manual-comment");
 
 document.addEventListener("click", async (event) => {
   const target = event.target instanceof Element
-    ? event.target.closest("[data-go], [data-action], [data-collection-id], [data-organizer-collection-id], [data-payment-method-id], .chip, .switch")
+    ? event.target.closest("[data-go], [data-action], [data-collection-id], [data-organizer-collection-id], [data-payment-method-id], [data-notification-id], .chip, .switch")
     : null;
   if (!target) {
     return;
@@ -75,6 +75,12 @@ document.addEventListener("click", async (event) => {
   const organizerCollectionId = target.getAttribute("data-organizer-collection-id");
   if (organizerCollectionId) {
     state.selectedOrganizerCollectionId = organizerCollectionId;
+  }
+
+  const notificationId = target.getAttribute("data-notification-id");
+  if (notificationId) {
+    openNotification(notificationId);
+    return;
   }
 
   const action = target.getAttribute("data-action");
@@ -622,6 +628,7 @@ async function loadCollectionBundle(collection) {
 
 function renderAll() {
   renderHome();
+  renderInboxScreen();
   renderCollectionsScreen();
   renderCollectionScreen();
   renderPayScreen();
@@ -632,6 +639,9 @@ function renderAll() {
 }
 
 function renderScreenDependents() {
+  if (state.currentScreen === "inbox") {
+    renderInboxScreen();
+  }
   if (state.currentScreen === "collection") {
     renderCollectionScreen();
   }
@@ -658,6 +668,21 @@ function renderHome() {
   organizerList.innerHTML = state.organizerBundles.length
     ? state.organizerBundles.slice(0, 2).map((bundle) => renderCollectionCard(bundle, { variant: "organizer", go: "organizer", nav: "collections" })).join("")
     : renderEmptyCard("Организаторских сборов пока нет.");
+
+  const homeNotifications = document.getElementById("home-notifications-list");
+  homeNotifications.innerHTML = state.notifications.length
+    ? state.notifications
+        .slice(0, 3)
+        .map((notification) => renderNotificationCard(notification, { compact: true }))
+        .join("")
+    : renderEmptyCard("Inbox пока пуст.");
+}
+
+function renderInboxScreen() {
+  const list = document.getElementById("inbox-list");
+  list.innerHTML = state.notifications.length
+    ? state.notifications.map((notification) => renderNotificationCard(notification)).join("")
+    : renderEmptyCard("Уведомлений пока нет.");
 }
 
 function renderCollectionsScreen() {
@@ -1426,6 +1451,29 @@ async function updateManualPaymentFromAction(source, action) {
   setStatus(action === "confirm" ? "Ручная оплата подтверждена" : "Ручная оплата отклонена", true);
 }
 
+function openNotification(notificationId) {
+  const notification = state.notifications.find((item) => item.id === notificationId);
+  if (!notification?.collectionId) {
+    setActiveScreen("inbox", "home");
+    renderScreenDependents();
+    return;
+  }
+
+  const bundle = state.collectionBundles.find((item) => item.collection.id === notification.collectionId);
+  if (!bundle) {
+    setStatus("Сбор из уведомления не найден", false);
+    return;
+  }
+
+  state.selectedCollectionId = bundle.collection.id;
+  state.selectedOrganizerCollectionId = bundle.collection.id;
+
+  const organizerTypes = new Set(["participant_confirmed", "dispute_created", "manual_payment_submitted"]);
+  const shouldOpenOrganizer = bundle.collection.organizerId === state.me.id && organizerTypes.has(notification.type);
+  setActiveScreen(shouldOpenOrganizer ? "organizer" : "collection", shouldOpenOrganizer ? "collections" : "home");
+  renderScreenDependents();
+}
+
 function getSelectedCollectionBundle() {
   return state.collectionBundles.find((bundle) => bundle.collection.id === state.selectedCollectionId) ?? state.collectionBundles[0] ?? null;
 }
@@ -1480,6 +1528,30 @@ function renderCollectionCard(bundle, options) {
       <div class="progress-meta">
         <span>${formatMoney(bundle.collectedMinor)} / ${formatMoney(bundle.collection.totalAmountMinor)}</span>
         <span>${escapeHtml(metaRight)}</span>
+      </div>
+    </button>
+  `;
+}
+
+function renderNotificationCard(notification, options = {}) {
+  const compact = options.compact === true;
+  const kindLabel = notificationTypeLabel(notification.type);
+  const scopeLabel = notification.collectionId
+    ? state.collections.find((collection) => collection.id === notification.collectionId)?.title ?? "Сбор"
+    : "Система";
+
+  return `
+    <button class="notification-card${notification.readAt ? "" : " unread"}" type="button" data-notification-id="${notification.id}">
+      <div class="notification-top">
+        <div class="line-item-copy">
+          <div class="card-title">${escapeHtml(notification.title)}</div>
+          ${compact ? "" : `<div class="notification-body">${escapeHtml(notification.body)}</div>`}
+        </div>
+        <span class="pill ${notificationPillClass(notification.type)}">${escapeHtml(kindLabel)}</span>
+      </div>
+      <div class="notification-tail">
+        <span>${escapeHtml(scopeLabel)}</span>
+        <span>${escapeHtml(formatNotificationTime(notification.createdAt))}</span>
       </div>
     </button>
   `;
@@ -1655,6 +1727,29 @@ function manualPaymentStatusLabel(status) {
   return labels[status] ?? status;
 }
 
+function notificationTypeLabel(type) {
+  const labels = {
+    collection_review_requested: "review",
+    participant_confirmed: "confirm",
+    dispute_created: "спор",
+    dispute_updated: "update",
+    manual_payment_submitted: "proof",
+    manual_payment_confirmed: "manual ok",
+    manual_payment_rejected: "manual no"
+  };
+  return labels[type] ?? type;
+}
+
+function notificationPillClass(type) {
+  if (type === "dispute_created" || type === "manual_payment_rejected") {
+    return "pill-danger";
+  }
+  if (type === "participant_confirmed" || type === "manual_payment_confirmed") {
+    return "pill-success";
+  }
+  return "pill-warn";
+}
+
 function paymentStatusLabel(status) {
   const labels = {
     pending: "ждет оплаты",
@@ -1702,6 +1797,14 @@ function avatarToneByHint(hint) {
 
 function formatMoney(amountMinor) {
   return new Intl.NumberFormat("ru-RU", { style: "currency", currency: "RUB", maximumFractionDigits: 0 }).format((amountMinor ?? 0) / 100);
+}
+
+function formatNotificationTime(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "сейчас";
+  }
+  return new Intl.DateTimeFormat("ru-RU", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }).format(date);
 }
 
 function initials(value) {

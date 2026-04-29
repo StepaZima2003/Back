@@ -45,8 +45,31 @@
               </section>
 
               <section class="section-block">
+                <div class="section-head">
+                  <h2>Inbox</h2>
+                  <button class="link-button" type="button" data-go="inbox" data-nav="home">Все</button>
+                </div>
+                <div id="home-notifications-list"></div>
+              </section>
+
+              <section class="section-block">
                 <button class="primary-button" type="button" data-go="new" data-nav="collections">Создать сбор</button>
               </section>
+            </div>
+          </section>
+
+          <section class="screen" data-screen="inbox">
+            <div class="screen-scroll">
+              <div class="back-row">
+                <button class="link-button" type="button" data-go="home" data-nav="home">Назад</button>
+              </div>
+              <header class="page-header compact-header">
+                <div>
+                  <p class="eyebrow">Сигналы и действия</p>
+                  <h1>Inbox</h1>
+                </div>
+              </header>
+              <div id="inbox-list"></div>
             </div>
           </section>
 

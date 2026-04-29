@@ -8,6 +8,7 @@ const DEMO = {
 const state = {
   currentScreen: "home",
   activeNav: "home",
+  collectionsFilter: "active",
   session: null,
   actors: {},
   selectedCollectionId: null,
@@ -41,6 +42,11 @@ const organizerExpenseTitleInput = document.getElementById("organizer-expense-ti
 const organizerExpenseAmountInput = document.getElementById("organizer-expense-amount");
 const payManualProofUrlInput = document.getElementById("pay-manual-proof-url");
 const payManualCommentInput = document.getElementById("pay-manual-comment");
+const collectionFilterTabs = [...document.querySelectorAll('[data-screen="collections"] .tab-row .chip')];
+
+collectionFilterTabs[0]?.setAttribute("data-collection-filter", "active");
+collectionFilterTabs[1]?.setAttribute("data-collection-filter", "history");
+collectionFilterTabs[2]?.setAttribute("data-collection-filter", "organizer");
 
 document.addEventListener("click", async (event) => {
   const target = event.target instanceof Element
@@ -191,6 +197,12 @@ function handleChipClick(target) {
 
   [...container.querySelectorAll(".chip")].forEach((chip) => chip.classList.remove("is-selected"));
   target.classList.add("is-selected");
+
+  const collectionFilter = target.getAttribute("data-collection-filter");
+  if (collectionFilter) {
+    state.collectionsFilter = collectionFilter;
+    renderCollectionsScreen();
+  }
 }
 
 async function bootstrap() {
@@ -642,6 +654,9 @@ function renderScreenDependents() {
   if (state.currentScreen === "inbox") {
     renderInboxScreen();
   }
+  if (state.currentScreen === "collections") {
+    renderCollectionsScreen();
+  }
   if (state.currentScreen === "collection") {
     renderCollectionScreen();
   }
@@ -687,17 +702,55 @@ function renderInboxScreen() {
 
 function renderCollectionsScreen() {
   const list = document.getElementById("collections-list");
-  list.innerHTML = state.collectionBundles.length
-    ? state.collectionBundles
-        .map((bundle) =>
-          renderCollectionCard(bundle, {
-            variant: bundle.collection.organizerId === state.me.id ? "organizer" : bundle.userDueMinor > 0 ? "due" : "neutral",
-            go: bundle.collection.organizerId === state.me.id ? "organizer" : "collection",
-            nav: bundle.collection.organizerId === state.me.id ? "collections" : "home"
-          })
-        )
-        .join("")
-    : renderEmptyCard("Сборов пока нет.");
+  const summary = document.getElementById("collections-summary");
+  collectionFilterTabs.forEach((tab) => tab.classList.toggle("is-selected", tab.getAttribute("data-collection-filter") === state.collectionsFilter));
+
+  const participantBundles = state.collectionBundles.filter((bundle) => bundle.collection.organizerId !== state.me.id);
+  const organizerBundles = state.collectionBundles.filter((bundle) => bundle.collection.organizerId === state.me.id);
+  const activeParticipantBundles = participantBundles.filter((bundle) => !isHistoricalCollectionBundle(bundle));
+  const historyParticipantBundles = participantBundles.filter((bundle) => isHistoricalCollectionBundle(bundle));
+  const actionableBundles = activeParticipantBundles.filter((bundle) => isActionableCollectionBundle(bundle));
+  const passiveBundles = activeParticipantBundles.filter((bundle) => !isActionableCollectionBundle(bundle));
+  const liveOrganizerBundles = organizerBundles.filter((bundle) => !isHistoricalCollectionBundle(bundle));
+  const archivedOrganizerBundles = organizerBundles.filter((bundle) => isHistoricalCollectionBundle(bundle));
+
+  summary.innerHTML = `
+    <article class="detail-panel">
+      <div class="panel-title">Срез</div>
+      <div class="line-item"><span>Активные</span><strong>${activeParticipantBundles.length}</strong></div>
+      <div class="line-item"><span>История</span><strong>${historyParticipantBundles.length}</strong></div>
+      <div class="line-item"><span>Организую</span><strong>${organizerBundles.length}</strong></div>
+    </article>
+  `;
+
+  if (state.collectionsFilter === "active") {
+    list.innerHTML =
+      renderCollectionSection("Требуют действия", actionableBundles, "Оплата, review и pending items") +
+      renderCollectionSection("Спокойные", sortBundles(passiveBundles), "Без срочных действий");
+    if (!actionableBundles.length && !passiveBundles.length) {
+      list.innerHTML = renderEmptyCard("Нет активных сборов.");
+    }
+    return;
+  }
+
+  if (state.collectionsFilter === "history") {
+    const paidBundles = historyParticipantBundles.filter((bundle) => bundle.collection.status === "paid" || bundle.collection.status === "closed");
+    const cancelledBundles = historyParticipantBundles.filter((bundle) => bundle.collection.status === "cancelled");
+    list.innerHTML =
+      renderCollectionSection("Завершенные", sortBundles(paidBundles), "Оплаченные и закрытые") +
+      renderCollectionSection("Отмененные", sortBundles(cancelledBundles), "Сохранены для истории");
+    if (!paidBundles.length && !cancelledBundles.length) {
+      list.innerHTML = renderEmptyCard("История пока пустая.");
+    }
+    return;
+  }
+
+  list.innerHTML =
+    renderCollectionSection("Живые сборы", sortBundles(liveOrganizerBundles), "Ты управляешь процессом") +
+    renderCollectionSection("Архив организатора", sortBundles(archivedOrganizerBundles), "Закрытые и завершенные");
+  if (!liveOrganizerBundles.length && !archivedOrganizerBundles.length) {
+    list.innerHTML = renderEmptyCard("Организаторских сборов пока нет.");
+  }
 }
 
 function renderCollectionScreen() {
@@ -1504,12 +1557,13 @@ function getCurrentUserTransfers(bundle) {
 function renderCollectionCard(bundle, options) {
   const isOrganizer = options.variant === "organizer";
   const dueText = bundle.userDueMinor > 0 ? formatMoney(bundle.userDueMinor) : formatMoney(Math.max(bundle.collection.totalAmountMinor - bundle.collectedMinor, 0));
-  const note = isOrganizer
+  const noteBase = isOrganizer
     ? `${bundle.disputes.length} споров · ${bundle.participants.length} участников`
     : coveredParticipantsLabel(bundle.coveredParticipants);
+  const note = `${labelizeCollectionStatus(bundle.collection.status)} · ${noteBase}`;
   const metaRight = isOrganizer
     ? `${bundle.disputes.length ? "есть спор" : "без споров"}`
-    : `${bundle.payments.filter((payment) => payment.status === "succeeded").length} оплат`;
+    : `${bundle.payments.filter((payment) => payment.status === "succeeded").length + bundle.manualPayments.filter((payment) => payment.status === "confirmed").length} оплат`;
   const pill = isOrganizer
     ? `<span class="pill ${bundle.disputes.length ? "pill-danger" : "pill-muted"}">${bundle.disputes.length ? "Возражение" : "Организатор"}</span>`
     : `<span class="amount-main">${dueText}</span>`;
@@ -1555,6 +1609,56 @@ function renderNotificationCard(notification, options = {}) {
       </div>
     </button>
   `;
+}
+
+function renderCollectionSection(title, bundles, note) {
+  if (!bundles.length) {
+    return "";
+  }
+
+  return `
+    <section class="section-block">
+      <div class="section-head">
+        <h2>${escapeHtml(title)}</h2>
+        <span class="section-note">${escapeHtml(note)}</span>
+      </div>
+      ${bundles
+        .map((bundle) =>
+          renderCollectionCard(bundle, {
+            variant: bundle.collection.organizerId === state.me.id ? "organizer" : bundle.userDueMinor > 0 ? "due" : "neutral",
+            go: bundle.collection.organizerId === state.me.id ? "organizer" : "collection",
+            nav: bundle.collection.organizerId === state.me.id ? "collections" : "home"
+          })
+        )
+        .join("")}
+    </section>
+  `;
+}
+
+function sortBundles(bundles) {
+  return [...bundles].sort((left, right) => {
+    const rightDate = new Date(right.collection.updatedAt ?? right.collection.createdAt).getTime();
+    const leftDate = new Date(left.collection.updatedAt ?? left.collection.createdAt).getTime();
+    return rightDate - leftDate;
+  });
+}
+
+function isHistoricalCollectionBundle(bundle) {
+  return ["paid", "closed", "cancelled"].includes(bundle.collection.status);
+}
+
+function isActionableCollectionBundle(bundle) {
+  const needsReviewConfirmation =
+    bundle.collection.status === "review" &&
+    bundle.currentParticipant &&
+    bundle.currentParticipant.status !== "confirmed";
+  const hasOwnPendingDispute = bundle.disputes.some(
+    (dispute) => dispute.createdByUserId === state.me.id && ["created", "under_review"].includes(dispute.status)
+  );
+  const hasOwnSubmittedManualPayment = bundle.manualPayments.some(
+    (payment) => payment.payerUserId === state.me.id && payment.status === "submitted"
+  );
+  return bundle.userDueMinor > 0 || needsReviewConfirmation || hasOwnPendingDispute || hasOwnSubmittedManualPayment;
 }
 
 function renderParticipantRow(participant, subLabel) {

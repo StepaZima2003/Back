@@ -61,6 +61,9 @@ export interface NormalizedPaymentWebhookEvent {
   occurredAt: string | null;
   reason: string | null;
   providerStatus: string;
+  providerPaymentMethodId?: string | null;
+  maskedPan?: string | null;
+  brand?: PaymentMethod["brand"] | null;
   metadata: Record<string, unknown>;
   rawPayload: Record<string, unknown>;
 }
@@ -70,7 +73,11 @@ export interface PaymentProviderAdapter {
   createPaymentMethodSetup(input: CreatePaymentMethodSetupInput): ProviderPaymentMethodSetupResult;
   createPaymentMethodBinding(input: CreatePaymentMethodBindingInput): ProviderPaymentMethodBindingResult;
   createPaymentIntent(input: CreatePaymentIntentInput): ProviderPaymentIntentResult;
-  verifyAndNormalizeWebhook(input: {
+  verifyAndNormalizePaymentWebhook(input: {
+    headers: Record<string, string | string[] | undefined>;
+    body: unknown;
+  }): NormalizedPaymentWebhookEvent;
+  verifyAndNormalizePaymentMethodSetupWebhook(input: {
     headers: Record<string, string | string[] | undefined>;
     body: unknown;
   }): NormalizedPaymentWebhookEvent;

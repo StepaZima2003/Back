@@ -44,7 +44,12 @@ export type ManualPaymentProofStatus = "submitted" | "confirmed" | "rejected";
 export type PaymentStatus = "pending" | "processing" | "succeeded" | "failed" | "cancelled" | "refunded" | "manual_marked_paid" | "disputed";
 export type PaymentMethodStatus = "pending_binding" | "active" | "failed" | "expired" | "revoked" | "requires_confirmation";
 export type PaymentCardBrand = "visa" | "mastercard" | "mir" | "unknown";
-export type PaymentProviderWebhookEventType = "payment.succeeded" | "payment.failed" | "payment.refunded";
+export type PaymentProviderWebhookEventType =
+  | "payment.succeeded"
+  | "payment.failed"
+  | "payment.refunded"
+  | "payment_method.setup_succeeded"
+  | "payment_method.setup_failed";
 export type PaymentWebhookProcessingStatus = "received" | "processed" | "ignored" | "failed" | "dead_lettered";
 export type AuditEntityType =
   | "collection"

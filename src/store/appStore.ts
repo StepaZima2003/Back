@@ -71,6 +71,7 @@ type AppStoreMethodName =
   | "listPaymentWebhookEvents"
   | "replayPaymentWebhookEvent"
   | "applyPaymentWebhook"
+  | "applyPaymentMethodSetupWebhook"
   | "retryFailedPaymentWebhooks"
   | "applyMockProviderWebhook"
   | "listAuditLogs"

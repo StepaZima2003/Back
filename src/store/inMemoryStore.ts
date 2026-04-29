@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { calculateCollection } from "../calculation";
 import { buildAutoPaymentPlan, type AutoPaymentExecutionPlan, type AutoPaymentPreviewItem } from "../payments/autopay";
-import type { MockProviderWebhookPayload } from "../payments/mockProvider";
+import type { MockProviderPaymentMethodSetupWebhookPayload, MockProviderWebhookPayload } from "../payments/mockProvider";
 import {
   getPaymentProviderAdapter,
   normalizePaymentProvider,
@@ -1647,7 +1647,7 @@ export class InMemoryStore {
       eventIds.push(webhookEvent.externalEventId);
 
       try {
-        this.applyPaymentWebhookInternal(normalizedEvent);
+        this.applyStoredWebhookEvent(normalizedEvent);
       } catch {
         // The retry summary is derived from the persisted webhook event record below.
       }
@@ -1716,7 +1716,7 @@ export class InMemoryStore {
     }
 
     try {
-      this.applyPaymentWebhook(this.toNormalizedWebhookEvent(existingEvent));
+      this.applyStoredWebhookEvent(this.toNormalizedWebhookEvent(existingEvent));
     } catch {
       // The persisted webhook event row below reflects the latest replay attempt result.
     }
@@ -1729,6 +1729,17 @@ export class InMemoryStore {
   }
 
   applyPaymentWebhook(event: NormalizedPaymentWebhookEvent): Payment {
+    return this.applyPaymentWebhookInternal(event);
+  }
+
+  applyPaymentMethodSetupWebhook(event: NormalizedPaymentWebhookEvent): PaymentMethod {
+    return this.applyPaymentMethodSetupWebhookInternal(event);
+  }
+
+  private applyStoredWebhookEvent(event: NormalizedPaymentWebhookEvent): Payment | PaymentMethod {
+    if (event.eventType.startsWith("payment_method.")) {
+      return this.applyPaymentMethodSetupWebhookInternal(event);
+    }
     return this.applyPaymentWebhookInternal(event);
   }
 
@@ -1784,6 +1795,8 @@ export class InMemoryStore {
         participantPaymentStatus = "pending";
         action = "updated";
         break;
+      default:
+        return this.failPaymentWebhookEvent(event, payment.id, new AppError(400, "Unsupported payment webhook event."));
     }
 
     const updated = this.updatePayment(payment, {
@@ -1817,6 +1830,109 @@ export class InMemoryStore {
     return updated;
   }
 
+  private applyPaymentMethodSetupWebhookInternal(event: NormalizedPaymentWebhookEvent): PaymentMethod {
+    const existingEvent = this.findPaymentWebhookEventByExternalId(event.eventId);
+    if (existingEvent?.status === "processed") {
+      const existingMethod = this.findPaymentMethodByProviderSetupId(event.providerPaymentId);
+      if (existingMethod) {
+        return existingMethod;
+      }
+    }
+
+    const method = this.findPaymentMethodByProviderSetupId(event.providerPaymentId);
+    if (!method) {
+      return this.failPaymentWebhookEvent(event, null, new AppError(404, "Payment method not found for provider setup id."));
+    }
+
+    switch (event.eventType) {
+      case "payment_method.setup_succeeded": {
+        if (method.status === "active") {
+          this.recordProcessedWebhookEvent(event, null);
+          return method;
+        }
+        if (method.status === "revoked") {
+          return this.failPaymentWebhookEvent(event, null, new AppError(409, "Revoked payment method cannot be reactivated."));
+        }
+
+        const shouldSetDefault =
+          typeof method.providerMetadata.requestedDefault === "boolean"
+            ? method.providerMetadata.requestedDefault
+            : this.listPaymentMethods(method.userId).filter((item) => item.status === "active").length === 0;
+        if (shouldSetDefault) {
+          this.clearDefaultPaymentMethod(method.userId);
+        }
+
+        const updated: PaymentMethod = {
+          ...method,
+          providerPaymentMethodId: event.providerPaymentMethodId ?? method.providerPaymentMethodId,
+          providerMetadata: {
+            ...method.providerMetadata,
+            ...event.metadata,
+            webhookReconciled: true,
+            lastSetupWebhookEventId: event.eventId
+          },
+          maskedPan: event.maskedPan ?? method.maskedPan,
+          brand: event.brand ?? method.brand,
+          status: "active",
+          isDefault: shouldSetDefault,
+          lastSetupErrorCode: null,
+          lastSetupErrorMessage: null,
+          confirmedAt: event.occurredAt ?? now(),
+          updatedAt: now()
+        };
+        this.paymentMethods.set(updated.id, updated);
+        this.recordProcessedWebhookEvent(event, null);
+        this.addAudit(null, "user", updated.id, null, "confirmed", {
+          kind: "payment_method_setup",
+          provider: updated.provider,
+          providerSetupId: updated.providerSetupId,
+          providerPaymentMethodId: updated.providerPaymentMethodId,
+          eventId: event.eventId,
+          webhook: true
+        });
+        return updated;
+      }
+      case "payment_method.setup_failed": {
+        if (method.status === "failed") {
+          this.recordProcessedWebhookEvent(event, null);
+          return method;
+        }
+        if (method.status === "revoked") {
+          this.recordProcessedWebhookEvent(event, null);
+          return method;
+        }
+        const updated: PaymentMethod = {
+          ...method,
+          providerMetadata: {
+            ...method.providerMetadata,
+            ...event.metadata,
+            webhookReconciled: true,
+            lastSetupWebhookEventId: event.eventId
+          },
+          status: "failed",
+          isDefault: false,
+          lastSetupErrorCode: "provider_setup_failed",
+          lastSetupErrorMessage: event.reason ?? "Provider setup failed.",
+          updatedAt: now()
+        };
+        this.paymentMethods.set(updated.id, updated);
+        this.recordProcessedWebhookEvent(event, null);
+        this.addAudit(null, "user", updated.id, null, "updated", {
+          kind: "payment_method_setup",
+          status: "failed",
+          provider: updated.provider,
+          providerSetupId: updated.providerSetupId,
+          eventId: event.eventId,
+          reason: event.reason ?? null,
+          webhook: true
+        });
+        return updated;
+      }
+      default:
+        return this.failPaymentWebhookEvent(event, null, new AppError(400, "Unsupported payment-method setup webhook event."));
+    }
+  }
+
   applyMockProviderWebhook(payload: MockProviderWebhookPayload): Payment {
     return this.applyPaymentWebhook({
       provider: "bank",
@@ -1826,6 +1942,23 @@ export class InMemoryStore {
       occurredAt: payload.occurredAt ?? null,
       reason: payload.reason ?? null,
       providerStatus: payload.providerStatus ?? payload.eventType.replace("payment.", ""),
+      metadata: payload.metadata ?? {},
+      rawPayload: payload as unknown as Record<string, unknown>
+    });
+  }
+
+  applyMockProviderPaymentMethodSetupWebhook(payload: MockProviderPaymentMethodSetupWebhookPayload): PaymentMethod {
+    return this.applyPaymentMethodSetupWebhook({
+      provider: "bank",
+      eventId: payload.eventId,
+      providerPaymentId: payload.providerSetupId,
+      eventType: payload.eventType,
+      occurredAt: payload.occurredAt ?? null,
+      reason: payload.reason ?? null,
+      providerStatus: payload.providerStatus ?? (payload.eventType === "payment_method.setup_succeeded" ? "active" : "failed"),
+      providerPaymentMethodId: payload.providerPaymentMethodId ?? null,
+      maskedPan: payload.maskedPan ?? null,
+      brand: payload.brand ?? null,
       metadata: payload.metadata ?? {},
       rawPayload: payload as unknown as Record<string, unknown>
     });
@@ -2143,6 +2276,10 @@ export class InMemoryStore {
     return [...this.payments.values()].find((payment) => payment.providerPaymentId === providerPaymentId) ?? null;
   }
 
+  private findPaymentMethodByProviderSetupId(providerSetupId: string): PaymentMethod | null {
+    return [...this.paymentMethods.values()].find((method) => method.providerSetupId === providerSetupId) ?? null;
+  }
+
   private createAutoPaymentRecord(data: {
     collectionId: string;
     participantId: string;
@@ -2257,7 +2394,10 @@ export class InMemoryStore {
       eventType: event.eventType,
       occurredAt: event.processedAt ?? event.receivedAt,
       reason: typeof event.payload.reason === "string" ? event.payload.reason : null,
-      providerStatus: typeof event.payload.providerStatus === "string" ? event.payload.providerStatus : event.eventType.replace("payment.", ""),
+      providerStatus: typeof event.payload.providerStatus === "string" ? event.payload.providerStatus : defaultProviderStatusForEvent(event.eventType),
+      providerPaymentMethodId: typeof event.payload.providerPaymentMethodId === "string" ? event.payload.providerPaymentMethodId : null,
+      maskedPan: typeof event.payload.maskedPan === "string" ? event.payload.maskedPan : null,
+      brand: isPaymentCardBrand(event.payload.brand) ? event.payload.brand : null,
       metadata: isPlainRecord(event.payload.metadata) ? event.payload.metadata : {},
       rawPayload: event.payload
     };
@@ -2806,10 +2946,29 @@ function getWebhookRetryDelayMs(attemptCount: number): number {
   return WEBHOOK_RETRY_DELAYS_MS[Math.min(Math.max(attemptCount - 1, 0), WEBHOOK_RETRY_DELAYS_MS.length - 1)];
 }
 
+function defaultProviderStatusForEvent(eventType: PaymentWebhookEvent["eventType"]): string {
+  switch (eventType) {
+    case "payment.succeeded":
+      return "succeeded";
+    case "payment.failed":
+      return "failed";
+    case "payment.refunded":
+      return "refunded";
+    case "payment_method.setup_succeeded":
+      return "active";
+    case "payment_method.setup_failed":
+      return "failed";
+  }
+}
+
 function isRetryableWebhookError(error: AppError): boolean {
   return error.statusCode === 404 || error.statusCode >= 500;
 }
 
 function isPlainRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function isPaymentCardBrand(value: unknown): value is PaymentCardBrand {
+  return value === "visa" || value === "mastercard" || value === "mir" || value === "unknown";
 }

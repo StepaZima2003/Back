@@ -2,7 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { PrismaClient, type Prisma } from "@prisma/client";
 import { calculateCollection } from "../calculation";
 import { buildAutoPaymentPlan, type AutoPaymentExecutionPlan, type AutoPaymentPreviewItem } from "../payments/autopay";
-import type { MockProviderWebhookPayload } from "../payments/mockProvider";
+import type { MockProviderPaymentMethodSetupWebhookPayload, MockProviderWebhookPayload } from "../payments/mockProvider";
 import {
   getPaymentProviderAdapter,
   normalizePaymentProvider,
@@ -2181,7 +2181,24 @@ export class PrismaStore implements AppStore {
       eventType: payload.eventType,
       occurredAt: payload.occurredAt ?? null,
       reason: payload.reason ?? null,
-      providerStatus: payload.providerStatus ?? payload.eventType.replace("payment.", ""),
+      providerStatus: payload.providerStatus ?? defaultProviderStatusForEvent(payload.eventType),
+      metadata: payload.metadata ?? {},
+      rawPayload: payload as unknown as Record<string, unknown>
+    });
+  }
+
+  async applyMockProviderPaymentMethodSetupWebhook(payload: MockProviderPaymentMethodSetupWebhookPayload): Promise<PaymentMethod> {
+    return await this.applyPaymentMethodSetupWebhook({
+      provider: "bank",
+      eventId: payload.eventId,
+      providerPaymentId: payload.providerSetupId,
+      eventType: payload.eventType,
+      occurredAt: payload.occurredAt ?? null,
+      reason: payload.reason ?? null,
+      providerStatus: payload.providerStatus ?? defaultProviderStatusForEvent(payload.eventType),
+      providerPaymentMethodId: payload.providerPaymentMethodId ?? null,
+      maskedPan: payload.maskedPan ?? null,
+      brand: payload.brand ?? null,
       metadata: payload.metadata ?? {},
       rawPayload: payload as unknown as Record<string, unknown>
     });
@@ -2210,7 +2227,7 @@ export class PrismaStore implements AppStore {
       eventIds.push(webhookEvent.externalEventId);
 
       try {
-        await this.applyPaymentWebhook(event);
+        await this.applyStoredWebhookEvent(event);
       } catch {
         // The persisted webhook record carries the final retry status.
       }
@@ -2277,7 +2294,7 @@ export class PrismaStore implements AppStore {
     }
 
     try {
-      await this.applyPaymentWebhook(this.toNormalizedWebhookEvent(existingEvent));
+      await this.applyStoredWebhookEvent(this.toNormalizedWebhookEvent(existingEvent));
     } catch {
       // The persisted webhook event row below reflects the latest replay attempt result.
     }
@@ -2289,6 +2306,13 @@ export class PrismaStore implements AppStore {
     return updatedEvent;
   }
 
+  private async applyStoredWebhookEvent(event: NormalizedPaymentWebhookEvent): Promise<Payment | PaymentMethod> {
+    if (event.eventType.startsWith("payment_method.")) {
+      return await this.applyPaymentMethodSetupWebhook(event);
+    }
+    return await this.applyPaymentWebhook(event);
+  }
+
   async applyPaymentWebhook(event: NormalizedPaymentWebhookEvent): Promise<Payment> {
     try {
       return await this.withAdvisoryLock(`payment-provider:${event.providerPaymentId}`, async (store) => {
@@ -2298,6 +2322,19 @@ export class PrismaStore implements AppStore {
       if (error instanceof AppError) {
         const payment = await this.findPaymentByProviderPaymentIdDirect(event.providerPaymentId);
         await this.failPaymentWebhookEventDirect(event, payment?.id ?? null, error);
+      }
+      throw error;
+    }
+  }
+
+  async applyPaymentMethodSetupWebhook(event: NormalizedPaymentWebhookEvent): Promise<PaymentMethod> {
+    try {
+      return await this.withAdvisoryLock(`payment-method-setup:${event.providerPaymentId}`, async (store) => {
+        return await store.applyPaymentMethodSetupWebhookLocked(event);
+      });
+    } catch (error) {
+      if (error instanceof AppError) {
+        await this.failPaymentWebhookEventDirect(event, null, error);
       }
       throw error;
     }
@@ -2355,6 +2392,8 @@ export class PrismaStore implements AppStore {
         participantPaymentStatus = "pending";
         action = "updated";
         break;
+      default:
+        throw new AppError(400, "Unsupported payment webhook event.");
     }
 
     const updated = await this.client.payment.upsert({
@@ -2402,6 +2441,149 @@ export class PrismaStore implements AppStore {
       webhook: true
     });
     return mapPaymentRecord(updated);
+  }
+
+  private async applyPaymentMethodSetupWebhookLocked(event: NormalizedPaymentWebhookEvent): Promise<PaymentMethod> {
+    const existingEvent = await this.findPaymentWebhookEventByExternalIdDirect(event.eventId);
+    if (existingEvent?.status === "processed") {
+      const existingMethod = await this.findPaymentMethodByProviderSetupIdDirect(event.providerPaymentId);
+      if (existingMethod) {
+        return existingMethod;
+      }
+    }
+
+    const method = await this.findPaymentMethodByProviderSetupIdDirect(event.providerPaymentId);
+    if (!method) {
+      throw new AppError(404, "Payment method not found for provider setup id.");
+    }
+
+    switch (event.eventType) {
+      case "payment_method.setup_succeeded": {
+        if (method.status === "active") {
+          await this.recordPaymentWebhookEventDirect(event, null, "processed");
+          return method;
+        }
+        if (method.status === "revoked") {
+          throw new AppError(409, "Revoked payment method cannot be reactivated.");
+        }
+
+        const activeMethods = (await this.listPaymentMethods(method.userId)).filter((item) => item.status === "active");
+        const shouldSetDefault =
+          typeof method.providerMetadata.requestedDefault === "boolean"
+            ? method.providerMetadata.requestedDefault
+            : activeMethods.length === 0;
+        if (shouldSetDefault) {
+          await this.clearDefaultPaymentMethodDirect(method.userId);
+        }
+
+        const confirmedAt = event.occurredAt ? new Date(event.occurredAt) : new Date();
+        const updated = await this.client.paymentMethod.upsert({
+          where: { id: method.id },
+          update: {
+            providerPaymentMethodId: event.providerPaymentMethodId ?? method.providerPaymentMethodId,
+            providerMetadata: asJson({
+              ...method.providerMetadata,
+              ...event.metadata,
+              webhookReconciled: true,
+              lastSetupWebhookEventId: event.eventId,
+              requestedDefault: shouldSetDefault
+            }),
+            maskedPan: event.maskedPan ?? method.maskedPan,
+            brand: event.brand ?? method.brand,
+            status: "active",
+            isDefault: shouldSetDefault,
+            lastSetupErrorCode: null,
+            lastSetupErrorMessage: null,
+            confirmedAt,
+            updatedAt: confirmedAt
+          },
+          create: paymentMethodCreateInputFromRecord(method, {
+            providerPaymentMethodId: event.providerPaymentMethodId ?? method.providerPaymentMethodId,
+            providerMetadata: {
+              ...method.providerMetadata,
+              ...event.metadata,
+              webhookReconciled: true,
+              lastSetupWebhookEventId: event.eventId,
+              requestedDefault: shouldSetDefault
+            },
+            maskedPan: event.maskedPan ?? method.maskedPan,
+            brand: event.brand ?? method.brand,
+            status: "active",
+            isDefault: shouldSetDefault,
+            lastSetupErrorCode: null,
+            lastSetupErrorMessage: null,
+            confirmedAt,
+            updatedAt: confirmedAt
+          })
+        });
+
+        await this.recordPaymentWebhookEventDirect(event, null, "processed");
+        await this.addAuditDirect(null, "user", method.id, null, "confirmed", {
+          kind: "payment_method_setup",
+          provider: method.provider,
+          providerSetupId: method.providerSetupId,
+          providerPaymentMethodId: updated.providerPaymentMethodId,
+          status: "active",
+          isDefault: updated.isDefault,
+          eventId: event.eventId,
+          eventType: event.eventType,
+          webhook: true
+        });
+        return mapPaymentMethodRecord(updated);
+      }
+      case "payment_method.setup_failed": {
+        if (method.status === "failed" || method.status === "revoked") {
+          await this.recordPaymentWebhookEventDirect(event, null, "processed");
+          return method;
+        }
+
+        const updatedAt = event.occurredAt ? new Date(event.occurredAt) : new Date();
+        const updated = await this.client.paymentMethod.upsert({
+          where: { id: method.id },
+          update: {
+            providerMetadata: asJson({
+              ...method.providerMetadata,
+              ...event.metadata,
+              webhookReconciled: true,
+              lastSetupWebhookEventId: event.eventId
+            }),
+            status: "failed",
+            isDefault: false,
+            lastSetupErrorCode: "provider_setup_failed",
+            lastSetupErrorMessage: event.reason ?? "Provider setup failed.",
+            updatedAt
+          },
+          create: paymentMethodCreateInputFromRecord(method, {
+            providerMetadata: {
+              ...method.providerMetadata,
+              ...event.metadata,
+              webhookReconciled: true,
+              lastSetupWebhookEventId: event.eventId
+            },
+            status: "failed",
+            isDefault: false,
+            lastSetupErrorCode: "provider_setup_failed",
+            lastSetupErrorMessage: event.reason ?? "Provider setup failed.",
+            updatedAt
+          })
+        });
+
+        await this.recordPaymentWebhookEventDirect(event, null, "processed");
+        await this.addAuditDirect(null, "user", method.id, null, "updated", {
+          kind: "payment_method_setup",
+          provider: method.provider,
+          providerSetupId: method.providerSetupId,
+          status: "failed",
+          reason: event.reason ?? null,
+          eventId: event.eventId,
+          eventType: event.eventType,
+          webhook: true
+        });
+        return mapPaymentMethodRecord(updated);
+      }
+      default:
+        throw new AppError(400, "Unsupported payment method setup webhook event.");
+    }
   }
 
   async listAuditLogs(userId: string, collectionId: string): Promise<AuditLog[]> {
@@ -2882,6 +3064,11 @@ export class PrismaStore implements AppStore {
     return payment ? mapPaymentRecord(payment) : null;
   }
 
+  private async findPaymentMethodByProviderSetupIdDirect(providerSetupId: string): Promise<PaymentMethod | null> {
+    const method = (await this.client.paymentMethod.findMany()).find((item) => item.providerSetupId === providerSetupId);
+    return method ? mapPaymentMethodRecord(method) : null;
+  }
+
   private async findPaymentWebhookEventByExternalIdDirect(externalEventId: string): Promise<PaymentWebhookEvent | null> {
     const event = (await this.client.paymentWebhookEvent.findMany()).find((item) => item.externalEventId === externalEventId);
     return event ? mapPaymentWebhookEventRecord(event) : null;
@@ -3003,7 +3190,12 @@ export class PrismaStore implements AppStore {
       eventType: event.eventType,
       occurredAt: event.processedAt ?? event.receivedAt,
       reason: typeof event.payload.reason === "string" ? event.payload.reason : null,
-      providerStatus: typeof event.payload.providerStatus === "string" ? event.payload.providerStatus : event.eventType.replace("payment.", ""),
+      providerStatus:
+        typeof event.payload.providerStatus === "string" ? event.payload.providerStatus : defaultProviderStatusForEvent(event.eventType),
+      providerPaymentMethodId:
+        typeof event.payload.providerPaymentMethodId === "string" ? event.payload.providerPaymentMethodId : null,
+      maskedPan: typeof event.payload.maskedPan === "string" ? event.payload.maskedPan : null,
+      brand: isPaymentCardBrand(event.payload.brand) ? event.payload.brand : null,
       metadata: isPlainRecord(event.payload.metadata) ? event.payload.metadata : {},
       rawPayload: event.payload
     };
@@ -3996,6 +4188,25 @@ function isRetryableWebhookError(error: AppError): boolean {
 
 function isPlainRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function defaultProviderStatusForEvent(eventType: PaymentWebhookEvent["eventType"]): string {
+  switch (eventType) {
+    case "payment.succeeded":
+      return "succeeded";
+    case "payment.failed":
+      return "failed";
+    case "payment.refunded":
+      return "refunded";
+    case "payment_method.setup_succeeded":
+      return "active";
+    case "payment_method.setup_failed":
+      return "failed";
+  }
+}
+
+function isPaymentCardBrand(value: unknown): value is PaymentCardBrand {
+  return value === "visa" || value === "mastercard" || value === "mir" || value === "unknown";
 }
 
 function participantCreateInputFromRecord(

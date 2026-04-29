@@ -477,6 +477,142 @@ describe.each<ProviderName>(["memory", "prisma"])("api provider parity: %s", (pr
     await app.close();
   });
 
+  it("reconciles signed payment-method setup webhooks and keeps them idempotent", async () => {
+    process.env.MOCK_PROVIDER_WEBHOOK_SECRET = "test-webhook-secret";
+
+    const app = await buildApp({ store: await createStore(provider) });
+
+    async function auth(phone: string) {
+      await app.inject({ method: "POST", url: "/auth/request-otp", payload: { phone } });
+      const response = await app.inject({ method: "POST", url: "/auth/verify-otp", payload: { phone, otp: "000000" } });
+      const body = response.json();
+      return {
+        user: body.user,
+        authorization: `Bearer ${body.accessToken}`
+      };
+    }
+
+    const participantUser = await auth("+79990010026");
+
+    const setupResponse = await app.inject({
+      method: "POST",
+      url: "/payment-methods/mock-setup-intents",
+      headers: { authorization: participantUser.authorization },
+      payload: {
+        provider: "bank",
+        setAsDefault: true
+      }
+    });
+    expect(setupResponse.statusCode).toBe(201);
+    const pendingMethod = setupResponse.json();
+
+    const successWebhookPayload = {
+      eventId: "payment-method-setup-webhook-1",
+      providerSetupId: pendingMethod.providerSetupId,
+      providerPaymentMethodId: "bank_pm_webhook_1",
+      eventType: "payment_method.setup_succeeded" as const,
+      maskedPan: "2200 **** **** 2626",
+      brand: "mir" as const,
+      occurredAt: new Date().toISOString()
+    };
+
+    const invalidWebhookResponse = await app.inject({
+      method: "POST",
+      url: "/payment-methods/webhooks/bank",
+      payload: successWebhookPayload
+    });
+    expect(invalidWebhookResponse.statusCode).toBe(401);
+
+    const successWebhookResponse = await app.inject({
+      method: "POST",
+      url: "/payment-methods/webhooks/bank",
+      headers: {
+        "x-mock-provider-signature": createMockProviderWebhookSignature(successWebhookPayload, "test-webhook-secret")
+      },
+      payload: successWebhookPayload
+    });
+    expect(successWebhookResponse.statusCode).toBe(200);
+    expect(successWebhookResponse.json().id).toBe(pendingMethod.id);
+    expect(successWebhookResponse.json().status).toBe("active");
+    expect(successWebhookResponse.json().providerPaymentMethodId).toBe("bank_pm_webhook_1");
+    expect(successWebhookResponse.json().maskedPan).toBe("2200 **** **** 2626");
+    expect(successWebhookResponse.json().brand).toBe("mir");
+    expect(successWebhookResponse.json().isDefault).toBe(true);
+    expect(successWebhookResponse.json().confirmedAt).toBeTruthy();
+
+    const duplicateWebhookResponse = await app.inject({
+      method: "POST",
+      url: "/payment-methods/webhooks/bank",
+      headers: {
+        "x-mock-provider-signature": createMockProviderWebhookSignature(successWebhookPayload, "test-webhook-secret")
+      },
+      payload: successWebhookPayload
+    });
+    expect(duplicateWebhookResponse.statusCode).toBe(200);
+    expect(duplicateWebhookResponse.json().id).toBe(pendingMethod.id);
+
+    const failedSetupResponse = await app.inject({
+      method: "POST",
+      url: "/payment-methods/mock-setup-intents",
+      headers: { authorization: participantUser.authorization },
+      payload: {
+        provider: "bank",
+        setAsDefault: false
+      }
+    });
+    expect(failedSetupResponse.statusCode).toBe(201);
+    const failedPendingMethod = failedSetupResponse.json();
+
+    const failedWebhookPayload = {
+      eventId: "payment-method-setup-webhook-2",
+      providerSetupId: failedPendingMethod.providerSetupId,
+      eventType: "payment_method.setup_failed" as const,
+      reason: "Issuer declined setup.",
+      occurredAt: new Date().toISOString()
+    };
+
+    const failedWebhookResponse = await app.inject({
+      method: "POST",
+      url: "/payment-methods/webhooks/mock-provider",
+      headers: {
+        "x-mock-provider-signature": createMockProviderWebhookSignature(failedWebhookPayload, "test-webhook-secret")
+      },
+      payload: failedWebhookPayload
+    });
+    expect(failedWebhookResponse.statusCode).toBe(200);
+    expect(failedWebhookResponse.json().id).toBe(failedPendingMethod.id);
+    expect(failedWebhookResponse.json().status).toBe("failed");
+    expect(failedWebhookResponse.json().lastSetupErrorCode).toBe("provider_setup_failed");
+    expect(failedWebhookResponse.json().lastSetupErrorMessage).toBe("Issuer declined setup.");
+
+    const methodsResponse = await app.inject({
+      method: "GET",
+      url: "/payment-methods",
+      headers: { authorization: participantUser.authorization }
+    });
+    expect(methodsResponse.statusCode).toBe(200);
+    const methods = methodsResponse.json();
+    expect(
+      methods.some(
+        (method: { id: string; status: string; providerPaymentMethodId: string; isDefault: boolean }) =>
+          method.id === pendingMethod.id &&
+          method.status === "active" &&
+          method.providerPaymentMethodId === "bank_pm_webhook_1" &&
+          method.isDefault === true
+      )
+    ).toBe(true);
+    expect(
+      methods.some(
+        (method: { id: string; status: string; lastSetupErrorCode: string | null }) =>
+          method.id === failedPendingMethod.id &&
+          method.status === "failed" &&
+          method.lastSetupErrorCode === "provider_setup_failed"
+      )
+    ).toBe(true);
+
+    await app.close();
+  });
+
   it("supports itemized restaurant receipts with item-scoped share rules", async () => {
     const app = await buildApp({ store: await createStore(provider) });
 

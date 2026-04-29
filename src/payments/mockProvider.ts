@@ -1,6 +1,6 @@
 import { createHmac, randomUUID } from "node:crypto";
 import { z } from "zod";
-import type { PaymentProvider, PaymentProviderWebhookEventType } from "../domain";
+import type { PaymentCardBrand, PaymentProvider, PaymentProviderWebhookEventType } from "../domain";
 import type {
   CreatePaymentIntentInput,
   CreatePaymentMethodSetupInput,
@@ -15,7 +15,20 @@ import type {
 export interface MockProviderWebhookPayload {
   eventId: string;
   providerPaymentId: string;
-  eventType: PaymentProviderWebhookEventType;
+  eventType: Extract<PaymentProviderWebhookEventType, "payment.succeeded" | "payment.failed" | "payment.refunded">;
+  occurredAt?: string | null;
+  reason?: string | null;
+  providerStatus?: string | null;
+  metadata?: Record<string, unknown> | null;
+}
+
+export interface MockProviderPaymentMethodSetupWebhookPayload {
+  eventId: string;
+  providerSetupId: string;
+  eventType: Extract<PaymentProviderWebhookEventType, "payment_method.setup_succeeded" | "payment_method.setup_failed">;
+  providerPaymentMethodId?: string | null;
+  maskedPan?: string | null;
+  brand?: PaymentCardBrand | null;
   occurredAt?: string | null;
   reason?: string | null;
   providerStatus?: string | null;
@@ -32,18 +45,34 @@ const mockProviderWebhookSchema = z.object({
   metadata: z.record(z.string(), z.unknown()).nullable().optional()
 });
 
+const mockProviderPaymentMethodSetupWebhookSchema = z.object({
+  eventId: z.string().min(1),
+  providerSetupId: z.string().min(1),
+  eventType: z.enum(["payment_method.setup_succeeded", "payment_method.setup_failed"]),
+  providerPaymentMethodId: z.string().min(1).nullable().optional(),
+  maskedPan: z.string().min(4).max(32).nullable().optional(),
+  brand: z.enum(["visa", "mastercard", "mir", "unknown"]).nullable().optional(),
+  occurredAt: z.string().datetime().nullable().optional(),
+  reason: z.string().nullable().optional(),
+  providerStatus: z.string().nullable().optional(),
+  metadata: z.record(z.string(), z.unknown()).nullable().optional()
+});
+
 export function getMockProviderWebhookSecret(): string {
   return process.env.MOCK_PROVIDER_WEBHOOK_SECRET?.trim() || "dev-mock-provider-secret";
 }
 
-export function createMockProviderWebhookSignature(payload: MockProviderWebhookPayload, secret = getMockProviderWebhookSecret()): string {
+export function createMockProviderWebhookSignature(
+  payload: Record<string, unknown>,
+  secret = getMockProviderWebhookSecret()
+): string {
   return createHmac("sha256", secret)
     .update(stableJson(payload))
     .digest("hex");
 }
 
 export function verifyMockProviderWebhookSignature(
-  payload: MockProviderWebhookPayload,
+  payload: Record<string, unknown>,
   providedSignature: string | undefined,
   secret = getMockProviderWebhookSecret()
 ): boolean {
@@ -101,11 +130,11 @@ export function createMockProviderAdapter(provider: PaymentProvider): PaymentPro
         }
       };
     },
-    verifyAndNormalizeWebhook({ headers, body }): NormalizedPaymentWebhookEvent {
+    verifyAndNormalizePaymentWebhook({ headers, body }): NormalizedPaymentWebhookEvent {
       const payload = mockProviderWebhookSchema.parse(body) as MockProviderWebhookPayload;
       const signatureHeader = headers["x-mock-provider-signature"];
       const signature = Array.isArray(signatureHeader) ? signatureHeader[0] : signatureHeader;
-      if (!verifyMockProviderWebhookSignature(payload, signature)) {
+      if (!verifyMockProviderWebhookSignature(payload as unknown as Record<string, unknown>, signature)) {
         throw new Error("Invalid mock provider signature.");
       }
 
@@ -117,6 +146,29 @@ export function createMockProviderAdapter(provider: PaymentProvider): PaymentPro
         occurredAt: payload.occurredAt ?? null,
         reason: payload.reason ?? null,
         providerStatus: payload.providerStatus ?? defaultProviderStatusForEvent(payload.eventType),
+        metadata: payload.metadata ?? {},
+        rawPayload: payload as unknown as Record<string, unknown>
+      };
+    },
+    verifyAndNormalizePaymentMethodSetupWebhook({ headers, body }): NormalizedPaymentWebhookEvent {
+      const payload = mockProviderPaymentMethodSetupWebhookSchema.parse(body) as MockProviderPaymentMethodSetupWebhookPayload;
+      const signatureHeader = headers["x-mock-provider-signature"];
+      const signature = Array.isArray(signatureHeader) ? signatureHeader[0] : signatureHeader;
+      if (!verifyMockProviderWebhookSignature(payload as unknown as Record<string, unknown>, signature)) {
+        throw new Error("Invalid mock provider signature.");
+      }
+
+      return {
+        provider,
+        eventId: payload.eventId,
+        providerPaymentId: payload.providerSetupId,
+        eventType: payload.eventType,
+        occurredAt: payload.occurredAt ?? null,
+        reason: payload.reason ?? null,
+        providerStatus: payload.providerStatus ?? defaultProviderStatusForEvent(payload.eventType),
+        providerPaymentMethodId: payload.providerPaymentMethodId ?? null,
+        maskedPan: payload.maskedPan ?? null,
+        brand: payload.brand ?? null,
         metadata: payload.metadata ?? {},
         rawPayload: payload as unknown as Record<string, unknown>
       };
@@ -132,6 +184,10 @@ function defaultProviderStatusForEvent(eventType: PaymentProviderWebhookEventTyp
       return "failed";
     case "payment.refunded":
       return "refunded";
+    case "payment_method.setup_succeeded":
+      return "active";
+    case "payment_method.setup_failed":
+      return "failed";
   }
 }
 

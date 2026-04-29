@@ -188,7 +188,7 @@ export function registerPaymentRoutes(app: FastifyInstance, store: AppStore): vo
     const params = webhookProviderParamsSchema.parse(request.params);
     const adapter = getPaymentProviderAdapter(params.provider);
     try {
-      const event = adapter.verifyAndNormalizeWebhook({
+      const event = adapter.verifyAndNormalizePaymentWebhook({
         headers: request.headers,
         body: request.body
       });
@@ -204,7 +204,7 @@ export function registerPaymentRoutes(app: FastifyInstance, store: AppStore): vo
   app.post("/payments/webhooks/mock-provider", async (request) => {
     const adapter = getPaymentProviderAdapter("bank");
     try {
-      const event = adapter.verifyAndNormalizeWebhook({
+      const event = adapter.verifyAndNormalizePaymentWebhook({
         headers: request.headers,
         body: request.body
       });
@@ -214,6 +214,39 @@ export function registerPaymentRoutes(app: FastifyInstance, store: AppStore): vo
         throw error;
       }
       throw new AppError(401, error instanceof Error ? error.message : "Invalid mock provider signature.");
+    }
+  });
+
+  app.post("/payment-methods/webhooks/:provider", async (request) => {
+    const params = webhookProviderParamsSchema.parse(request.params);
+    const adapter = getPaymentProviderAdapter(params.provider);
+    try {
+      const event = adapter.verifyAndNormalizePaymentMethodSetupWebhook({
+        headers: request.headers,
+        body: request.body
+      });
+      return await store.applyPaymentMethodSetupWebhook(event);
+    } catch (error) {
+      if (error instanceof AppError) {
+        throw error;
+      }
+      throw new AppError(401, error instanceof Error ? error.message : "Invalid payment-method setup webhook.");
+    }
+  });
+
+  app.post("/payment-methods/webhooks/mock-provider", async (request) => {
+    const adapter = getPaymentProviderAdapter("bank");
+    try {
+      const event = adapter.verifyAndNormalizePaymentMethodSetupWebhook({
+        headers: request.headers,
+        body: request.body
+      });
+      return await store.applyPaymentMethodSetupWebhook(event);
+    } catch (error) {
+      if (error instanceof AppError) {
+        throw error;
+      }
+      throw new AppError(401, error instanceof Error ? error.message : "Invalid mock provider payment-method setup signature.");
     }
   });
 }

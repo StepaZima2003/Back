@@ -145,6 +145,25 @@ paths:
       responses:
         "200":
           description: Revoked payment method
+  /payment-methods/webhooks/{provider}:
+    post:
+      summary: Apply signed provider webhook event to reconcile payment-method setup
+      parameters:
+        - name: provider
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [yookassa, bank, sbp, manual, other]
+      responses:
+        "200":
+          description: Updated payment method
+  /payment-methods/webhooks/mock-provider:
+    post:
+      summary: Legacy alias for mock bank-provider payment-method setup webhook event
+      responses:
+        "200":
+          description: Updated payment method
   /autopay-rules:
     get:
       summary: List current user auto payment rules

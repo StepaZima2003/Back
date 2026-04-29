@@ -892,6 +892,85 @@ describe("PostgreSQL integration", () => {
     ).toBe(true);
   });
 
+  it("retries failed payment-method setup webhooks after the pending method becomes available", async () => {
+    const participantUser = await auth(app!, "+79990011053");
+
+    const providerSetupId = "live-late-provider-setup";
+    const webhookPayload = {
+      eventId: "live-payment-method-setup-webhook-1",
+      providerSetupId,
+      providerPaymentMethodId: "bank_pm_late_setup",
+      eventType: "payment_method.setup_succeeded" as const,
+      maskedPan: "2200 **** **** 5353",
+      brand: "mir" as const,
+      occurredAt: new Date().toISOString()
+    };
+
+    const firstAttempt = await app!.inject({
+      method: "POST",
+      url: "/payment-methods/webhooks/bank",
+      headers: {
+        "x-mock-provider-signature": createMockProviderWebhookSignature(webhookPayload, "test-webhook-secret")
+      },
+      payload: webhookPayload
+    });
+    expect(firstAttempt.statusCode).toBe(404);
+
+    const failedEvent = await client.paymentWebhookEvent.findUnique({
+      where: { externalEventId: webhookPayload.eventId }
+    });
+    expect(failedEvent?.status).toBe("failed");
+    expect(failedEvent?.attemptCount).toBe(1);
+
+    const setupResponse = await app!.inject({
+      method: "POST",
+      url: "/payment-methods/mock-setup-intents",
+      headers: { authorization: participantUser.authorization },
+      payload: {
+        provider: "bank",
+        setAsDefault: true
+      }
+    });
+    expect(setupResponse.statusCode).toBe(201);
+    const pendingMethod = setupResponse.json();
+
+    await client.paymentMethod.update({
+      where: { id: pendingMethod.id },
+      data: {
+        providerSetupId
+      }
+    });
+
+    const retryResponse = await app!.inject({
+      method: "POST",
+      url: "/internal/payments/webhooks/retry-failed",
+      headers: { "x-internal-token": "test-internal-token" },
+      payload: { ignoreSchedule: true }
+    });
+    expect(retryResponse.statusCode).toBe(200);
+    expect(retryResponse.json().dueEvents).toBe(1);
+    expect(retryResponse.json().processed).toBe(1);
+    expect(retryResponse.json().deadLettered).toBe(0);
+
+    const updatedMethod = await client.paymentMethod.findUnique({
+      where: { id: pendingMethod.id }
+    });
+    expect(updatedMethod?.status).toBe("active");
+    expect(updatedMethod?.providerPaymentMethodId).toBe("bank_pm_late_setup");
+    expect(updatedMethod?.maskedPan).toBe("2200 **** **** 5353");
+    expect(updatedMethod?.brand).toBe("mir");
+    expect(updatedMethod?.isDefault).toBe(true);
+    expect(updatedMethod?.confirmedAt).not.toBeNull();
+
+    const processedEvent = await client.paymentWebhookEvent.findUnique({
+      where: { externalEventId: webhookPayload.eventId }
+    });
+    expect(processedEvent?.status).toBe("processed");
+    expect(processedEvent?.attemptCount).toBe(2);
+    expect(processedEvent?.paymentId).toBeNull();
+    expect(processedEvent?.deadLetteredAt).toBeNull();
+  });
+
   it("retries failed provider webhooks after the missing payment becomes available", async () => {
     const organizer = await auth(app!, "+79990011071");
     const participantUser = await auth(app!, "+79990011072");

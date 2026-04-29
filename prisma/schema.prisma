@@ -316,12 +316,17 @@ model PaymentMethod {
   id                      String              @id @default(uuid()) @db.Uuid
   userId                  String              @map("user_id") @db.Uuid
   provider                String
+  providerCustomerId      String?             @map("provider_customer_id")
+  providerSetupId         String?             @map("provider_setup_id")
   providerPaymentMethodId String              @map("provider_payment_method_id")
   providerMetadata        Json                @default("{}") @map("provider_metadata")
   maskedPan               String              @map("masked_pan")
   brand                   PaymentCardBrand    @default(unknown)
   status                  PaymentMethodStatus @default(pending_binding)
   isDefault               Boolean             @default(false) @map("is_default")
+  lastSetupErrorCode      String?             @map("last_setup_error_code")
+  lastSetupErrorMessage   String?             @map("last_setup_error_message")
+  confirmedAt             DateTime?           @map("confirmed_at")
   createdAt               DateTime            @default(now()) @map("created_at")
   updatedAt               DateTime            @updatedAt @map("updated_at")
 

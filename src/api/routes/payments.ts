@@ -25,6 +25,22 @@ const bindMockPaymentMethodSchema = z.object({
   setAsDefault: z.boolean().optional()
 });
 
+const createMockPaymentMethodSetupSchema = z.object({
+  provider: z.string().min(1).max(40).optional(),
+  setAsDefault: z.boolean().optional()
+});
+
+const confirmMockPaymentMethodSetupSchema = z.object({
+  maskedPan: z.string().min(4).max(32),
+  brand: z.enum(["visa", "mastercard", "mir", "unknown"]).optional(),
+  setAsDefault: z.boolean().optional()
+});
+
+const failMockPaymentMethodSetupSchema = z.object({
+  errorCode: z.string().min(1).max(80).optional(),
+  reason: z.string().nullable().optional()
+});
+
 const upsertAutoPaymentRuleSchema = z.object({
   collectionId: z.string().nullable().optional(),
   groupId: z.string().nullable().optional(),
@@ -65,6 +81,27 @@ export function registerPaymentRoutes(app: FastifyInstance, store: AppStore): vo
   app.get("/payment-methods", async (request) => {
     const user = await requireUser(request, store);
     return await store.listPaymentMethods(user.id);
+  });
+
+  app.post("/payment-methods/mock-setup-intents", async (request, reply) => {
+    const user = await requireUser(request, store);
+    const body = createMockPaymentMethodSetupSchema.parse(request.body ?? {});
+    const method = await store.createMockPaymentMethodSetup(user.id, body);
+    reply.status(201).send(method);
+  });
+
+  app.post("/payment-methods/:id/confirm-setup", async (request) => {
+    const user = await requireUser(request, store);
+    const params = idParamsSchema.parse(request.params);
+    const body = confirmMockPaymentMethodSetupSchema.parse(request.body);
+    return await store.confirmMockPaymentMethodSetup(user.id, params.id, body);
+  });
+
+  app.post("/payment-methods/:id/fail-setup", async (request) => {
+    const user = await requireUser(request, store);
+    const params = idParamsSchema.parse(request.params);
+    const body = failMockPaymentMethodSetupSchema.parse(request.body ?? {});
+    return await store.failMockPaymentMethodSetup(user.id, params.id, body);
   });
 
   app.post("/payment-methods/mock-bind", async (request, reply) => {

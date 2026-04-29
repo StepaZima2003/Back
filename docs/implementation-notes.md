@@ -15,5 +15,6 @@ Working notes for the next SocialSplitApp backend increment.
 ## Next backend step
 
 - replace the mock PSP transport with a real provider adapter and provider-specific webhook payload validation;
+- extend payment-method lifecycle into real provider customer/token references and setup-webhook reconciliation;
 - add richer operator tooling on top of persisted webhook retry state: search, pagination, and alerting for stuck dead-letter events;
 - tighten GitHub Actions further with migration drift / OpenAPI artifact checks if CI time stays reasonable.

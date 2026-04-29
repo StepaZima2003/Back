@@ -152,13 +152,18 @@ export interface Collection {
 export interface PaymentMethod {
   id: string;
   userId: string;
-  provider: string;
+  provider: PaymentProvider;
+  providerCustomerId: string | null;
+  providerSetupId: string | null;
   providerPaymentMethodId: string;
   providerMetadata: Record<string, unknown>;
   maskedPan: string;
   brand: PaymentCardBrand;
   status: PaymentMethodStatus;
   isDefault: boolean;
+  lastSetupErrorCode: string | null;
+  lastSetupErrorMessage: string | null;
+  confirmedAt: string | null;
   createdAt: string;
   updatedAt: string;
 }

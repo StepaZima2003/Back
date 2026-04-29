@@ -99,9 +99,37 @@ paths:
       responses:
         "200":
           description: Payment methods
+  /payment-methods/mock-setup-intents:
+    post:
+      summary: Create mock payment-method setup session
+      security:
+        - bearerAuth: []
+      responses:
+        "201":
+          description: Pending payment method
+  /payment-methods/{id}/confirm-setup:
+    post:
+      summary: Confirm mock payment-method setup session
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          description: Active payment method
+  /payment-methods/{id}/fail-setup:
+    post:
+      summary: Mark mock payment-method setup session as failed
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          description: Failed payment method
   /payment-methods/mock-bind:
     post:
-      summary: Bind masked mock payment method
+      summary: Legacy shorthand that creates and confirms a mock payment method in one step
       security:
         - bearerAuth: []
       responses:

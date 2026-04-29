@@ -11,10 +11,27 @@ export interface CreatePaymentMethodBindingInput {
   userId: string;
   maskedPan: string;
   brand: PaymentMethod["brand"];
+  existingProviderCustomerId?: string | null;
 }
 
 export interface ProviderPaymentMethodBindingResult {
+  providerCustomerId: string;
+  providerSetupId: string | null;
   providerPaymentMethodId: string;
+  providerStatus: PaymentMethod["status"];
+  providerMetadata: Record<string, unknown>;
+}
+
+export interface CreatePaymentMethodSetupInput {
+  provider: PaymentProvider;
+  userId: string;
+  existingProviderCustomerId?: string | null;
+}
+
+export interface ProviderPaymentMethodSetupResult {
+  providerCustomerId: string;
+  providerSetupId: string;
+  providerStatus: PaymentMethod["status"];
   providerMetadata: Record<string, unknown>;
 }
 
@@ -50,6 +67,7 @@ export interface NormalizedPaymentWebhookEvent {
 
 export interface PaymentProviderAdapter {
   readonly provider: PaymentProvider;
+  createPaymentMethodSetup(input: CreatePaymentMethodSetupInput): ProviderPaymentMethodSetupResult;
   createPaymentMethodBinding(input: CreatePaymentMethodBindingInput): ProviderPaymentMethodBindingResult;
   createPaymentIntent(input: CreatePaymentIntentInput): ProviderPaymentIntentResult;
   verifyAndNormalizeWebhook(input: {

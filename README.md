@@ -97,7 +97,7 @@ Retry/concurrency hardening now covers:
 
 Mock payment and autopay groundwork is now available without any real payment processor:
 
-- user-scoped mock payment method binding and revoke flow;
+- user-scoped mock payment method setup lifecycle with provider customer/setup references, confirm/fail transitions, and revoke flow;
 - collection/global auto-payment rules with update support;
 - simulated payment intents stored in PostgreSQL;
 - retry-safe mock payment intent creation via `idempotencyKey`;

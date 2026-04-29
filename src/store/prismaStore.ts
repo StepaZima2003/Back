@@ -539,23 +539,17 @@ export class PrismaStore implements AppStore {
       .map(mapPaymentMethodRecord);
   }
 
-  async bindMockPaymentMethod(
+  async createMockPaymentMethodSetup(
     userId: string,
-    data: { provider?: string; maskedPan: string; brand?: PaymentCardBrand; setAsDefault?: boolean }
+    data: { provider?: string; setAsDefault?: boolean }
   ): Promise<PaymentMethod> {
     await this.getUser(userId);
-    const existingMethods = await this.listPaymentMethods(userId);
-    const isDefault = data.setAsDefault ?? existingMethods.length === 0;
-    if (isDefault) {
-      await this.clearDefaultPaymentMethodDirect(userId);
-    }
-
     const provider = normalizePaymentProvider(data.provider);
-    const binding = getPaymentProviderAdapter(provider).createPaymentMethodBinding({
+    const activeMethods = (await this.listPaymentMethods(userId)).filter((method) => method.status === "active");
+    const setup = getPaymentProviderAdapter(provider).createPaymentMethodSetup({
       provider,
       userId,
-      maskedPan: data.maskedPan,
-      brand: data.brand ?? "unknown"
+      existingProviderCustomerId: await this.findProviderCustomerIdDirect(userId, provider)
     });
 
     const createdAt = new Date();
@@ -566,23 +560,164 @@ export class PrismaStore implements AppStore {
         id: randomUUID(),
         userId,
         provider,
-        providerPaymentMethodId: binding.providerPaymentMethodId,
-        providerMetadata: asJson(binding.providerMetadata),
-        maskedPan: data.maskedPan,
-        brand: data.brand ?? "unknown",
-        status: "active",
-        isDefault,
+        providerCustomerId: setup.providerCustomerId,
+        providerSetupId: setup.providerSetupId,
+        providerPaymentMethodId: `${provider}_pm_pending_${randomUUID()}`,
+        providerMetadata: asJson({
+          ...setup.providerMetadata,
+          requestedDefault: data.setAsDefault ?? activeMethods.length === 0
+        }),
+        maskedPan: "pending",
+        brand: "unknown",
+        status: setup.providerStatus,
+        isDefault: false,
+        lastSetupErrorCode: null,
+        lastSetupErrorMessage: null,
+        confirmedAt: null,
         createdAt,
         updatedAt: createdAt
       }
     });
     await this.addAuditDirect(userId, "user", method.id, null, "created", {
-      kind: "payment_method",
-      provider: method.provider,
-      brand: method.brand,
-      isDefault: method.isDefault
+      kind: "payment_method_setup",
+      provider,
+      providerCustomerId: method.providerCustomerId,
+      providerSetupId: method.providerSetupId
     });
     return mapPaymentMethodRecord(method);
+  }
+
+  async confirmMockPaymentMethodSetup(
+    userId: string,
+    paymentMethodId: string,
+    data: { maskedPan: string; brand?: PaymentCardBrand; setAsDefault?: boolean }
+  ): Promise<PaymentMethod> {
+    const method = await this.getPaymentMethodForUserDirect(userId, paymentMethodId);
+    if (method.status === "active") {
+      return method;
+    }
+    if (method.status === "revoked") {
+      throw new AppError(409, "Revoked payment method cannot be confirmed.");
+    }
+
+    const activeMethods = (await this.listPaymentMethods(userId)).filter((item) => item.status === "active");
+    const shouldSetDefault =
+      data.setAsDefault ??
+      (typeof method.providerMetadata.requestedDefault === "boolean"
+        ? method.providerMetadata.requestedDefault
+        : activeMethods.length === 0);
+    if (shouldSetDefault) {
+      await this.clearDefaultPaymentMethodDirect(userId);
+    }
+
+    const binding = getPaymentProviderAdapter(method.provider).createPaymentMethodBinding({
+      provider: method.provider,
+      userId,
+      maskedPan: data.maskedPan,
+      brand: data.brand ?? "unknown",
+      existingProviderCustomerId: method.providerCustomerId
+    });
+
+    const confirmedAt = new Date();
+    const updated = await this.client.paymentMethod.upsert({
+      where: { id: method.id },
+      update: {
+        providerCustomerId: binding.providerCustomerId,
+        providerSetupId: binding.providerSetupId ?? method.providerSetupId,
+        providerPaymentMethodId: binding.providerPaymentMethodId,
+        providerMetadata: asJson({
+          ...method.providerMetadata,
+          ...binding.providerMetadata,
+          requestedDefault: shouldSetDefault
+        }),
+        maskedPan: data.maskedPan,
+        brand: data.brand ?? "unknown",
+        status: "active",
+        isDefault: shouldSetDefault,
+        lastSetupErrorCode: null,
+        lastSetupErrorMessage: null,
+        confirmedAt,
+        updatedAt: confirmedAt
+      },
+      create: paymentMethodCreateInputFromRecord(method, {
+        providerCustomerId: binding.providerCustomerId,
+        providerSetupId: binding.providerSetupId ?? method.providerSetupId,
+        providerPaymentMethodId: binding.providerPaymentMethodId,
+        providerMetadata: {
+          ...method.providerMetadata,
+          ...binding.providerMetadata,
+          requestedDefault: shouldSetDefault
+        },
+        maskedPan: data.maskedPan,
+        brand: data.brand ?? "unknown",
+        status: "active",
+        isDefault: shouldSetDefault,
+        lastSetupErrorCode: null,
+        lastSetupErrorMessage: null,
+        confirmedAt,
+        updatedAt: confirmedAt
+      })
+    });
+    await this.addAuditDirect(userId, "user", method.id, null, "confirmed", {
+      kind: "payment_method_setup",
+      provider: updated.provider,
+      providerCustomerId: updated.providerCustomerId,
+      providerPaymentMethodId: updated.providerPaymentMethodId,
+      isDefault: updated.isDefault
+    });
+    return mapPaymentMethodRecord(updated);
+  }
+
+  async failMockPaymentMethodSetup(
+    userId: string,
+    paymentMethodId: string,
+    data: { errorCode?: string; reason?: string | null }
+  ): Promise<PaymentMethod> {
+    const method = await this.getPaymentMethodForUserDirect(userId, paymentMethodId);
+    if (method.status === "active" || method.status === "revoked") {
+      return method;
+    }
+
+    const updatedAt = new Date();
+    const updated = await this.client.paymentMethod.upsert({
+      where: { id: method.id },
+      update: {
+        status: "failed",
+        isDefault: false,
+        lastSetupErrorCode: data.errorCode ?? "mock_setup_failed",
+        lastSetupErrorMessage: data.reason ?? "Mock provider setup failed.",
+        updatedAt
+      },
+      create: paymentMethodCreateInputFromRecord(method, {
+        status: "failed",
+        isDefault: false,
+        lastSetupErrorCode: data.errorCode ?? "mock_setup_failed",
+        lastSetupErrorMessage: data.reason ?? "Mock provider setup failed.",
+        updatedAt
+      })
+    });
+    await this.addAuditDirect(userId, "user", method.id, null, "updated", {
+      kind: "payment_method_setup",
+      status: "failed",
+      errorCode: updated.lastSetupErrorCode,
+      reason: updated.lastSetupErrorMessage
+    });
+    return mapPaymentMethodRecord(updated);
+  }
+
+  async bindMockPaymentMethod(
+    userId: string,
+    data: { provider?: string; maskedPan: string; brand?: PaymentCardBrand; setAsDefault?: boolean }
+  ): Promise<PaymentMethod> {
+    const pending = await this.createMockPaymentMethodSetup(userId, {
+      provider: data.provider,
+      setAsDefault: data.setAsDefault
+    });
+    return await this.confirmMockPaymentMethodSetup(userId, pending.id, {
+      maskedPan: data.maskedPan,
+      brand: data.brand,
+      setAsDefault: data.setAsDefault
+    });
   }
 
   async revokePaymentMethod(userId: string, paymentMethodId: string): Promise<PaymentMethod> {
@@ -2604,6 +2739,15 @@ export class PrismaStore implements AppStore {
     return mapPaymentMethodRecord(method);
   }
 
+  private async findProviderCustomerIdDirect(userId: string, provider: PaymentMethod["provider"]): Promise<string | null> {
+    return (
+      (await this.client.paymentMethod.findMany())
+        .map(mapPaymentMethodRecord)
+        .find((method) => method.userId === userId && method.provider === provider && Boolean(method.providerCustomerId))
+        ?.providerCustomerId ?? null
+    );
+  }
+
   private async getOwnAutoPaymentRuleDirect(userId: string, ruleId: string): Promise<AutoPaymentRule> {
     const rule = (await this.client.autoPaymentRule.findMany()).find((item) => item.id === ruleId);
     if (!rule || rule.userId !== userId) {
@@ -3203,25 +3347,35 @@ function mapPaymentMethodRecord(record: {
   id: string;
   userId: string;
   provider: string;
+  providerCustomerId: string | null;
+  providerSetupId: string | null;
   providerPaymentMethodId: string;
   providerMetadata: Prisma.JsonValue;
   maskedPan: string;
   brand: PaymentMethod["brand"];
   status: PaymentMethod["status"];
   isDefault: boolean;
+  lastSetupErrorCode: string | null;
+  lastSetupErrorMessage: string | null;
+  confirmedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }): PaymentMethod {
   return {
     id: record.id,
     userId: record.userId,
-    provider: record.provider,
+    provider: normalizePaymentProvider(record.provider),
+    providerCustomerId: record.providerCustomerId,
+    providerSetupId: record.providerSetupId,
     providerPaymentMethodId: record.providerPaymentMethodId,
     providerMetadata: (record.providerMetadata ?? {}) as Record<string, unknown>,
     maskedPan: record.maskedPan,
     brand: record.brand,
     status: record.status,
     isDefault: record.isDefault,
+    lastSetupErrorCode: record.lastSetupErrorCode,
+    lastSetupErrorMessage: record.lastSetupErrorMessage,
+    confirmedAt: record.confirmedAt?.toISOString() ?? null,
     createdAt: record.createdAt.toISOString(),
     updatedAt: record.updatedAt.toISOString()
   };
@@ -3963,7 +4117,15 @@ function paymentMethodCreateInputFromRecord(
   overrides?: Partial<{
     status: PaymentMethod["status"];
     isDefault: boolean;
+    providerCustomerId: string | null;
+    providerSetupId: string | null;
+    providerPaymentMethodId: string;
     providerMetadata: Record<string, unknown>;
+    maskedPan: string;
+    brand: PaymentMethod["brand"];
+    lastSetupErrorCode: string | null;
+    lastSetupErrorMessage: string | null;
+    confirmedAt: Date | null;
     updatedAt: Date;
   }>
 ) {
@@ -3971,12 +4133,22 @@ function paymentMethodCreateInputFromRecord(
     id: method.id,
     userId: method.userId,
     provider: method.provider,
-    providerPaymentMethodId: method.providerPaymentMethodId,
+    providerCustomerId: overrides?.providerCustomerId ?? method.providerCustomerId,
+    providerSetupId: overrides?.providerSetupId ?? method.providerSetupId,
+    providerPaymentMethodId: overrides?.providerPaymentMethodId ?? method.providerPaymentMethodId,
     providerMetadata: asJson(overrides?.providerMetadata ?? method.providerMetadata),
-    maskedPan: method.maskedPan,
-    brand: method.brand,
+    maskedPan: overrides?.maskedPan ?? method.maskedPan,
+    brand: overrides?.brand ?? method.brand,
     status: overrides?.status ?? method.status,
     isDefault: overrides?.isDefault ?? method.isDefault,
+    lastSetupErrorCode: overrides?.lastSetupErrorCode ?? method.lastSetupErrorCode,
+    lastSetupErrorMessage: overrides?.lastSetupErrorMessage ?? method.lastSetupErrorMessage,
+    confirmedAt:
+      overrides?.confirmedAt !== undefined
+        ? overrides.confirmedAt
+        : method.confirmedAt
+          ? new Date(method.confirmedAt)
+          : null,
     createdAt: new Date(method.createdAt),
     updatedAt: overrides?.updatedAt ?? new Date(method.updatedAt)
   };

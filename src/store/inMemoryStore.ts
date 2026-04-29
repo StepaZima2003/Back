@@ -473,46 +473,151 @@ export class InMemoryStore {
       .sort((a, b) => Number(b.isDefault) - Number(a.isDefault) || a.createdAt.localeCompare(b.createdAt));
   }
 
-  bindMockPaymentMethod(
+  createMockPaymentMethodSetup(
     userId: string,
-    data: { provider?: string; maskedPan: string; brand?: PaymentCardBrand; setAsDefault?: boolean }
+    data: { provider?: string; setAsDefault?: boolean }
   ): PaymentMethod {
     this.getUser(userId);
     const createdAt = now();
-    const isDefault = data.setAsDefault ?? this.listPaymentMethods(userId).length === 0;
-    if (isDefault) {
-      this.clearDefaultPaymentMethod(userId);
-    }
-
     const provider = normalizePaymentProvider(data.provider);
-    const binding = getPaymentProviderAdapter(provider).createPaymentMethodBinding({
+    const setup = getPaymentProviderAdapter(provider).createPaymentMethodSetup({
       provider,
       userId,
-      maskedPan: data.maskedPan,
-      brand: data.brand ?? "unknown"
+      existingProviderCustomerId: this.findProviderCustomerId(userId, provider)
     });
 
     const method: PaymentMethod = {
       id: randomUUID(),
       userId,
       provider,
-      providerPaymentMethodId: binding.providerPaymentMethodId,
-      providerMetadata: binding.providerMetadata,
-      maskedPan: data.maskedPan,
-      brand: data.brand ?? "unknown",
-      status: "active",
-      isDefault,
+      providerCustomerId: setup.providerCustomerId,
+      providerSetupId: setup.providerSetupId,
+      providerPaymentMethodId: `${provider}_pm_pending_${randomUUID()}`,
+      providerMetadata: {
+        ...setup.providerMetadata,
+        requestedDefault: data.setAsDefault ?? this.listPaymentMethods(userId).filter((methodItem) => methodItem.status === "active").length === 0
+      },
+      maskedPan: "pending",
+      brand: "unknown",
+      status: setup.providerStatus,
+      isDefault: false,
+      lastSetupErrorCode: null,
+      lastSetupErrorMessage: null,
+      confirmedAt: null,
       createdAt,
       updatedAt: createdAt
     };
     this.paymentMethods.set(method.id, method);
     this.addAudit(userId, "user", method.id, null, "created", {
-      kind: "payment_method",
-      provider: method.provider,
-      brand: method.brand,
-      isDefault: method.isDefault
+      kind: "payment_method_setup",
+      provider,
+      providerCustomerId: method.providerCustomerId,
+      providerSetupId: method.providerSetupId
     });
     return method;
+  }
+
+  confirmMockPaymentMethodSetup(
+    userId: string,
+    paymentMethodId: string,
+    data: { maskedPan: string; brand?: PaymentCardBrand; setAsDefault?: boolean }
+  ): PaymentMethod {
+    const method = this.getPaymentMethodForUser(userId, paymentMethodId);
+    if (method.status === "active") {
+      return method;
+    }
+    if (method.status === "revoked") {
+      throw new AppError(409, "Revoked payment method cannot be confirmed.");
+    }
+
+    const shouldSetDefault =
+      data.setAsDefault ??
+      (typeof method.providerMetadata.requestedDefault === "boolean"
+        ? method.providerMetadata.requestedDefault
+        : this.listPaymentMethods(userId).filter((item) => item.status === "active").length === 0);
+    if (shouldSetDefault) {
+      this.clearDefaultPaymentMethod(userId);
+    }
+
+    const binding = getPaymentProviderAdapter(method.provider).createPaymentMethodBinding({
+      provider: method.provider,
+      userId,
+      maskedPan: data.maskedPan,
+      brand: data.brand ?? "unknown",
+      existingProviderCustomerId: method.providerCustomerId
+    });
+
+    const updated: PaymentMethod = {
+      ...method,
+      providerCustomerId: binding.providerCustomerId,
+      providerSetupId: binding.providerSetupId ?? method.providerSetupId,
+      providerPaymentMethodId: binding.providerPaymentMethodId,
+      providerMetadata: {
+        ...method.providerMetadata,
+        ...binding.providerMetadata,
+        requestedDefault: shouldSetDefault
+      },
+      maskedPan: data.maskedPan,
+      brand: data.brand ?? "unknown",
+      status: "active",
+      isDefault: shouldSetDefault,
+      lastSetupErrorCode: null,
+      lastSetupErrorMessage: null,
+      confirmedAt: now(),
+      updatedAt: now()
+    };
+    this.paymentMethods.set(method.id, updated);
+    this.addAudit(userId, "user", method.id, null, "confirmed", {
+      kind: "payment_method_setup",
+      provider: updated.provider,
+      providerCustomerId: updated.providerCustomerId,
+      providerPaymentMethodId: updated.providerPaymentMethodId,
+      isDefault: updated.isDefault
+    });
+    return updated;
+  }
+
+  failMockPaymentMethodSetup(
+    userId: string,
+    paymentMethodId: string,
+    data: { errorCode?: string; reason?: string | null }
+  ): PaymentMethod {
+    const method = this.getPaymentMethodForUser(userId, paymentMethodId);
+    if (method.status === "active" || method.status === "revoked") {
+      return method;
+    }
+
+    const updated: PaymentMethod = {
+      ...method,
+      status: "failed",
+      isDefault: false,
+      lastSetupErrorCode: data.errorCode ?? "mock_setup_failed",
+      lastSetupErrorMessage: data.reason ?? "Mock provider setup failed.",
+      updatedAt: now()
+    };
+    this.paymentMethods.set(method.id, updated);
+    this.addAudit(userId, "user", method.id, null, "updated", {
+      kind: "payment_method_setup",
+      status: "failed",
+      errorCode: updated.lastSetupErrorCode,
+      reason: updated.lastSetupErrorMessage
+    });
+    return updated;
+  }
+
+  bindMockPaymentMethod(
+    userId: string,
+    data: { provider?: string; maskedPan: string; brand?: PaymentCardBrand; setAsDefault?: boolean }
+  ): PaymentMethod {
+    const pending = this.createMockPaymentMethodSetup(userId, {
+      provider: data.provider,
+      setAsDefault: data.setAsDefault
+    });
+    return this.confirmMockPaymentMethodSetup(userId, pending.id, {
+      maskedPan: data.maskedPan,
+      brand: data.brand,
+      setAsDefault: data.setAsDefault
+    });
   }
 
   revokePaymentMethod(userId: string, paymentMethodId: string): PaymentMethod {
@@ -1991,6 +2096,13 @@ export class InMemoryStore {
       throw new AppError(404, "Payment method not found.");
     }
     return method;
+  }
+
+  private findProviderCustomerId(userId: string, provider: PaymentMethod["provider"]): string | null {
+    return (
+      this.listPaymentMethods(userId).find((method) => method.provider === provider && Boolean(method.providerCustomerId))?.providerCustomerId ??
+      null
+    );
   }
 
   private getOwnAutoPaymentRule(userId: string, ruleId: string): AutoPaymentRule {

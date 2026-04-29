@@ -573,6 +573,81 @@ describe("PostgreSQL integration", () => {
     expect(auditLog.some((entry: { entityType: string }) => entry.entityType === "payment")).toBe(true);
   });
 
+  it("persists mock payment method setup lifecycle in live PostgreSQL", async () => {
+    const participantUser = await auth(app!, "+79990011036");
+
+    const setupResponse = await app!.inject({
+      method: "POST",
+      url: "/payment-methods/mock-setup-intents",
+      headers: { authorization: participantUser.authorization },
+      payload: {
+        provider: "bank",
+        setAsDefault: true
+      }
+    });
+    expect(setupResponse.statusCode).toBe(201);
+    const pendingMethod = setupResponse.json();
+    expect(pendingMethod.status).toBe("requires_confirmation");
+    expect(pendingMethod.providerCustomerId).toBeTruthy();
+    expect(pendingMethod.providerSetupId).toBeTruthy();
+
+    const failedResponse = await app!.inject({
+      method: "POST",
+      url: `/payment-methods/${pendingMethod.id}/fail-setup`,
+      headers: { authorization: participantUser.authorization },
+      payload: {
+        errorCode: "mock_declined",
+        reason: "Mock setup failed."
+      }
+    });
+    expect(failedResponse.statusCode).toBe(200);
+    expect(failedResponse.json().status).toBe("failed");
+    expect(failedResponse.json().lastSetupErrorCode).toBe("mock_declined");
+
+    const secondSetupResponse = await app!.inject({
+      method: "POST",
+      url: "/payment-methods/mock-setup-intents",
+      headers: { authorization: participantUser.authorization },
+      payload: {
+        provider: "bank",
+        setAsDefault: true
+      }
+    });
+    expect(secondSetupResponse.statusCode).toBe(201);
+    const pendingRetryMethod = secondSetupResponse.json();
+
+    const confirmedResponse = await app!.inject({
+      method: "POST",
+      url: `/payment-methods/${pendingRetryMethod.id}/confirm-setup`,
+      headers: { authorization: participantUser.authorization },
+      payload: {
+        maskedPan: "2200 **** **** 3636",
+        brand: "mir",
+        setAsDefault: true
+      }
+    });
+    expect(confirmedResponse.statusCode).toBe(200);
+    const activeMethod = confirmedResponse.json();
+    expect(activeMethod.status).toBe("active");
+    expect(activeMethod.providerSetupId).toBeTruthy();
+    expect(activeMethod.confirmedAt).toBeTruthy();
+    expect(activeMethod.lastSetupErrorCode).toBe(null);
+
+    await app!.close();
+    app = await createApp();
+
+    const methodsResponse = await app!.inject({
+      method: "GET",
+      url: "/payment-methods",
+      headers: { authorization: participantUser.authorization }
+    });
+    expect(methodsResponse.statusCode).toBe(200);
+    const methods = methodsResponse.json();
+    expect(methods).toHaveLength(2);
+    expect(methods.some((method: { id: string; status: string }) => method.id === pendingMethod.id && method.status === "failed")).toBe(true);
+    expect(methods.some((method: { id: string; status: string; isDefault: boolean }) => method.id === activeMethod.id && method.status === "active" && method.isDefault)).toBe(true);
+  });
+
   it("executes persisted auto payment batches with category rules on live PostgreSQL", async () => {
     const organizer = await auth(app!, "+79990011041");
     const participantUser = await auth(app!, "+79990011042");

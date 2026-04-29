@@ -77,7 +77,9 @@ Money-flow hardening now includes:
 
 The same backend now has a mock payment slice for non-production payment work:
 
-- `payment_methods` are persisted as masked mock bindings only;
+- `payment_methods` now support a fuller setup lifecycle: `requires_confirmation -> active|failed -> revoked`;
+- mock setup sessions persist provider customer references, setup references, confirmation timestamps, and setup failure markers;
+- legacy `mock-bind` still exists as a shorthand, but the primary flow is now setup-session based;
 - `auto_payment_rules` are persisted and queryable by user/collection/group scope;
 - `payments` are persisted as simulated provider intents with `pending -> succeeded|failed|refunded` transitions;
 - payment methods now persist provider token references and provider metadata snapshots;
@@ -152,6 +154,6 @@ This same split now runs in GitHub Actions:
 ## Persistence Roadmap
 
 1. Keep calculation logic pure and independent from Prisma.
-2. Replace the mock PSP transport with a real adapter, stored provider references, and provider-specific webhook schemas.
+2. Replace the mock PSP transport with a real adapter, real customer/payment-method token references, and provider-specific webhook schemas.
 3. Add alerting / dead-letter inspection tooling around failed webhook events.
 4. Move from polling-only orchestration to queue-backed execution if batch volume grows past one process.

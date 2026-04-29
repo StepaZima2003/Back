@@ -3,11 +3,13 @@ import { z } from "zod";
 import type { PaymentProvider, PaymentProviderWebhookEventType } from "../domain";
 import type {
   CreatePaymentIntentInput,
+  CreatePaymentMethodSetupInput,
   CreatePaymentMethodBindingInput,
   NormalizedPaymentWebhookEvent,
   PaymentProviderAdapter,
   ProviderPaymentIntentResult,
-  ProviderPaymentMethodBindingResult
+  ProviderPaymentMethodBindingResult,
+  ProviderPaymentMethodSetupResult
 } from "./providerAdapter";
 
 export interface MockProviderWebhookPayload {
@@ -54,14 +56,34 @@ export function verifyMockProviderWebhookSignature(
 export function createMockProviderAdapter(provider: PaymentProvider): PaymentProviderAdapter {
   return {
     provider,
-    createPaymentMethodBinding(input: CreatePaymentMethodBindingInput): ProviderPaymentMethodBindingResult {
+    createPaymentMethodSetup(input: CreatePaymentMethodSetupInput): ProviderPaymentMethodSetupResult {
+      const providerCustomerId = input.existingProviderCustomerId?.trim() || `${provider}_cust_${randomUUID()}`;
       return {
-        providerPaymentMethodId: `${provider}_pm_${randomUUID()}`,
+        providerCustomerId,
+        providerSetupId: `${provider}_setup_${randomUUID()}`,
+        providerStatus: "requires_confirmation",
         providerMetadata: {
           mode: "mock",
           provider,
+          customerReference: providerCustomerId,
+          flow: "payment_method_setup"
+        }
+      };
+    },
+    createPaymentMethodBinding(input: CreatePaymentMethodBindingInput): ProviderPaymentMethodBindingResult {
+      const providerCustomerId = input.existingProviderCustomerId?.trim() || `${provider}_cust_${randomUUID()}`;
+      return {
+        providerCustomerId,
+        providerSetupId: null,
+        providerPaymentMethodId: `${provider}_pm_${randomUUID()}`,
+        providerStatus: "active",
+        providerMetadata: {
+          mode: "mock",
+          provider,
+          customerReference: providerCustomerId,
           maskedPan: input.maskedPan,
-          brand: input.brand
+          brand: input.brand,
+          flow: "legacy_bind"
         }
       };
     },

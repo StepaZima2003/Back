@@ -385,6 +385,98 @@ describe.each<ProviderName>(["memory", "prisma"])("api provider parity: %s", (pr
     await app.close();
   });
 
+  it("supports mock payment method setup lifecycle before payment intents", async () => {
+    const app = await buildApp({ store: await createStore(provider) });
+
+    async function auth(phone: string) {
+      await app.inject({ method: "POST", url: "/auth/request-otp", payload: { phone } });
+      const response = await app.inject({ method: "POST", url: "/auth/verify-otp", payload: { phone, otp: "000000" } });
+      const body = response.json();
+      return {
+        user: body.user,
+        authorization: `Bearer ${body.accessToken}`
+      };
+    }
+
+    const participantUser = await auth("+79990010025");
+
+    const setupResponse = await app.inject({
+      method: "POST",
+      url: "/payment-methods/mock-setup-intents",
+      headers: { authorization: participantUser.authorization },
+      payload: {
+        provider: "bank",
+        setAsDefault: true
+      }
+    });
+    expect(setupResponse.statusCode).toBe(201);
+    const pendingMethod = setupResponse.json();
+    expect(pendingMethod.status).toBe("requires_confirmation");
+    expect(pendingMethod.providerCustomerId).toBeTruthy();
+    expect(pendingMethod.providerSetupId).toBeTruthy();
+    expect(pendingMethod.isDefault).toBe(false);
+
+    const failedResponse = await app.inject({
+      method: "POST",
+      url: `/payment-methods/${pendingMethod.id}/fail-setup`,
+      headers: { authorization: participantUser.authorization },
+      payload: {
+        errorCode: "mock_declined",
+        reason: "Mock setup failed."
+      }
+    });
+    expect(failedResponse.statusCode).toBe(200);
+    expect(failedResponse.json().status).toBe("failed");
+    expect(failedResponse.json().lastSetupErrorCode).toBe("mock_declined");
+
+    const setupRetryResponse = await app.inject({
+      method: "POST",
+      url: "/payment-methods/mock-setup-intents",
+      headers: { authorization: participantUser.authorization },
+      payload: {
+        provider: "bank",
+        setAsDefault: true
+      }
+    });
+    expect(setupRetryResponse.statusCode).toBe(201);
+    const retriedMethod = setupRetryResponse.json();
+    expect(retriedMethod.providerCustomerId).toBeTruthy();
+
+    const confirmedResponse = await app.inject({
+      method: "POST",
+      url: `/payment-methods/${retriedMethod.id}/confirm-setup`,
+      headers: { authorization: participantUser.authorization },
+      payload: {
+        maskedPan: "2200 **** **** 2525",
+        brand: "mir",
+        setAsDefault: true
+      }
+    });
+    expect(confirmedResponse.statusCode).toBe(200);
+    const activeMethod = confirmedResponse.json();
+    expect(activeMethod.status).toBe("active");
+    expect(activeMethod.maskedPan).toBe("2200 **** **** 2525");
+    expect(activeMethod.brand).toBe("mir");
+    expect(activeMethod.isDefault).toBe(true);
+    expect(activeMethod.confirmedAt).toBeTruthy();
+    expect(activeMethod.providerPaymentMethodId).toContain("_pm_");
+    expect(activeMethod.providerSetupId).toBeTruthy();
+    expect(activeMethod.lastSetupErrorCode).toBe(null);
+
+    const methodsResponse = await app.inject({
+      method: "GET",
+      url: "/payment-methods",
+      headers: { authorization: participantUser.authorization }
+    });
+    expect(methodsResponse.statusCode).toBe(200);
+    const methods = methodsResponse.json();
+    expect(methods).toHaveLength(2);
+    expect(methods.some((method: { status: string }) => method.status === "failed")).toBe(true);
+    expect(methods.some((method: { id: string; status: string }) => method.id === activeMethod.id && method.status === "active")).toBe(true);
+
+    await app.close();
+  });
+
   it("supports itemized restaurant receipts with item-scoped share rules", async () => {
     const app = await buildApp({ store: await createStore(provider) });
 

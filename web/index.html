@@ -129,6 +129,29 @@
               </section>
 
               <button class="primary-button" id="pay-submit-button" type="button" data-action="pay-now">Оплатить</button>
+
+              <section class="detail-panel">
+                <div class="panel-title">Ручная оплата</div>
+                <div class="form-block">
+                  <label class="field-label">Метод</label>
+                  <div class="chip-wrap">
+                    <button class="chip is-selected" type="button" data-manual-method="sbp">СБП</button>
+                    <button class="chip" type="button" data-manual-method="card">Карта</button>
+                    <button class="chip" type="button" data-manual-method="cash">Наличные</button>
+                    <button class="chip" type="button" data-manual-method="other">Другое</button>
+                  </div>
+                </div>
+                <div class="form-block">
+                  <label class="field-label" for="pay-manual-proof-url">Ссылка на proof</label>
+                  <input id="pay-manual-proof-url" class="text-input" placeholder="https://..." />
+                </div>
+                <div class="form-block">
+                  <label class="field-label" for="pay-manual-comment">Комментарий</label>
+                  <input id="pay-manual-comment" class="text-input" placeholder="Например, перевел по СБП" />
+                </div>
+                <button class="secondary-button" id="pay-manual-button" type="button" data-action="mark-manual-paid">Пометить как оплачено вручную</button>
+                <div id="pay-manual-payments-list"></div>
+              </section>
             </div>
           </section>
 
@@ -262,6 +285,11 @@
               <section class="detail-panel">
                 <div class="panel-title">План переводов</div>
                 <div id="organizer-transfer-plan"></div>
+              </section>
+
+              <section class="detail-panel">
+                <div class="panel-title">Ручные оплаты</div>
+                <div id="organizer-manual-payments-list"></div>
               </section>
 
               <section class="detail-panel">

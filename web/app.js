@@ -39,6 +39,8 @@ const organizerFriendSelect = document.getElementById("organizer-friend-select")
 const organizerGuestNameInput = document.getElementById("organizer-guest-name");
 const organizerExpenseTitleInput = document.getElementById("organizer-expense-title");
 const organizerExpenseAmountInput = document.getElementById("organizer-expense-amount");
+const payManualProofUrlInput = document.getElementById("pay-manual-proof-url");
+const payManualCommentInput = document.getElementById("pay-manual-comment");
 
 document.addEventListener("click", async (event) => {
   const target = event.target instanceof Element
@@ -156,6 +158,15 @@ async function runAction(action, source) {
         break;
       case "resolve-dispute":
         await updateDisputeFromAction(source, "resolve");
+        break;
+      case "mark-manual-paid":
+        await markManualPaymentFromUi();
+        break;
+      case "confirm-manual-payment":
+        await updateManualPaymentFromAction(source, "confirm");
+        break;
+      case "reject-manual-payment":
+        await updateManualPaymentFromAction(source, "reject");
         break;
       default:
         break;
@@ -563,12 +574,13 @@ async function buildFriendDirectory() {
 
 async function loadCollectionBundle(collection) {
   const token = state.session.accessToken;
-  const [participants, expenses, calculation, payments, disputes] = await Promise.all([
+  const [participants, expenses, calculation, payments, disputes, manualPayments] = await Promise.all([
     fetchJson(`/collections/${collection.id}/participants`, { token }),
     fetchJson(`/collections/${collection.id}/expenses`, { token, allow404: true }).then((value) => value ?? []),
     fetchJson(`/collections/${collection.id}/calculations/latest`, { token, allow404: true }),
     fetchJson(`/collections/${collection.id}/payments`, { token, allow404: true }).then((value) => value ?? []),
-    fetchJson(`/collections/${collection.id}/disputes`, { token, allow404: true }).then((value) => value ?? [])
+    fetchJson(`/collections/${collection.id}/disputes`, { token, allow404: true }).then((value) => value ?? []),
+    fetchJson(`/collections/${collection.id}/manual-payments`, { token, allow404: true }).then((value) => value ?? [])
   ]);
 
   const currentParticipant = participants.find((participant) => participant.linkedUserId === state.me.id) ?? null;
@@ -584,9 +596,9 @@ async function loadCollectionBundle(collection) {
         .reduce((sum, item) => sum + item.amountMinor, 0)
     : 0;
 
-  const collectedMinor = payments
-    .filter((payment) => payment.status === "succeeded")
-    .reduce((sum, payment) => sum + payment.amountMinor, 0);
+  const collectedMinor =
+    payments.filter((payment) => payment.status === "succeeded").reduce((sum, payment) => sum + payment.amountMinor, 0) +
+    manualPayments.filter((payment) => payment.status === "confirmed").reduce((sum, payment) => sum + payment.amountMinor, 0);
 
   const progressPercent = collection.totalAmountMinor > 0
     ? Math.min(100, Math.round((collectedMinor / collection.totalAmountMinor) * 100))
@@ -599,6 +611,7 @@ async function loadCollectionBundle(collection) {
     calculation,
     payments,
     disputes,
+    manualPayments,
     currentParticipant,
     coveredParticipants,
     userDueMinor,
@@ -735,7 +748,23 @@ function renderPayScreen() {
   text("pay-balance-main", formatMoney(bundle.userDueMinor));
   text("pay-balance-sub", coveredParticipantsLabel(bundle.coveredParticipants));
   text("pay-submit-button", bundle.userDueMinor > 0 ? `Оплатить ${formatMoney(bundle.userDueMinor)}` : "Уже оплачено");
+  text("pay-manual-button", bundle.userDueMinor > 0 ? `Пометить ${formatMoney(bundle.userDueMinor)}` : "Ручная оплата не нужна");
   renderPayMethods();
+
+  const manualList = document.getElementById("pay-manual-payments-list");
+  const ownManualPayments = bundle.manualPayments.filter((payment) => payment.payerUserId === state.me.id);
+  manualList.innerHTML = ownManualPayments.length
+    ? ownManualPayments
+        .map(
+          (payment) => `
+            <div class="line-item">
+              <span>${escapeHtml(manualPaymentMethodLabel(payment.method))} · ${escapeHtml(manualPaymentStatusLabel(payment.status))}</span>
+              <strong>${formatMoney(payment.amountMinor)}</strong>
+            </div>
+          `
+        )
+        .join("")
+    : renderEmptyCard("Здесь появятся ручные переводы, если ты отметишь оплату.");
 }
 
 function renderPayMethods() {
@@ -795,12 +824,25 @@ function renderOrganizerScreen() {
     `);
   }
   if (!items.length) {
-    items.push(`
-      <div class="line-item">
-        <span>Все спокойно, споров и ручных подтверждений нет.</span>
-        <span class="pill pill-success">ok</span>
-      </div>
-    `);
+    const pendingManual = bundle.manualPayments.filter((payment) => payment.status === "submitted");
+    if (pendingManual.length) {
+      for (const payment of pendingManual) {
+        const payerName = displayNameByParticipantId(bundle.participants, payment.payerParticipantId);
+        items.push(`
+          <div class="line-item">
+            <span>${escapeHtml(payerName)} отправил ручную оплату</span>
+            <span class="pill pill-warn">proof</span>
+          </div>
+        `);
+      }
+    } else {
+      items.push(`
+        <div class="line-item">
+          <span>Все спокойно, споров и ручных подтверждений нет.</span>
+          <span class="pill pill-success">ok</span>
+        </div>
+      `);
+    }
   }
   attention.innerHTML = items.join("");
 
@@ -896,6 +938,38 @@ function renderOrganizerScreen() {
         })
         .join("")
     : renderEmptyCard("После расчета здесь появятся переводы.");
+
+  const organizerManualPayments = document.getElementById("organizer-manual-payments-list");
+  organizerManualPayments.innerHTML = bundle.manualPayments.length
+    ? bundle.manualPayments
+        .map((payment) => {
+          const payerName = displayNameByParticipantId(bundle.participants, payment.payerParticipantId);
+          const receiverName = displayNameByParticipantId(bundle.participants, payment.receiverParticipantId);
+          const actions =
+            payment.status === "submitted"
+              ? `
+                <div class="inline-actions">
+                  <button class="mini-action primary" type="button" data-action="confirm-manual-payment" data-manual-payment-id="${payment.id}">Подтвердить</button>
+                  <button class="mini-action danger" type="button" data-action="reject-manual-payment" data-manual-payment-id="${payment.id}">Отклонить</button>
+                </div>
+              `
+              : "";
+          return `
+            <div class="dispute-card">
+              <div class="line-item">
+                <div class="line-item-copy">
+                  <span>${escapeHtml(payerName)} → ${escapeHtml(receiverName)}</span>
+                  <div class="section-note">${escapeHtml(manualPaymentMethodLabel(payment.method))}${payment.comment ? ` · ${escapeHtml(payment.comment)}` : ""}</div>
+                </div>
+                <strong>${escapeHtml(manualPaymentStatusLabel(payment.status))}</strong>
+              </div>
+              ${payment.proofUrl ? `<div class="section-note">${escapeHtml(payment.proofUrl)}</div>` : ""}
+              ${actions}
+            </div>
+          `;
+        })
+        .join("")
+    : renderEmptyCard("Ручных оплат пока нет.");
 }
 
 function renderFriendsScreen() {
@@ -1039,6 +1113,47 @@ async function confirmCurrentParticipantReview() {
   renderAll();
   renderScreenDependents();
   setStatus("Review подтвержден", true);
+}
+
+async function markManualPaymentFromUi() {
+  const bundle = getSelectedCollectionBundle();
+  const transferPlan = getCurrentUserTransfers(bundle);
+  if (!bundle?.currentParticipant || !transferPlan.length) {
+    setStatus("Нет ручного перевода для подтверждения", false);
+    return;
+  }
+
+  const method = getSelectedManualPaymentMethod();
+  const proofUrl = payManualProofUrlInput?.value?.trim() || null;
+  const comment = payManualCommentInput?.value?.trim() || null;
+
+  for (const [index, transfer] of transferPlan.entries()) {
+    await fetchJson(`/collections/${bundle.collection.id}/manual-payments/mark-paid`, {
+      method: "POST",
+      token: state.session.accessToken,
+      body: {
+        payerParticipantId: bundle.currentParticipant.id,
+        receiverParticipantId: transfer.toResponsiblePayerId,
+        amountMinor: transfer.amountMinor,
+        method,
+        comment,
+        proofUrl,
+        idempotencyKey: `frontend-manual-${bundle.collection.id}-${bundle.currentParticipant.id}-${transfer.toResponsiblePayerId}-${index}`
+      }
+    });
+  }
+
+  if (payManualProofUrlInput) {
+    payManualProofUrlInput.value = "";
+  }
+  if (payManualCommentInput) {
+    payManualCommentInput.value = "";
+  }
+
+  await refreshAppData();
+  renderAll();
+  renderScreenDependents();
+  setStatus("Ручная оплата отправлена на подтверждение", true);
 }
 
 async function createCollectionFromForm() {
@@ -1289,6 +1404,28 @@ async function updateDisputeFromAction(source, action) {
   );
 }
 
+async function updateManualPaymentFromAction(source, action) {
+  const paymentId = source?.getAttribute("data-manual-payment-id");
+  if (!paymentId) {
+    return;
+  }
+
+  const pathByAction = {
+    confirm: `/manual-payments/${paymentId}/confirm`,
+    reject: `/manual-payments/${paymentId}/reject`
+  };
+
+  await fetchJson(pathByAction[action], {
+    method: "POST",
+    token: state.session.accessToken
+  });
+
+  await refreshAppData();
+  renderAll();
+  renderScreenDependents();
+  setStatus(action === "confirm" ? "Ручная оплата подтверждена" : "Ручная оплата отклонена", true);
+}
+
 function getSelectedCollectionBundle() {
   return state.collectionBundles.find((bundle) => bundle.collection.id === state.selectedCollectionId) ?? state.collectionBundles[0] ?? null;
 }
@@ -1303,6 +1440,17 @@ function getSelectedCollectionType() {
 
 function getSelectedDisputeType() {
   return document.querySelector('[data-screen="dispute"] [data-dispute-type].is-selected')?.getAttribute("data-dispute-type") ?? "other";
+}
+
+function getSelectedManualPaymentMethod() {
+  return document.querySelector('[data-screen="pay"] [data-manual-method].is-selected')?.getAttribute("data-manual-method") ?? "sbp";
+}
+
+function getCurrentUserTransfers(bundle) {
+  if (!bundle?.currentParticipant || !bundle.calculation) {
+    return [];
+  }
+  return bundle.calculation.result.transferPlan.filter((item) => item.fromResponsiblePayerId === bundle.currentParticipant.id);
 }
 
 function renderCollectionCard(bundle, options) {
@@ -1484,6 +1632,25 @@ function disputeStatusLabel(status) {
     rejected: "отклонен",
     resolved_by_recalculation: "решен пересчетом",
     cancelled: "отменен"
+  };
+  return labels[status] ?? status;
+}
+
+function manualPaymentMethodLabel(method) {
+  const labels = {
+    sbp: "СБП",
+    cash: "Наличные",
+    card: "Карта",
+    other: "Другое"
+  };
+  return labels[method] ?? method;
+}
+
+function manualPaymentStatusLabel(status) {
+  const labels = {
+    submitted: "ждет подтверждения",
+    confirmed: "подтверждено",
+    rejected: "отклонено"
   };
   return labels[status] ?? status;
 }

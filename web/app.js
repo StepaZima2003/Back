@@ -22,6 +22,7 @@ const state = {
   organizerBundles: [],
   notifications: [],
   paymentMethods: [],
+  autopayRules: [],
   friendships: [],
   friends: [],
   groups: [],
@@ -179,6 +180,21 @@ async function runAction(action, source) {
         break;
       case "reject-manual-payment":
         await updateManualPaymentFromAction(source, "reject");
+        break;
+      case "create-payment-setup":
+        await createPaymentMethodSetup();
+        break;
+      case "confirm-payment-setup":
+        await updatePaymentMethodSetup(source, "confirm");
+        break;
+      case "fail-payment-setup":
+        await updatePaymentMethodSetup(source, "fail");
+        break;
+      case "revoke-payment-method":
+        await revokePaymentMethodFromAction(source);
+        break;
+      case "save-autopay-rule":
+        await saveAutopayRule();
         break;
       default:
         break;
@@ -518,11 +534,12 @@ async function seedGiftCollection() {
 
 async function refreshAppData() {
   const token = state.session.accessToken;
-  const [me, collections, notifications, paymentMethods, friendships, groups] = await Promise.all([
+  const [me, collections, notifications, paymentMethods, autopayRules, friendships, groups] = await Promise.all([
     fetchJson("/me", { token }),
     fetchJson("/collections", { token }),
     fetchJson("/notifications", { token }),
     fetchJson("/payment-methods", { token }),
+    fetchJson("/autopay-rules", { token }),
     fetchJson("/friends", { token }),
     fetchJson("/groups", { token })
   ]);
@@ -531,6 +548,7 @@ async function refreshAppData() {
   state.collections = collections;
   state.notifications = notifications;
   state.paymentMethods = paymentMethods;
+  state.autopayRules = autopayRules;
   state.friendships = friendships;
   state.groups = groups;
   const activeMethodIds = new Set(paymentMethods.filter((method) => method.status === "active").map((method) => method.id));
@@ -1094,6 +1112,65 @@ function renderProfileScreen() {
   text("profile-avatar", initials(state.me?.displayName ?? "Алексей"));
   text("profile-name", state.me?.displayName ?? "Алексей");
   text("profile-phone", state.me?.phone ?? "");
+
+  const profilePanels = [...document.querySelectorAll('[data-screen="profile"] .detail-panel')];
+  const paymentPanel = profilePanels[0];
+  const frequentPanel = profilePanels[1];
+  const autopayPanel = profilePanels[2];
+
+  if (paymentPanel) {
+    paymentPanel.innerHTML = `
+      <div class="panel-title">Оплата</div>
+      <div id="profile-payment-methods-list">
+        ${renderProfilePaymentMethods()}
+      </div>
+      <div class="form-block">
+        <label class="field-label" for="profile-card-mask">Mock карта</label>
+        <input class="text-input" id="profile-card-mask" placeholder="2200 **** **** 4821" />
+      </div>
+      <div class="chip-wrap">
+        <button class="chip is-selected" type="button" data-card-brand="mir">Mir</button>
+        <button class="chip" type="button" data-card-brand="visa">Visa</button>
+        <button class="chip" type="button" data-card-brand="mastercard">Mastercard</button>
+      </div>
+      <button class="secondary-button" type="button" data-action="create-payment-setup">Начать setup</button>
+    `;
+  }
+
+  if (frequentPanel) {
+    frequentPanel.innerHTML = `
+      <div class="panel-title">Часто участвующие</div>
+      <div id="profile-frequent-list">
+        ${renderProfileFrequentPeople()}
+      </div>
+    `;
+  }
+
+  if (autopayPanel) {
+    const globalRule = getGlobalAutopayRule();
+    autopayPanel.innerHTML = `
+      <div class="panel-title">Автоплата</div>
+      <div id="profile-autopay-rules-list">
+        ${renderProfileAutopayRules()}
+      </div>
+      <div class="setting-row">
+        <div>
+          <div class="setting-title">Включить правило</div>
+          <div class="setting-sub">Общее правило для новых сборов</div>
+        </div>
+        <button class="switch${globalRule?.enabled ? " is-on" : ""}" id="profile-autopay-enabled" type="button"><span></span></button>
+      </div>
+      <div class="form-block">
+        <label class="field-label" for="profile-autopay-limit">Лимит на сбор, ₽</label>
+        <input class="text-input" id="profile-autopay-limit" inputmode="decimal" value="${escapeHtml(String((globalRule?.singleCollectionLimitMinor ?? 150000) / 100))}" />
+      </div>
+      <div class="form-block">
+        <label class="field-label" for="profile-autopay-window">Окно возражений, часы</label>
+        <input class="text-input" id="profile-autopay-window" inputmode="numeric" value="${escapeHtml(String(globalRule?.objectionWindowHours ?? 24))}" />
+      </div>
+      <button class="secondary-button" type="button" data-action="save-autopay-rule">Сохранить правило</button>
+    `;
+  }
 }
 
 async function submitPayment() {
@@ -1504,6 +1581,120 @@ async function updateManualPaymentFromAction(source, action) {
   setStatus(action === "confirm" ? "Ручная оплата подтверждена" : "Ручная оплата отклонена", true);
 }
 
+async function createPaymentMethodSetup() {
+  const maskedPan = document.getElementById("profile-card-mask")?.value?.trim();
+  if (!maskedPan) {
+    setStatus("Укажи mock карту", false);
+    return;
+  }
+
+  await fetchJson("/payment-methods/mock-setup-intents", {
+    method: "POST",
+    token: state.session.accessToken,
+    body: {
+      provider: "bank",
+      setAsDefault: true
+    }
+  });
+
+  await refreshAppData();
+  renderAll();
+  setStatus("Setup intent создан. Подтверди его ниже.", true);
+}
+
+async function updatePaymentMethodSetup(source, action) {
+  const methodId = source?.getAttribute("data-method-id");
+  if (!methodId) {
+    return;
+  }
+
+  if (action === "confirm") {
+    const maskedPan = document.getElementById("profile-card-mask")?.value?.trim();
+    if (!maskedPan) {
+      setStatus("Укажи mock карту для confirm", false);
+      return;
+    }
+
+    await fetchJson(`/payment-methods/${methodId}/confirm-setup`, {
+      method: "POST",
+      token: state.session.accessToken,
+      body: {
+        maskedPan,
+        brand: getSelectedCardBrand(),
+        setAsDefault: true
+      }
+    });
+  } else {
+    await fetchJson(`/payment-methods/${methodId}/fail-setup`, {
+      method: "POST",
+      token: state.session.accessToken,
+      body: {
+        errorCode: "frontend_mock_failure",
+        reason: "Failed from frontend profile flow"
+      }
+    });
+  }
+
+  await refreshAppData();
+  renderAll();
+  setStatus(action === "confirm" ? "Setup подтвержден" : "Setup переведен в failed", true);
+}
+
+async function revokePaymentMethodFromAction(source) {
+  const methodId = source?.getAttribute("data-method-id");
+  if (!methodId) {
+    return;
+  }
+
+  await fetchJson(`/payment-methods/${methodId}/revoke`, {
+    method: "POST",
+    token: state.session.accessToken
+  });
+
+  await refreshAppData();
+  renderAll();
+  setStatus("Карта отвязана", true);
+}
+
+async function saveAutopayRule() {
+  const globalRule = getGlobalAutopayRule();
+  const enabled = document.getElementById("profile-autopay-enabled")?.classList.contains("is-on") ?? false;
+  const limitMinor = parseMoneyToMinor(document.getElementById("profile-autopay-limit")?.value ?? "");
+  const objectionWindowHours = parseIntegerInput(document.getElementById("profile-autopay-window")?.value, 24);
+
+  const payload = {
+    enabled,
+    category: null,
+    collectionId: null,
+    groupId: null,
+    singleCollectionLimitMinor: limitMinor || 150000,
+    requiresObjectionWindow: true,
+    objectionWindowHours,
+    allowGuests: true,
+    allowChildren: true,
+    allowPartner: true,
+    maxCoveredParticipants: 6
+  };
+
+  if (globalRule) {
+    await fetchJson(`/autopay-rules/${globalRule.id}`, {
+      method: "PATCH",
+      token: state.session.accessToken,
+      body: payload
+    });
+  } else {
+    await fetchJson("/autopay-rules", {
+      method: "POST",
+      token: state.session.accessToken,
+      body: payload
+    });
+  }
+
+  await refreshAppData();
+  renderAll();
+  setStatus("Autopay правило сохранено", true);
+}
+
 function openNotification(notificationId) {
   const notification = state.notifications.find((item) => item.id === notificationId);
   if (!notification?.collectionId) {
@@ -1545,6 +1736,10 @@ function getSelectedDisputeType() {
 
 function getSelectedManualPaymentMethod() {
   return document.querySelector('[data-screen="pay"] [data-manual-method].is-selected')?.getAttribute("data-manual-method") ?? "sbp";
+}
+
+function getSelectedCardBrand() {
+  return document.querySelector('[data-screen="profile"] [data-card-brand].is-selected')?.getAttribute("data-card-brand") ?? "mir";
 }
 
 function getCurrentUserTransfers(bundle) {
@@ -1609,6 +1804,88 @@ function renderNotificationCard(notification, options = {}) {
       </div>
     </button>
   `;
+}
+
+function renderProfilePaymentMethods() {
+  if (!state.paymentMethods.length) {
+    return renderEmptyCard("Платежных методов пока нет.");
+  }
+
+  return state.paymentMethods
+    .map((method) => {
+      const actions =
+        method.status === "requires_confirmation"
+          ? `
+            <div class="inline-actions">
+              <button class="mini-action primary" type="button" data-action="confirm-payment-setup" data-method-id="${method.id}">Подтвердить</button>
+              <button class="mini-action danger" type="button" data-action="fail-payment-setup" data-method-id="${method.id}">Fail</button>
+            </div>
+          `
+          : method.status === "active"
+            ? `
+              <div class="inline-actions">
+                <button class="mini-action danger" type="button" data-action="revoke-payment-method" data-method-id="${method.id}">Отвязать</button>
+              </div>
+            `
+            : "";
+
+      return `
+        <div class="dispute-card">
+          <div class="line-item">
+            <div class="line-item-copy">
+              <span>${escapeHtml(paymentMethodTitle(method))}</span>
+              <div class="section-note">${escapeHtml(method.brand.toUpperCase())}${method.providerSetupId ? ` · setup ${escapeHtml(method.providerSetupId)}` : ""}</div>
+            </div>
+            <strong>${escapeHtml(paymentMethodStatusLabel(method.status))}${method.isDefault ? " · default" : ""}</strong>
+          </div>
+          ${method.lastSetupErrorMessage ? `<div class="section-note">${escapeHtml(method.lastSetupErrorMessage)}</div>` : ""}
+          ${actions}
+        </div>
+      `;
+    })
+    .join("");
+}
+
+function renderProfileFrequentPeople() {
+  if (!state.friends.length) {
+    return renderEmptyCard("Друзья появятся после приглашения.");
+  }
+
+  return state.friends
+    .slice(0, 3)
+    .map(
+      (friend, index) => `
+        <div class="person-row compact">
+          <div class="avatar ${avatarTone(index)}">${escapeHtml(initials(friend.displayName))}</div>
+          <div class="person-meta">
+            <div class="person-name">${escapeHtml(friend.displayName)}</div>
+            <div class="person-sub">${friend.sharedCollections} общих сборов</div>
+          </div>
+        </div>
+      `
+    )
+    .join("");
+}
+
+function renderProfileAutopayRules() {
+  if (!state.autopayRules.length) {
+    return renderEmptyCard("Autopay rules пока не настроены.");
+  }
+
+  return state.autopayRules
+    .map(
+      (rule) => `
+        <div class="line-item">
+          <span>${rule.collectionId ? "collection" : rule.groupId ? "group" : "global"} · ${rule.enabled ? "enabled" : "disabled"}</span>
+          <strong>${formatMoney(rule.singleCollectionLimitMinor)}</strong>
+        </div>
+      `
+    )
+    .join("");
+}
+
+function getGlobalAutopayRule() {
+  return state.autopayRules.find((rule) => !rule.collectionId && !rule.groupId && !rule.category) ?? null;
 }
 
 function renderCollectionSection(title, bundles, note) {
@@ -1831,6 +2108,18 @@ function manualPaymentStatusLabel(status) {
   return labels[status] ?? status;
 }
 
+function paymentMethodStatusLabel(status) {
+  const labels = {
+    pending_binding: "pending",
+    requires_confirmation: "requires confirmation",
+    active: "active",
+    failed: "failed",
+    expired: "expired",
+    revoked: "revoked"
+  };
+  return labels[status] ?? status;
+}
+
 function notificationTypeLabel(type) {
   const labels = {
     collection_review_requested: "review",
@@ -1963,6 +2252,11 @@ function parseMoneyToMinor(value) {
     return 0;
   }
   return Math.round(amount * 100);
+}
+
+function parseIntegerInput(value, fallback = 0) {
+  const parsed = Number.parseInt(String(value).trim(), 10);
+  return Number.isFinite(parsed) ? parsed : fallback;
 }
 
 async function fetchJson(path, options = {}) {

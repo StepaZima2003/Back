@@ -610,6 +610,11 @@ h2 {
   outline: 0;
 }
 
+.compact-select {
+  flex: 1 1 180px;
+  min-width: 180px;
+}
+
 .text-area {
   min-height: 112px;
   resize: vertical;

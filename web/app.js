@@ -42,6 +42,8 @@ const friendPhoneInput = document.getElementById("friend-phone");
 const groupNameInput = document.getElementById("group-name");
 const organizerFriendSelect = document.getElementById("organizer-friend-select");
 const organizerGuestNameInput = document.getElementById("organizer-guest-name");
+const organizerChildNameInput = document.getElementById("organizer-child-name");
+const organizerChildResponsibleSelect = document.getElementById("organizer-child-responsible-select");
 const organizerExpenseTitleInput = document.getElementById("organizer-expense-title");
 const organizerExpenseAmountInput = document.getElementById("organizer-expense-amount");
 const organizerExpenseItemTitleInput = document.getElementById("organizer-expense-item-title");
@@ -158,6 +160,12 @@ async function runAction(action, source) {
         break;
       case "add-collection-guest":
         await addCollectionGuest();
+        break;
+      case "add-collection-child":
+        await addCollectionChild();
+        break;
+      case "set-responsible-payer":
+        await setResponsiblePayerFromAction(source);
         break;
       case "add-expense":
         await addCollectionExpense();
@@ -1014,6 +1022,16 @@ function renderOrganizerScreen() {
     organizerFriendSelect.disabled = !availableFriends.length;
   }
 
+  if (organizerChildResponsibleSelect) {
+    const eligiblePayers = bundle.participants.filter((participant) => participant.participantType !== "child");
+    organizerChildResponsibleSelect.innerHTML = eligiblePayers.length
+      ? eligiblePayers
+          .map((participant) => `<option value="${participant.id}">${escapeHtml(participant.displayNameSnapshot)}</option>`)
+          .join("")
+      : '<option value="">Сначала добавь взрослого участника</option>';
+    organizerChildResponsibleSelect.disabled = !eligiblePayers.length;
+  }
+
   const organizerParticipants = document.getElementById("organizer-participants-list");
   organizerParticipants.innerHTML = bundle.participants.length
     ? bundle.participants
@@ -1033,6 +1051,10 @@ function renderOrganizerScreen() {
           `;
         })
         .join("")
+    : renderEmptyCard("Участников пока нет.");
+
+  organizerParticipants.innerHTML = bundle.participants.length
+    ? bundle.participants.map((participant) => renderOrganizerParticipantCard(bundle, participant)).join("")
     : renderEmptyCard("Участников пока нет.");
 
   const organizerExpenses = document.getElementById("organizer-expenses-list");
@@ -1195,6 +1217,50 @@ function renderOrganizerExpenseDraft() {
       </div>
     </article>
   `;
+}
+
+function renderOrganizerParticipantCard(bundle, participant) {
+  const role = participant.linkedUserId === bundle.collection.organizerId
+    ? "organizer"
+    : participant.participantType === "guest"
+      ? "guest"
+      : participant.participantType === "child"
+        ? "child"
+        : "participant";
+  const responsiblePayerName = participant.paymentResponsibleParticipantId
+    ? displayNameByParticipantId(bundle.participants, participant.paymentResponsibleParticipantId)
+    : null;
+  const payerOptions = buildResponsiblePayerOptions(bundle.participants, participant.id);
+
+  return `
+    <div class="dispute-card">
+      <div class="line-item">
+        <div class="line-item-copy">
+          <span>${escapeHtml(participant.displayNameSnapshot)} · ${escapeHtml(role)}</span>
+          <div class="section-note">${responsiblePayerName ? `За него платит ${escapeHtml(responsiblePayerName)}` : "Платит сам за себя"}</div>
+        </div>
+        <strong>${escapeHtml(paymentStatusLabel(participant.paymentStatus))}</strong>
+      </div>
+      <div class="inline-actions">
+        <select id="participant-responsible-${participant.id}" class="text-input compact-select">${payerOptions}</select>
+        <button class="mini-action" type="button" data-action="set-responsible-payer" data-participant-id="${participant.id}">Сохранить плательщика</button>
+      </div>
+    </div>
+  `;
+}
+
+function buildResponsiblePayerOptions(participants, participantId) {
+  const current = participants.find((participant) => participant.id === participantId) ?? null;
+  const eligible = participants.filter((participant) => participant.id !== participantId && participant.participantType !== "child");
+  const selectedId = current?.paymentResponsibleParticipantId ?? "";
+  const selfOption = `<option value=""${selectedId === "" ? " selected" : ""}>Платит сам</option>`;
+  const payerOptions = eligible
+    .map(
+      (participant) =>
+        `<option value="${participant.id}"${selectedId === participant.id ? " selected" : ""}>${escapeHtml(participant.displayNameSnapshot)}</option>`
+    )
+    .join("");
+  return selfOption + payerOptions;
 }
 
 function renderOrganizerExpenseCard(bundle, expense) {
@@ -1456,7 +1522,7 @@ async function submitDispute() {
   setActiveScreen("dispute-sent", "home");
 }
 
-async function confirmCurrentParticipantReview() {
+async function deprecatedConfirmCurrentParticipantReview() {
   const bundle = getSelectedCollectionBundle();
   if (!bundle?.currentParticipant) {
     return;
@@ -1661,6 +1727,58 @@ async function addCollectionGuest() {
   renderAll();
   renderScreenDependents();
   setStatus(`Гость «${displayName}» добавлен`, true);
+}
+
+async function addCollectionChild() {
+  const bundle = getSelectedOrganizerBundle();
+  const displayName = organizerChildNameInput?.value?.trim();
+  const responsiblePayerParticipantId = organizerChildResponsibleSelect?.value;
+  if (!bundle || !displayName || !responsiblePayerParticipantId) {
+    setStatus("Укажи ребенка и кто за него платит", false);
+    return;
+  }
+
+  await fetchJson(`/collections/${bundle.collection.id}/participants/add-child`, {
+    method: "POST",
+    token: state.session.accessToken,
+    body: {
+      displayName,
+      responsiblePayerParticipantId
+    }
+  });
+
+  if (organizerChildNameInput) {
+    organizerChildNameInput.value = "";
+  }
+
+  await refreshAppData();
+  renderAll();
+  renderScreenDependents();
+  setStatus(`Ребенок «${displayName}» добавлен`, true);
+}
+
+async function setResponsiblePayerFromAction(source) {
+  const bundle = getSelectedOrganizerBundle();
+  const participantId = source?.getAttribute("data-participant-id");
+  if (!bundle || !participantId) {
+    return;
+  }
+
+  const select = document.getElementById(`participant-responsible-${participantId}`);
+  const responsiblePayerParticipantId = select?.value || null;
+
+  await fetchJson(`/collections/${bundle.collection.id}/participants/${participantId}/set-responsible-payer`, {
+    method: "POST",
+    token: state.session.accessToken,
+    body: {
+      responsiblePayerParticipantId
+    }
+  });
+
+  await refreshAppData();
+  renderAll();
+  renderScreenDependents();
+  setStatus("Ответственный плательщик обновлен", true);
 }
 
 async function addCollectionExpense() {

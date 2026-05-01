@@ -15,6 +15,7 @@ const state = {
   selectedOrganizerCollectionId: null,
   selectedPaymentMethodId: null,
   lastPaymentSummary: null,
+  draftExpenseItems: [],
   me: null,
   collections: [],
   collectionBundles: [],
@@ -43,6 +44,8 @@ const organizerFriendSelect = document.getElementById("organizer-friend-select")
 const organizerGuestNameInput = document.getElementById("organizer-guest-name");
 const organizerExpenseTitleInput = document.getElementById("organizer-expense-title");
 const organizerExpenseAmountInput = document.getElementById("organizer-expense-amount");
+const organizerExpenseItemTitleInput = document.getElementById("organizer-expense-item-title");
+const organizerExpenseItemAmountInput = document.getElementById("organizer-expense-item-amount");
 const payManualProofUrlInput = document.getElementById("pay-manual-proof-url");
 const payManualCommentInput = document.getElementById("pay-manual-comment");
 const collectionFilterTabs = [...document.querySelectorAll('[data-screen="collections"] .tab-row .chip')];
@@ -158,6 +161,18 @@ async function runAction(action, source) {
         break;
       case "add-expense":
         await addCollectionExpense();
+        break;
+      case "add-expense-item-draft":
+        addDraftExpenseItem();
+        break;
+      case "clear-expense-items-draft":
+        clearDraftExpenseItems();
+        break;
+      case "add-expense-item":
+        await addExpenseItemToExistingExpense(source);
+        break;
+      case "exclude-expense-item":
+        await excludeExpenseItemForParticipant(source);
         break;
       case "calculate-collection":
         await calculateSelectedCollection();
@@ -1034,6 +1049,11 @@ function renderOrganizerScreen() {
         .join("")
     : renderEmptyCard("Расходов пока нет.");
 
+  renderOrganizerExpenseDraft();
+  organizerExpenses.innerHTML = bundle.expenses.length
+    ? bundle.expenses.map((expense) => renderOrganizerExpenseCard(bundle, expense)).join("")
+    : renderEmptyCard("Расходов пока нет.");
+
   const organizerTransferPlan = document.getElementById("organizer-transfer-plan");
   organizerTransferPlan.innerHTML = bundle.calculation?.result.transferPlan.length
     ? bundle.calculation.result.transferPlan
@@ -1142,6 +1162,113 @@ function renderOrganizerScreen() {
         })
         .join("")
     : renderEmptyCard("Preview autopay появится после расчета и настройки правил.");
+}
+
+function renderOrganizerExpenseDraft() {
+  const draftNode = document.getElementById("organizer-expense-items-draft");
+  if (!draftNode) {
+    return;
+  }
+
+  if (!state.draftExpenseItems.length) {
+    draftNode.innerHTML = renderEmptyCard("Добавь позиции чека, если нужен itemized split.");
+    return;
+  }
+
+  const totalMinor = state.draftExpenseItems.reduce((sum, item) => sum + item.amountMinor, 0);
+  draftNode.innerHTML = `
+    <article class="detail-panel">
+      <div class="panel-title">Черновик itemized receipt</div>
+      ${state.draftExpenseItems
+        .map(
+          (item) => `
+            <div class="line-item">
+              <span>${escapeHtml(item.title)}</span>
+              <strong>${formatMoney(item.amountMinor)}</strong>
+            </div>
+          `
+        )
+        .join("")}
+      <div class="line-item">
+        <span>Итого по позициям</span>
+        <strong>${formatMoney(totalMinor)}</strong>
+      </div>
+    </article>
+  `;
+}
+
+function renderOrganizerExpenseCard(bundle, expense) {
+  const expenseItems = expense.items ?? [];
+  const shareRules = expense.shareRules ?? [];
+  const participantOptions = bundle.participants
+    .map((participant) => `<option value="${participant.id}">${escapeHtml(participant.displayNameSnapshot)}</option>`)
+    .join("");
+  const itemsMarkup = expenseItems.length
+    ? expenseItems
+        .map((item) => {
+          const exclusions = shareRules.filter((rule) => rule.expenseItemId === item.id && rule.splitMode === "excluded");
+          return `
+            <div class="mini-section">
+              <div class="line-item">
+                <span>${escapeHtml(item.title)}</span>
+                <strong>${formatMoney(item.amountMinor)}</strong>
+              </div>
+              ${
+                exclusions.length
+                  ? exclusions
+                      .map(
+                        (rule) => `
+                          <div class="line-item muted">
+                            <span>${escapeHtml(displayNameByParticipantId(bundle.participants, rule.participantId))}</span>
+                            <em>${escapeHtml(rule.reason ?? "excluded")}</em>
+                          </div>
+                        `
+                      )
+                      .join("")
+                  : '<div class="line-item muted"><span>Без item-level исключений</span><em>ok</em></div>'
+              }
+              <button class="mini-action" type="button" data-action="exclude-expense-item" data-expense-id="${expense.id}" data-expense-item-id="${item.id}">Исключить для выбранного</button>
+            </div>
+          `;
+        })
+        .join("")
+    : '<div class="line-item muted"><span>Позиции чека не заданы</span><em>flat split</em></div>';
+
+  return `
+    <article class="detail-panel bottom-gap">
+      <div class="line-item">
+        <div class="line-item-copy">
+          <span>${escapeHtml(expense.title)}</span>
+          <div class="section-note">${expenseItems.length ? `${expenseItems.length} позиций` : "без itemization"}</div>
+        </div>
+        <strong>${formatMoney(expense.amountMinor)}</strong>
+      </div>
+      ${itemsMarkup}
+      <div class="mini-section">
+        <label class="field-label" for="expense-item-title-${expense.id}">Новая позиция</label>
+        <input id="expense-item-title-${expense.id}" class="text-input" placeholder="Например, десерт" />
+      </div>
+      <div class="mini-section">
+        <label class="field-label" for="expense-item-amount-${expense.id}">Сумма позиции, ₽</label>
+        <input id="expense-item-amount-${expense.id}" class="text-input" inputmode="decimal" placeholder="300" />
+      </div>
+      <button class="secondary-button" type="button" data-action="add-expense-item" data-expense-id="${expense.id}">Добавить позицию</button>
+      ${
+        expenseItems.length
+          ? `
+            <div class="mini-section">
+              <label class="field-label" for="expense-rule-participant-${expense.id}">Исключить участника из выбранной позиции</label>
+              <select id="expense-rule-participant-${expense.id}" class="text-input">${participantOptions}</select>
+            </div>
+            <div class="mini-section">
+              <label class="field-label" for="expense-rule-reason-${expense.id}">Причина</label>
+              <input id="expense-rule-reason-${expense.id}" class="text-input" placeholder="Например, не пил вино" />
+            </div>
+          `
+          : ""
+      }
+    </article>
+  `;
 }
 
 function renderFriendsScreen() {
@@ -1344,6 +1471,12 @@ async function confirmCurrentParticipantReview() {
   renderAll();
   renderScreenDependents();
   setStatus("Review подтвержден", true);
+  return;
+  if (draftItems.length) {
+    setStatus(`Itemized расход «${title}» добавлен`, true);
+    return;
+  }
+  setStatus("Review подтвержден", true);
 }
 
 async function markManualPaymentFromUi() {
@@ -1533,7 +1666,10 @@ async function addCollectionGuest() {
 async function addCollectionExpense() {
   const bundle = getSelectedOrganizerBundle();
   const title = organizerExpenseTitleInput?.value?.trim();
-  const amountMinor = parseMoneyToMinor(organizerExpenseAmountInput?.value ?? "");
+  const draftItems = state.draftExpenseItems;
+  const amountMinor = draftItems.length
+    ? draftItems.reduce((sum, item) => sum + item.amountMinor, 0)
+    : parseMoneyToMinor(organizerExpenseAmountInput?.value ?? "");
   if (!bundle || !title || amountMinor <= 0) {
     setStatus("Заполни название и сумму расхода", false);
     return;
@@ -1545,7 +1681,13 @@ async function addCollectionExpense() {
     body: {
       title,
       amountMinor,
-      expenseType: "expense"
+      expenseType: "expense",
+      items: draftItems.length
+        ? draftItems.map((item) => ({
+            title: item.title,
+            amountMinor: item.amountMinor
+          }))
+        : undefined
     }
   });
 
@@ -1555,11 +1697,117 @@ async function addCollectionExpense() {
   if (organizerExpenseAmountInput) {
     organizerExpenseAmountInput.value = "";
   }
+  clearDraftExpenseItems({ silent: true });
 
   await refreshAppData();
   renderAll();
   renderScreenDependents();
   setStatus(`Расход «${title}» добавлен`, true);
+}
+
+function addDraftExpenseItem() {
+  const title = organizerExpenseItemTitleInput?.value?.trim();
+  const amountMinor = parseMoneyToMinor(organizerExpenseItemAmountInput?.value ?? "");
+  if (!title || amountMinor <= 0) {
+    setStatus("Заполни название и сумму позиции", false);
+    return;
+  }
+
+  state.draftExpenseItems.push({
+    id: `draft-${Date.now()}-${state.draftExpenseItems.length + 1}`,
+    title,
+    amountMinor
+  });
+
+  if (organizerExpenseItemTitleInput) {
+    organizerExpenseItemTitleInput.value = "";
+  }
+  if (organizerExpenseItemAmountInput) {
+    organizerExpenseItemAmountInput.value = "";
+  }
+
+  syncDraftExpenseAmount();
+  renderOrganizerExpenseDraft();
+  setStatus(`Позиция «${title}» добавлена в черновик`, true);
+}
+
+function clearDraftExpenseItems(options = {}) {
+  state.draftExpenseItems = [];
+  if (organizerExpenseItemTitleInput) {
+    organizerExpenseItemTitleInput.value = "";
+  }
+  if (organizerExpenseItemAmountInput) {
+    organizerExpenseItemAmountInput.value = "";
+  }
+  if (organizerExpenseAmountInput && !options.keepAmount) {
+    organizerExpenseAmountInput.value = "";
+  }
+  renderOrganizerExpenseDraft();
+  if (!options.silent) {
+    setStatus("Черновик itemized receipt очищен", true);
+  }
+}
+
+async function addExpenseItemToExistingExpense(source) {
+  const expenseId = source?.getAttribute("data-expense-id");
+  if (!expenseId) {
+    return;
+  }
+
+  const titleInput = document.getElementById(`expense-item-title-${expenseId}`);
+  const amountInput = document.getElementById(`expense-item-amount-${expenseId}`);
+  const title = titleInput?.value?.trim();
+  const amountMinor = parseMoneyToMinor(amountInput?.value ?? "");
+  if (!title || amountMinor <= 0) {
+    setStatus("Заполни название и сумму новой позиции", false);
+    return;
+  }
+
+  await fetchJson(`/expenses/${expenseId}/items`, {
+    method: "POST",
+    token: state.session.accessToken,
+    body: {
+      title,
+      amountMinor
+    }
+  });
+
+  await refreshAppData();
+  renderAll();
+  renderScreenDependents();
+  setStatus(`Позиция «${title}» добавлена в расход`, true);
+}
+
+async function excludeExpenseItemForParticipant(source) {
+  const expenseId = source?.getAttribute("data-expense-id");
+  const expenseItemId = source?.getAttribute("data-expense-item-id");
+  if (!expenseId || !expenseItemId) {
+    return;
+  }
+
+  const participantSelect = document.getElementById(`expense-rule-participant-${expenseId}`);
+  const reasonInput = document.getElementById(`expense-rule-reason-${expenseId}`);
+  const participantId = participantSelect?.value;
+  if (!participantId) {
+    setStatus("Выбери участника для item-level rule", false);
+    return;
+  }
+
+  await fetchJson(`/expenses/${expenseId}/share-rules`, {
+    method: "POST",
+    token: state.session.accessToken,
+    body: {
+      participantId,
+      expenseItemId,
+      splitMode: "excluded",
+      reason: reasonInput?.value?.trim() || "Excluded from frontend itemized flow"
+    }
+  });
+
+  await refreshAppData();
+  renderAll();
+  renderScreenDependents();
+  setStatus("Item-level exclusion правило добавлено", true);
 }
 
 async function calculateSelectedCollection() {
@@ -1871,6 +2119,14 @@ function getCurrentUserTransfers(bundle) {
     return [];
   }
   return bundle.calculation.result.transferPlan.filter((item) => item.fromResponsiblePayerId === bundle.currentParticipant.id);
+}
+
+function syncDraftExpenseAmount() {
+  if (!organizerExpenseAmountInput) {
+    return;
+  }
+  const totalMinor = state.draftExpenseItems.reduce((sum, item) => sum + item.amountMinor, 0);
+  organizerExpenseAmountInput.value = totalMinor > 0 ? String(totalMinor / 100) : "";
 }
 
 function renderCollectionCard(bundle, options) {

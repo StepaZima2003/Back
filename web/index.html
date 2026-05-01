@@ -302,6 +302,17 @@
                   <input id="organizer-expense-amount" class="text-input" inputmode="decimal" placeholder="2500" />
                 </div>
                 <button class="secondary-button" type="button" data-action="add-expense">Добавить расход</button>
+                <div class="form-block">
+                  <label class="field-label" for="organizer-expense-item-title">Позиция чека</label>
+                  <input id="organizer-expense-item-title" class="text-input" placeholder="Например, стейк" />
+                </div>
+                <div class="form-block">
+                  <label class="field-label" for="organizer-expense-item-amount">Сумма позиции, ₽</label>
+                  <input id="organizer-expense-item-amount" class="text-input" inputmode="decimal" placeholder="700" />
+                </div>
+                <button class="secondary-button" type="button" data-action="add-expense-item-draft">Добавить позицию</button>
+                <button class="secondary-button" type="button" data-action="clear-expense-items-draft">Очистить позиции</button>
+                <div id="organizer-expense-items-draft"></div>
                 <div id="organizer-expenses-list"></div>
               </section>
 

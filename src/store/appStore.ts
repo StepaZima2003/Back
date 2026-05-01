@@ -38,6 +38,7 @@ type AppStoreMethodName =
   | "addParticipantFromProfile"
   | "addGuest"
   | "addChild"
+  | "updateParticipant"
   | "setResponsiblePayer"
   | "listExpenses"
   | "listExpenseItems"

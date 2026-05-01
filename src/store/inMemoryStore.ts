@@ -826,6 +826,28 @@ export class InMemoryStore {
     });
   }
 
+  updateParticipant(
+    userId: string,
+    collectionId: string,
+    participantId: string,
+    data: {
+      relationshipHint?: CollectionParticipant["relationshipHint"];
+      defaultWeight?: number;
+    }
+  ): CollectionParticipant {
+    this.getOrganizerCollection(userId, collectionId);
+    const participant = this.getParticipant(collectionId, participantId);
+
+    const updated: CollectionParticipant = {
+      ...participant,
+      relationshipHint: data.relationshipHint ?? participant.relationshipHint,
+      defaultWeight: data.defaultWeight ?? participant.defaultWeight,
+      updatedAt: now()
+    };
+    this.participants.set(participant.id, updated);
+    return updated;
+  }
+
   setResponsiblePayer(
     userId: string,
     collectionId: string,

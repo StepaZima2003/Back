@@ -117,6 +117,68 @@ describe.each<ProviderName>(["memory", "prisma"])("api provider parity: %s", (pr
     await app.close();
   });
 
+  it("updates participant relationship and default weight", async () => {
+    const app = await buildApp({ store: await createStore(provider) });
+
+    await app.inject({
+      method: "POST",
+      url: "/auth/request-otp",
+      payload: { phone: "+79990010040" }
+    });
+
+    const authResponse = await app.inject({
+      method: "POST",
+      url: "/auth/verify-otp",
+      payload: { phone: "+79990010040", otp: "000000" }
+    });
+    const auth = authResponse.json();
+    const authorization = `Bearer ${auth.accessToken}`;
+
+    const collectionResponse = await app.inject({
+      method: "POST",
+      url: "/collections",
+      headers: { authorization },
+      payload: { title: "Family dinner", type: "restaurant" }
+    });
+    const { collection, organizerParticipant } = collectionResponse.json();
+
+    const guestResponse = await app.inject({
+      method: "POST",
+      url: `/collections/${collection.id}/participants/add-guest`,
+      headers: { authorization },
+      payload: {
+        displayName: "Partner",
+        responsiblePayerParticipantId: organizerParticipant.id
+      }
+    });
+    expect(guestResponse.statusCode).toBe(201);
+    const guest = guestResponse.json();
+
+    const patchResponse = await app.inject({
+      method: "PATCH",
+      url: `/collections/${collection.id}/participants/${guest.id}`,
+      headers: { authorization },
+      payload: {
+        relationshipHint: "partner",
+        defaultWeight: 0.75
+      }
+    });
+    expect(patchResponse.statusCode).toBe(200);
+    expect(patchResponse.json().relationshipHint).toBe("partner");
+    expect(patchResponse.json().defaultWeight).toBe(0.75);
+
+    const listResponse = await app.inject({
+      method: "GET",
+      url: `/collections/${collection.id}/participants`,
+      headers: { authorization }
+    });
+    const updated = listResponse.json().find((participant: { id: string }) => participant.id === guest.id);
+    expect(updated.relationshipHint).toBe("partner");
+    expect(updated.defaultWeight).toBe(0.75);
+
+    await app.close();
+  });
+
   it("supports review confirmations, disputes, manual payments, audit log, and notifications", async () => {
     const app = await buildApp({ store: await createStore(provider) });
 

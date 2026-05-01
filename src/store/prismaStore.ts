@@ -992,6 +992,35 @@ export class PrismaStore implements AppStore {
     return mapParticipantRecord(participant);
   }
 
+  async updateParticipant(
+    userId: string,
+    collectionId: string,
+    participantId: string,
+    data: {
+      relationshipHint?: CollectionParticipant["relationshipHint"];
+      defaultWeight?: number;
+    }
+  ): Promise<CollectionParticipant> {
+    await this.getOrganizerCollectionRecord(userId, collectionId);
+    const participant = await this.getParticipantRecord(collectionId, participantId);
+
+    const updated = await this.client.collectionParticipant.upsert({
+      where: { id: participantId },
+      update: {
+        relationshipHint: data.relationshipHint ?? participant.relationshipHint,
+        defaultWeight: data.defaultWeight ?? participant.defaultWeight,
+        updatedAt: new Date()
+      },
+      create: {
+        ...participant,
+        relationshipHint: data.relationshipHint ?? normalizeRelationshipHint(participant.relationshipHint),
+        defaultWeight: data.defaultWeight ?? (typeof participant.defaultWeight === "number" ? participant.defaultWeight : (participant.defaultWeight.toNumber?.() ?? 1)),
+        updatedAt: new Date()
+      }
+    });
+    return mapParticipantRecord(updated);
+  }
+
   async setResponsiblePayer(
     userId: string,
     collectionId: string,

@@ -167,6 +167,9 @@ async function runAction(action, source) {
       case "set-responsible-payer":
         await setResponsiblePayerFromAction(source);
         break;
+      case "save-participant-profile":
+        await updateParticipantProfileFromAction(source);
+        break;
       case "add-expense":
         await addCollectionExpense();
         break;
@@ -1231,6 +1234,7 @@ function renderOrganizerParticipantCard(bundle, participant) {
     ? displayNameByParticipantId(bundle.participants, participant.paymentResponsibleParticipantId)
     : null;
   const payerOptions = buildResponsiblePayerOptions(bundle.participants, participant.id);
+  const relationshipOptions = buildRelationshipHintOptions(participant.relationshipHint);
 
   return `
     <div class="dispute-card">
@@ -1244,6 +1248,11 @@ function renderOrganizerParticipantCard(bundle, participant) {
       <div class="inline-actions">
         <select id="participant-responsible-${participant.id}" class="text-input compact-select">${payerOptions}</select>
         <button class="mini-action" type="button" data-action="set-responsible-payer" data-participant-id="${participant.id}">Сохранить плательщика</button>
+      </div>
+      <div class="inline-actions">
+        <select id="participant-relationship-${participant.id}" class="text-input compact-select">${relationshipOptions}</select>
+        <input id="participant-weight-${participant.id}" class="text-input compact-select" inputmode="decimal" value="${escapeHtml(String(participant.defaultWeight ?? 1))}" />
+        <button class="mini-action primary" type="button" data-action="save-participant-profile" data-participant-id="${participant.id}">Сохранить профиль</button>
       </div>
     </div>
   `;
@@ -1261,6 +1270,21 @@ function buildResponsiblePayerOptions(participants, participantId) {
     )
     .join("");
   return selfOption + payerOptions;
+}
+
+function buildRelationshipHintOptions(selected) {
+  const options = [
+    ["self", "self"],
+    ["partner", "partner"],
+    ["child", "child"],
+    ["guest", "guest"],
+    ["family", "family"],
+    ["colleague", "colleague"],
+    ["other", "other"]
+  ];
+  return options
+    .map(([value, label]) => `<option value="${value}"${selected === value ? " selected" : ""}>${escapeHtml(label)}</option>`)
+    .join("");
 }
 
 function renderOrganizerExpenseCard(bundle, expense) {
@@ -1779,6 +1803,37 @@ async function setResponsiblePayerFromAction(source) {
   renderAll();
   renderScreenDependents();
   setStatus("Ответственный плательщик обновлен", true);
+}
+
+async function updateParticipantProfileFromAction(source) {
+  const bundle = getSelectedOrganizerBundle();
+  const participantId = source?.getAttribute("data-participant-id");
+  if (!bundle || !participantId) {
+    return;
+  }
+
+  const relationshipSelect = document.getElementById(`participant-relationship-${participantId}`);
+  const weightInput = document.getElementById(`participant-weight-${participantId}`);
+  const relationshipHint = relationshipSelect?.value ?? "other";
+  const defaultWeight = parseNumberInput(weightInput?.value, 1);
+  if (!Number.isFinite(defaultWeight) || defaultWeight <= 0) {
+    setStatus("Вес участника должен быть больше нуля", false);
+    return;
+  }
+
+  await fetchJson(`/collections/${bundle.collection.id}/participants/${participantId}`, {
+    method: "PATCH",
+    token: state.session.accessToken,
+    body: {
+      relationshipHint,
+      defaultWeight
+    }
+  });
+
+  await refreshAppData();
+  renderAll();
+  renderScreenDependents();
+  setStatus(`Профиль участника обновлен: ${relationshipHint}, вес ${defaultWeight}`, true);
 }
 
 async function addCollectionExpense() {

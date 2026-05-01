@@ -41,6 +41,11 @@ const addChildSchema = z.object({
   defaultWeight: z.number().positive().optional()
 });
 
+const updateParticipantSchema = z.object({
+  relationshipHint: z.enum(["self", "partner", "child", "guest", "family", "colleague", "other"]).optional(),
+  defaultWeight: z.number().positive().optional()
+});
+
 const createExpenseItemSchema = z.object({
   title: z.string().min(1).max(160),
   amountMinor: z.number().int().nonnegative(),
@@ -218,6 +223,13 @@ export function registerCollectionRoutes(app: FastifyInstance, store: AppStore):
     const params = participantParamsSchema.parse(request.params);
     const body = z.object({ responsiblePayerParticipantId: z.string().nullable() }).parse(request.body);
     return await store.setResponsiblePayer(user.id, params.id, params.participantId, body.responsiblePayerParticipantId);
+  });
+
+  app.patch("/collections/:id/participants/:participantId", async (request) => {
+    const user = await requireUser(request, store);
+    const params = participantParamsSchema.parse(request.params);
+    const body = updateParticipantSchema.parse(request.body);
+    return await store.updateParticipant(user.id, params.id, params.participantId, body);
   });
 
   app.post("/collections/:id/participants/:participantId/confirm-review", async (request) => {

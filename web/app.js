@@ -23,6 +23,8 @@ const state = {
   notifications: [],
   paymentMethods: [],
   autopayRules: [],
+  autopayPreviewByCollectionId: new Map(),
+  autopayExecutionSummaryByCollectionId: new Map(),
   friendships: [],
   friends: [],
   groups: [],
@@ -104,6 +106,9 @@ document.addEventListener("click", async (event) => {
   const nav = target.getAttribute("data-nav");
   setActiveScreen(screen, nav ?? state.activeNav);
   renderScreenDependents();
+  if (screen === "organizer") {
+    void syncOrganizerAutopayPreview({ collectionId: state.selectedOrganizerCollectionId, silent: true });
+  }
 });
 
 function setActiveScreen(screenName, navName) {
@@ -195,6 +200,12 @@ async function runAction(action, source) {
         break;
       case "save-autopay-rule":
         await saveAutopayRule();
+        break;
+      case "preview-autopay":
+        await syncOrganizerAutopayPreview();
+        break;
+      case "execute-autopay":
+        await executeOrganizerAutopay();
         break;
       default:
         break;
@@ -588,6 +599,10 @@ async function refreshAppData() {
   const organizerCollectionIds = new Set(state.organizerBundles.map((bundle) => bundle.collection.id));
   if (!state.selectedOrganizerCollectionId || !organizerCollectionIds.has(state.selectedOrganizerCollectionId)) {
     state.selectedOrganizerCollectionId = state.organizerBundles[0]?.collection.id ?? null;
+  }
+
+  if (state.selectedOrganizerCollectionId) {
+    await syncOrganizerAutopayPreview({ collectionId: state.selectedOrganizerCollectionId, silent: true });
   }
 }
 
@@ -1066,6 +1081,67 @@ function renderOrganizerScreen() {
         })
         .join("")
     : renderEmptyCard("Ручных оплат пока нет.");
+  const autopaySummary = document.getElementById("organizer-autopay-summary");
+  const autopayList = document.getElementById("organizer-autopay-list");
+  const preview = state.autopayPreviewByCollectionId.get(bundle.collection.id) ?? [];
+  const executionSummary = state.autopayExecutionSummaryByCollectionId.get(bundle.collection.id) ?? null;
+  const eligibleCount = preview.filter((item) => item.status === "eligible").length;
+  const blockedCount = preview.filter((item) => item.status === "blocked").length;
+  const existingCount = preview.filter((item) => item.status === "already_exists").length;
+
+  autopaySummary.innerHTML = `
+    <div class="line-item">
+      <span>Готово к списанию</span>
+      <strong>${eligibleCount}</strong>
+    </div>
+    <div class="line-item">
+      <span>Заблокировано</span>
+      <strong>${blockedCount}</strong>
+    </div>
+    <div class="line-item">
+      <span>Уже создано</span>
+      <strong>${existingCount}</strong>
+    </div>
+    ${
+      executionSummary
+        ? `
+          <div class="line-item">
+            <span>Последний запуск</span>
+            <strong>${executionSummary.createdCount} created / ${executionSummary.skippedCount} skipped</strong>
+          </div>
+        `
+        : ""
+    }
+  `;
+
+  autopayList.innerHTML = preview.length
+    ? preview
+        .map((item) => {
+          const participantName = displayNameByParticipantId(bundle.participants, item.participantId);
+          const responsibleName = displayNameByParticipantId(bundle.participants, item.responsibleParticipantId);
+          const availableAt = item.availableAt ? ` · c ${formatNotificationTime(item.availableAt)}` : "";
+          const note =
+            item.status === "eligible"
+              ? `${item.category ? `${escapeHtml(item.category)} · ` : ""}${escapeHtml(responsibleName)}${availableAt}`
+              : `${escapeHtml(autoPaymentReasonLabel(item.reasonCode))}${availableAt}`;
+          return `
+            <div class="dispute-card">
+              <div class="line-item">
+                <div class="line-item-copy">
+                  <span>${escapeHtml(participantName)} → ${escapeHtml(responsibleName)}</span>
+                  <div class="section-note">${note}</div>
+                </div>
+                <strong>${formatMoney(item.amountMinor)}</strong>
+              </div>
+              <div class="line-item">
+                <span>${escapeHtml(item.reason)}</span>
+                <span class="pill ${autoPaymentPreviewPillClass(item.status)}">${escapeHtml(autoPaymentPreviewStatusLabel(item.status))}</span>
+              </div>
+            </div>
+          `;
+        })
+        .join("")
+    : renderEmptyCard("Preview autopay появится после расчета и настройки правил.");
 }
 
 function renderFriendsScreen() {
@@ -1695,6 +1771,51 @@ async function saveAutopayRule() {
   setStatus("Autopay правило сохранено", true);
 }
 
+async function syncOrganizerAutopayPreview(options = {}) {
+  const collectionId = options.collectionId ?? state.selectedOrganizerCollectionId;
+  if (!collectionId) {
+    return [];
+  }
+
+  const preview = await fetchJson(`/collections/${collectionId}/autopay/preview`, {
+    token: state.session.accessToken
+  });
+  state.autopayPreviewByCollectionId.set(collectionId, preview);
+
+  if (state.currentScreen === "organizer" && state.selectedOrganizerCollectionId === collectionId) {
+    renderOrganizerScreen();
+  }
+  if (!options.silent) {
+    const eligibleCount = preview.filter((item) => item.status === "eligible").length;
+    setStatus(`Autopay preview обновлен: ${eligibleCount} eligible`, true);
+  }
+  return preview;
+}
+
+async function executeOrganizerAutopay() {
+  const bundle = getSelectedOrganizerBundle();
+  if (!bundle) {
+    throw new Error("Organizer collection not selected");
+  }
+
+  const result = await fetchJson(`/collections/${bundle.collection.id}/autopay/execute`, {
+    method: "POST",
+    token: state.session.accessToken
+  });
+
+  state.autopayExecutionSummaryByCollectionId.set(bundle.collection.id, {
+    createdCount: result.createdPayments.length,
+    skippedCount: result.skipped.length,
+    previewCount: result.preview.length,
+    updatedAt: new Date().toISOString()
+  });
+  state.autopayPreviewByCollectionId.set(bundle.collection.id, result.preview);
+
+  await refreshAppData();
+  renderAll();
+  setStatus(`Autopay: ${result.createdPayments.length} created, ${result.skipped.length} skipped`, true);
+}
+
 function openNotification(notificationId) {
   const notification = state.notifications.find((item) => item.id === notificationId);
   if (!notification?.collectionId) {
@@ -1716,6 +1837,9 @@ function openNotification(notificationId) {
   const shouldOpenOrganizer = bundle.collection.organizerId === state.me.id && organizerTypes.has(notification.type);
   setActiveScreen(shouldOpenOrganizer ? "organizer" : "collection", shouldOpenOrganizer ? "collections" : "home");
   renderScreenDependents();
+  if (shouldOpenOrganizer) {
+    void syncOrganizerAutopayPreview({ collectionId: bundle.collection.id, silent: true });
+  }
 }
 
 function getSelectedCollectionBundle() {
@@ -2118,6 +2242,43 @@ function paymentMethodStatusLabel(status) {
     revoked: "revoked"
   };
   return labels[status] ?? status;
+}
+
+function autoPaymentPreviewStatusLabel(status) {
+  const labels = {
+    eligible: "eligible",
+    blocked: "blocked",
+    already_exists: "already exists"
+  };
+  return labels[status] ?? status;
+}
+
+function autoPaymentPreviewPillClass(status) {
+  if (status === "eligible") {
+    return "pill-success";
+  }
+  if (status === "already_exists") {
+    return "pill-muted";
+  }
+  return "pill-danger";
+}
+
+function autoPaymentReasonLabel(reasonCode) {
+  const labels = {
+    eligible: "Готово к списанию",
+    no_rule: "Нет правила",
+    rule_disabled: "Правило выключено",
+    missing_payment_method: "Нет активного метода",
+    objection_window_open: "Открыто окно возражений",
+    participant_type_not_allowed: "Тип участника не покрывается",
+    covered_participant_limit: "Превышен лимит участников",
+    collection_limit_exceeded: "Превышен лимит на сбор",
+    daily_limit_exceeded: "Превышен дневной лимит",
+    monthly_limit_exceeded: "Превышен месячный лимит",
+    existing_payment: "Платеж уже существует",
+    unlinked_responsible_user: "Нет связанного пользователя"
+  };
+  return labels[reasonCode] ?? reasonCode;
 }
 
 function notificationTypeLabel(type) {

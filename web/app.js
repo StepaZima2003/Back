@@ -171,8 +171,8 @@ async function runAction(action, source) {
       case "add-expense-item":
         await addExpenseItemToExistingExpense(source);
         break;
-      case "exclude-expense-item":
-        await excludeExpenseItemForParticipant(source);
+      case "add-expense-rule":
+        await addExpenseRuleForParticipant(source);
         break;
       case "calculate-collection":
         await calculateSelectedCollection();
@@ -2488,6 +2488,167 @@ function manualPaymentStatusLabel(status) {
   return labels[status] ?? status;
 }
 
+async function confirmCurrentParticipantReview() {
+  const bundle = getSelectedCollectionBundle();
+  if (!bundle?.currentParticipant) {
+    return;
+  }
+
+  await fetchJson(`/collections/${bundle.collection.id}/participants/${bundle.currentParticipant.id}/confirm-review`, {
+    method: "POST",
+    token: state.session.accessToken
+  });
+
+  await refreshAppData();
+  renderAll();
+  renderScreenDependents();
+  setStatus("Review confirmed", true);
+}
+
+function renderOrganizerExpenseCard(bundle, expense) {
+  const expenseItems = expense.items ?? [];
+  const shareRules = expense.shareRules ?? [];
+  const participantOptions = bundle.participants
+    .map((participant) => `<option value="${participant.id}">${escapeHtml(participant.displayNameSnapshot)}</option>`)
+    .join("");
+
+  const itemsMarkup = expenseItems.length
+    ? expenseItems
+        .map((item) => {
+          const itemRules = shareRules.filter((rule) => rule.expenseItemId === item.id);
+          return `
+            <div class="mini-section">
+              <div class="line-item">
+                <span>${escapeHtml(item.title)}</span>
+                <strong>${formatMoney(item.amountMinor)}</strong>
+              </div>
+              ${
+                itemRules.length
+                  ? itemRules
+                      .map(
+                        (rule) => `
+                          <div class="line-item muted">
+                            <span>${escapeHtml(displayNameByParticipantId(bundle.participants, rule.participantId))} · ${escapeHtml(rule.splitMode)}</span>
+                            <em>${escapeHtml(describeShareRule(rule))}</em>
+                          </div>
+                        `
+                      )
+                      .join("")
+                  : '<div class="line-item muted"><span>No item-level rules</span><em>ok</em></div>'
+              }
+              <button class="mini-action" type="button" data-action="add-expense-rule" data-expense-id="${expense.id}" data-expense-item-id="${item.id}">Apply rule to item</button>
+            </div>
+          `;
+        })
+        .join("")
+    : '<div class="line-item muted"><span>No receipt items yet</span><em>flat split</em></div>';
+
+  return `
+    <article class="detail-panel bottom-gap">
+      <div class="line-item">
+        <div class="line-item-copy">
+          <span>${escapeHtml(expense.title)}</span>
+          <div class="section-note">${expenseItems.length ? `${expenseItems.length} items` : "no itemization"}</div>
+        </div>
+        <strong>${formatMoney(expense.amountMinor)}</strong>
+      </div>
+      ${itemsMarkup}
+      <div class="mini-section">
+        <label class="field-label" for="expense-item-title-${expense.id}">New item</label>
+        <input id="expense-item-title-${expense.id}" class="text-input" placeholder="For example, dessert" />
+      </div>
+      <div class="mini-section">
+        <label class="field-label" for="expense-item-amount-${expense.id}">Item amount, ₽</label>
+        <input id="expense-item-amount-${expense.id}" class="text-input" inputmode="decimal" placeholder="300" />
+      </div>
+      <button class="secondary-button" type="button" data-action="add-expense-item" data-expense-id="${expense.id}">Add item</button>
+      ${
+        expenseItems.length
+          ? `
+            <div class="mini-section">
+              <label class="field-label" for="expense-rule-participant-${expense.id}">Participant</label>
+              <select id="expense-rule-participant-${expense.id}" class="text-input">${participantOptions}</select>
+            </div>
+            <div class="mini-section">
+              <label class="field-label" for="expense-rule-mode-${expense.id}">Rule mode</label>
+              <select id="expense-rule-mode-${expense.id}" class="text-input">
+                <option value="excluded">excluded</option>
+                <option value="weights">weights</option>
+                <option value="fixed">fixed</option>
+                <option value="percent">percent</option>
+              </select>
+            </div>
+            <div class="mini-section">
+              <label class="field-label" for="expense-rule-value-${expense.id}">Rule value</label>
+              <input id="expense-rule-value-${expense.id}" class="text-input" inputmode="decimal" placeholder="For fixed / percent / weights" />
+            </div>
+            <div class="mini-section">
+              <label class="field-label" for="expense-rule-reason-${expense.id}">Comment</label>
+              <input id="expense-rule-reason-${expense.id}" class="text-input" placeholder="For example, did not drink wine" />
+            </div>
+          `
+          : ""
+      }
+    </article>
+  `;
+}
+
+function describeShareRule(rule) {
+  if (rule.splitMode === "excluded") {
+    return rule.reason ?? "excluded";
+  }
+  if (rule.splitMode === "fixed") {
+    return `${formatMoney(rule.fixedAmountMinor ?? 0)}${rule.reason ? ` · ${rule.reason}` : ""}`;
+  }
+  if (rule.splitMode === "percent") {
+    return `${rule.percent ?? 0}%${rule.reason ? ` · ${rule.reason}` : ""}`;
+  }
+  if (rule.splitMode === "weights") {
+    return `weight ${rule.weight ?? 1}${rule.reason ? ` · ${rule.reason}` : ""}`;
+  }
+  return rule.reason ?? rule.splitMode;
+}
+
+async function addExpenseRuleForParticipant(source) {
+  const expenseId = source?.getAttribute("data-expense-id");
+  const expenseItemId = source?.getAttribute("data-expense-item-id");
+  if (!expenseId || !expenseItemId) {
+    return;
+  }
+
+  const participantSelect = document.getElementById(`expense-rule-participant-${expenseId}`);
+  const modeSelect = document.getElementById(`expense-rule-mode-${expenseId}`);
+  const valueInput = document.getElementById(`expense-rule-value-${expenseId}`);
+  const reasonInput = document.getElementById(`expense-rule-reason-${expenseId}`);
+  const participantId = participantSelect?.value;
+  const splitMode = modeSelect?.value ?? "excluded";
+  if (!participantId) {
+    setStatus("Select a participant for item-level rule", false);
+    return;
+  }
+
+  const payload = {
+    participantId,
+    expenseItemId,
+    splitMode,
+    reason: reasonInput?.value?.trim() || null,
+    weight: splitMode === "weights" ? parseNumberInput(valueInput?.value, 1) : null,
+    fixedAmountMinor: splitMode === "fixed" ? parseMoneyToMinor(valueInput?.value ?? "") : null,
+    percent: splitMode === "percent" ? parseNumberInput(valueInput?.value, 0) : null
+  };
+
+  await fetchJson(`/expenses/${expenseId}/share-rules`, {
+    method: "POST",
+    token: state.session.accessToken,
+    body: payload
+  });
+
+  await refreshAppData();
+  renderAll();
+  renderScreenDependents();
+  setStatus(`Item-level rule ${splitMode} added`, true);
+}
+
 function paymentMethodStatusLabel(status) {
   const labels = {
     pending_binding: "pending",
@@ -2673,6 +2834,12 @@ function parseMoneyToMinor(value) {
 
 function parseIntegerInput(value, fallback = 0) {
   const parsed = Number.parseInt(String(value).trim(), 10);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function parseNumberInput(value, fallback = 0) {
+  const normalized = String(value ?? "").trim().replace(",", ".");
+  const parsed = Number(normalized);
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 

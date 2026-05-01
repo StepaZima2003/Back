@@ -170,6 +170,9 @@ async function runAction(action, source) {
       case "save-participant-profile":
         await updateParticipantProfileFromAction(source);
         break;
+      case "apply-participant-preset":
+        await applyParticipantPresetFromAction(source);
+        break;
       case "add-expense":
         await addCollectionExpense();
         break;
@@ -1223,18 +1226,13 @@ function renderOrganizerExpenseDraft() {
 }
 
 function renderOrganizerParticipantCard(bundle, participant) {
-  const role = participant.linkedUserId === bundle.collection.organizerId
-    ? "organizer"
-    : participant.participantType === "guest"
-      ? "guest"
-      : participant.participantType === "child"
-        ? "child"
-        : "participant";
+  const role = participantRoleLabel(bundle, participant);
   const responsiblePayerName = participant.paymentResponsibleParticipantId
     ? displayNameByParticipantId(bundle.participants, participant.paymentResponsibleParticipantId)
     : null;
   const payerOptions = buildResponsiblePayerOptions(bundle.participants, participant.id);
   const relationshipOptions = buildRelationshipHintOptions(participant.relationshipHint);
+  const presetButtons = renderParticipantPresetButtons(participant.id);
 
   return `
     <div class="dispute-card">
@@ -1248,6 +1246,9 @@ function renderOrganizerParticipantCard(bundle, participant) {
       <div class="inline-actions">
         <select id="participant-responsible-${participant.id}" class="text-input compact-select">${payerOptions}</select>
         <button class="mini-action" type="button" data-action="set-responsible-payer" data-participant-id="${participant.id}">Сохранить плательщика</button>
+      </div>
+      <div class="inline-actions preset-row">
+        ${presetButtons}
       </div>
       <div class="inline-actions">
         <select id="participant-relationship-${participant.id}" class="text-input compact-select">${relationshipOptions}</select>
@@ -1272,19 +1273,48 @@ function buildResponsiblePayerOptions(participants, participantId) {
   return selfOption + payerOptions;
 }
 
+function renderParticipantPresetButtons(participantId) {
+  const presets = [
+    { label: "Ребенок 0.5", relationshipHint: "child", defaultWeight: "0.5" },
+    { label: "Партнер 1", relationshipHint: "partner", defaultWeight: "1" },
+    { label: "Гость 1", relationshipHint: "guest", defaultWeight: "1" },
+    { label: "Семья 1", relationshipHint: "family", defaultWeight: "1" }
+  ];
+
+  return presets
+    .map(
+      (preset) =>
+        `<button class="mini-action" type="button" data-action="apply-participant-preset" data-participant-id="${participantId}" data-relationship-hint="${preset.relationshipHint}" data-default-weight="${preset.defaultWeight}">${escapeHtml(preset.label)}</button>`
+    )
+    .join("");
+}
+
 function buildRelationshipHintOptions(selected) {
   const options = [
-    ["self", "self"],
-    ["partner", "partner"],
-    ["child", "child"],
-    ["guest", "guest"],
-    ["family", "family"],
-    ["colleague", "colleague"],
-    ["other", "other"]
+    ["self", "Сам"],
+    ["partner", "Партнер"],
+    ["child", "Ребенок"],
+    ["guest", "Гость"],
+    ["family", "Семья"],
+    ["colleague", "Коллега"],
+    ["other", "Другое"]
   ];
   return options
     .map(([value, label]) => `<option value="${value}"${selected === value ? " selected" : ""}>${escapeHtml(label)}</option>`)
     .join("");
+}
+
+function participantRoleLabel(bundle, participant) {
+  if (participant.linkedUserId === bundle.collection.organizerId) {
+    return "Организатор";
+  }
+  if (participant.participantType === "child") {
+    return "Ребенок";
+  }
+  if (participant.participantType === "guest") {
+    return "Гость";
+  }
+  return "Участник";
 }
 
 function renderOrganizerExpenseCard(bundle, expense) {
@@ -1834,6 +1864,26 @@ async function updateParticipantProfileFromAction(source) {
   renderAll();
   renderScreenDependents();
   setStatus(`Профиль участника обновлен: ${relationshipHint}, вес ${defaultWeight}`, true);
+}
+
+async function applyParticipantPresetFromAction(source) {
+  const participantId = source?.getAttribute("data-participant-id");
+  const relationshipHint = source?.getAttribute("data-relationship-hint");
+  const defaultWeight = source?.getAttribute("data-default-weight");
+  if (!participantId || !relationshipHint || !defaultWeight) {
+    return;
+  }
+
+  const relationshipSelect = document.getElementById(`participant-relationship-${participantId}`);
+  const weightInput = document.getElementById(`participant-weight-${participantId}`);
+  if (relationshipSelect) {
+    relationshipSelect.value = relationshipHint;
+  }
+  if (weightInput) {
+    weightInput.value = defaultWeight;
+  }
+
+  await updateParticipantProfileFromAction(source);
 }
 
 async function addCollectionExpense() {

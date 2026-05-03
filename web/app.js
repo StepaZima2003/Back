@@ -51,18 +51,20 @@ const organizerExpenseItemAmountInput = document.getElementById("organizer-expen
 const payManualProofUrlInput = document.getElementById("pay-manual-proof-url");
 const payManualCommentInput = document.getElementById("pay-manual-comment");
 const collectionFilterTabs = [...document.querySelectorAll('[data-screen="collections"] .tab-row .chip')];
+const INTERACTIVE_SELECTOR =
+  "[data-go], [data-action], [data-collection-id], [data-organizer-collection-id], [data-payment-method-id], [data-notification-id], .chip, .switch";
 
 collectionFilterTabs[0]?.setAttribute("data-collection-filter", "active");
 collectionFilterTabs[1]?.setAttribute("data-collection-filter", "history");
 collectionFilterTabs[2]?.setAttribute("data-collection-filter", "organizer");
 
 document.addEventListener("click", async (event) => {
-  const target = event.target instanceof Element
-    ? event.target.closest("[data-go], [data-action], [data-collection-id], [data-organizer-collection-id], [data-payment-method-id], [data-notification-id], .chip, .switch")
-    : null;
+  const target = event.target instanceof Element ? event.target.closest(INTERACTIVE_SELECTOR) : null;
   if (!target) {
     return;
   }
+
+  haptic("tap");
 
   if (target.classList.contains("chip")) {
     handleChipClick(target);
@@ -116,21 +118,41 @@ document.addEventListener("click", async (event) => {
   }
 });
 
+document.addEventListener("pointerdown", (event) => {
+  const target = event.target instanceof Element ? event.target.closest(INTERACTIVE_SELECTOR) : null;
+  target?.classList.add("is-pressing");
+});
+
+["pointerup", "pointercancel", "pointerleave"].forEach((eventName) => {
+  document.addEventListener(eventName, () => {
+    document.querySelectorAll(".is-pressing").forEach((node) => node.classList.remove("is-pressing"));
+  });
+});
+
 function setActiveScreen(screenName, navName) {
   state.currentScreen = screenName;
   state.activeNav = navName;
 
   screens.forEach((screen) => {
-    screen.classList.toggle("is-active", screen.dataset.screen === screenName);
-    if (screen.dataset.screen === screenName) {
+    const isActive = screen.dataset.screen === screenName;
+    screen.classList.toggle("is-active", isActive);
+    screen.classList.toggle("is-entering", false);
+    if (isActive) {
       const scrollArea = screen.querySelector(".screen-scroll");
       if (scrollArea) {
         scrollArea.scrollTop = 0;
       }
+      requestAnimationFrame(() => {
+        screen.classList.add("is-entering");
+      });
     }
   });
 
   navItems.forEach((item) => item.classList.toggle("is-active", item.dataset.nav === navName));
+
+  if (screenName === "paid" || screenName === "dispute-sent") {
+    triggerCompletionFeedback();
+  }
 }
 
 async function runAction(action, source) {
@@ -262,12 +284,15 @@ function handleChipClick(target) {
 }
 
 async function bootstrap() {
+  document.body.classList.add("is-booting");
+  renderBootSkeletons();
   await pingHealth();
   await loginDemoActors();
   await ensureDemoData();
   await refreshAppData();
   setStatus("demo data ready", true);
   renderAll();
+  document.body.classList.remove("is-booting");
 }
 
 async function pingHealth() {
@@ -712,6 +737,46 @@ function renderAll() {
   renderProfileScreen();
 }
 
+function renderBootSkeletons() {
+  const skeletonCard = `
+    <article class="collection-card skeleton-card" aria-hidden="true">
+      <div class="skeleton-line skeleton-line-title"></div>
+      <div class="skeleton-line skeleton-line-copy"></div>
+      <div class="skeleton-track"></div>
+      <div class="skeleton-row">
+        <span></span>
+        <span></span>
+      </div>
+    </article>
+  `;
+  const bento = document.getElementById("home-bento-grid");
+  const dueList = document.getElementById("home-due-list");
+  const organizerList = document.getElementById("home-organizer-list");
+  const notificationsList = document.getElementById("home-notifications-list");
+
+  if (bento) {
+    bento.innerHTML = `
+      <article class="bento-item bento-item-large skeleton-card" aria-hidden="true"></article>
+      <article class="bento-item skeleton-card" aria-hidden="true"></article>
+      <article class="bento-item skeleton-card" aria-hidden="true"></article>
+    `;
+  }
+  if (dueList) {
+    dueList.innerHTML = skeletonCard;
+  }
+  if (organizerList) {
+    organizerList.innerHTML = `${skeletonCard}${skeletonCard}`;
+  }
+  if (notificationsList) {
+    notificationsList.innerHTML = `
+      <article class="notification-card skeleton-card" aria-hidden="true">
+        <div class="skeleton-line skeleton-line-title"></div>
+        <div class="skeleton-line skeleton-line-copy"></div>
+      </article>
+    `;
+  }
+}
+
 function renderScreenDependents() {
   if (state.currentScreen === "inbox") {
     renderInboxScreen();
@@ -736,6 +801,8 @@ function renderHome() {
   text("home-due-note", `${state.dueBundles.length} активных сборов`);
   text("home-organizer-note", `${state.organizerBundles.length} сборов под контролем`);
 
+  renderHomeBento();
+
   const dueList = document.getElementById("home-due-list");
   dueList.innerHTML = state.dueBundles.length
     ? state.dueBundles.slice(0, 2).map((bundle) => renderCollectionCard(bundle, { variant: "due", go: "collection", nav: "home" })).join("")
@@ -753,6 +820,37 @@ function renderHome() {
         .map((notification) => renderNotificationCard(notification, { compact: true }))
         .join("")
     : renderEmptyCard("Inbox пока пуст.");
+}
+
+function renderHomeBento() {
+  const node = document.getElementById("home-bento-grid");
+  if (!node) {
+    return;
+  }
+
+  const dueTotalMinor = state.dueBundles.reduce((sum, bundle) => sum + Math.max(bundle.userDueMinor, 0), 0);
+  const organizerTotalMinor = state.organizerBundles.reduce((sum, bundle) => sum + bundle.collection.totalAmountMinor, 0);
+  const collectedMinor = state.organizerBundles.reduce((sum, bundle) => sum + bundle.collectedMinor, 0);
+  const openDisputes = state.organizerBundles.reduce((sum, bundle) => sum + bundle.disputes.length, 0);
+  const collectedPercent = organizerTotalMinor > 0 ? Math.round((collectedMinor / organizerTotalMinor) * 100) : 0;
+
+  node.innerHTML = `
+    <article class="bento-item bento-item-large">
+      <span>К оплате</span>
+      <strong>${formatMoney(dueTotalMinor)}</strong>
+      <em>${state.dueBundles.length} активных сборов</em>
+    </article>
+    <article class="bento-item">
+      <span>Собрано</span>
+      <strong>${collectedPercent}%</strong>
+      <em>${formatMoney(collectedMinor)}</em>
+    </article>
+    <article class="bento-item ${openDisputes ? "bento-item-alert" : "bento-item-calm"}">
+      <span>Споры</span>
+      <strong>${openDisputes}</strong>
+      <em>${openDisputes ? "нужна реакция" : "чисто"}</em>
+    </article>
+  `;
 }
 
 function renderInboxScreen() {
@@ -1677,6 +1775,7 @@ async function createCollectionFromForm() {
   setActiveScreen("organizer", "collections");
   renderScreenDependents();
   setStatus(`Создан сбор «${createdCollection.title}»`, true);
+  triggerCompletionFeedback();
 }
 
 async function inviteFriendFromForm() {
@@ -3043,6 +3142,27 @@ function setStatus(message, ready) {
   }
 }
 
+function haptic(type = "tap") {
+  if (!("vibrate" in navigator)) {
+    return;
+  }
+
+  const patterns = {
+    tap: 8,
+    success: [12, 28, 18],
+    warning: [18, 24, 18]
+  };
+  navigator.vibrate(patterns[type] ?? patterns.tap);
+}
+
+function triggerCompletionFeedback() {
+  haptic("success");
+  document.body.classList.remove("is-celebrating");
+  requestAnimationFrame(() => {
+    document.body.classList.add("is-celebrating");
+  });
+}
+
 function parseMoneyToMinor(value) {
   const normalized = String(value).trim().replace(/\s+/g, "").replace(",", ".");
   if (!normalized) {
@@ -3104,5 +3224,7 @@ function escapeHtml(value) {
 
 bootstrap().catch((error) => {
   console.error(error);
+  document.body.classList.remove("is-booting");
+  haptic("warning");
   setStatus(error instanceof Error ? error.message : "frontend bootstrap failed", false);
 });

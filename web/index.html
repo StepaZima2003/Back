@@ -4,6 +4,9 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>SplitFriends</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="/app.css" />
   </head>
   <body>
@@ -14,7 +17,7 @@
             <span class="status-time">9:41</span>
             <div class="status-meta">
               <span class="status-dot"></span>
-              <span id="api-status-text">API connecting</span>
+              <span id="api-status-text">Подключение API</span>
             </div>
           </header>
 
@@ -48,7 +51,7 @@
 
               <section class="section-block">
                 <div class="section-head">
-                  <h2>Inbox</h2>
+                  <h2>Входящие</h2>
                   <button class="link-button" type="button" data-go="inbox" data-nav="home">Все</button>
                 </div>
                 <div id="home-notifications-list"></div>
@@ -68,7 +71,7 @@
               <header class="page-header compact-header">
                 <div>
                   <p class="eyebrow">Сигналы и действия</p>
-                  <h1>Inbox</h1>
+                  <h1>Входящие</h1>
                 </div>
               </header>
               <div id="inbox-list"></div>
@@ -110,7 +113,7 @@
               </div>
 
               <button class="primary-button" id="collection-pay-button" type="button" data-go="pay" data-nav="home" data-action="open-pay">Оплатить</button>
-              <button class="secondary-button" id="collection-review-button" type="button" data-action="confirm-review" hidden>Подтвердить review</button>
+              <button class="secondary-button" id="collection-review-button" type="button" data-action="confirm-review" hidden>Подтвердить согласование</button>
               <button class="secondary-button" type="button" data-go="dispute" data-nav="home">Попросить изменить</button>
 
               <section class="section-block">
@@ -167,7 +170,7 @@
                   </div>
                 </div>
                 <div class="form-block">
-                  <label class="field-label" for="pay-manual-proof-url">Ссылка на proof</label>
+                  <label class="field-label" for="pay-manual-proof-url">Ссылка на подтверждение</label>
                   <input id="pay-manual-proof-url" class="text-input" placeholder="https://..." />
                 </div>
                 <div class="form-block">
@@ -275,7 +278,7 @@
               <section class="section-block">
                 <div class="section-head">
                   <h2>Участники</h2>
-                  <span class="section-note" id="organizer-status-note">draft</span>
+                  <span class="section-note" id="organizer-status-note">черновик</span>
                 </div>
                 <div class="form-block">
                   <label class="field-label" for="organizer-friend-select">Добавить друга</label>
@@ -338,17 +341,17 @@
               </section>
 
               <section class="detail-panel">
-                <div class="panel-title">Autopay</div>
+                <div class="panel-title">Автоплатежи</div>
                 <div id="organizer-autopay-summary"></div>
                 <div id="organizer-autopay-list"></div>
-                <button class="primary-button" type="button" data-action="execute-autopay">Запустить autopay</button>
-                <button class="secondary-button" type="button" data-action="preview-autopay">Обновить preview</button>
+                <button class="primary-button" type="button" data-action="execute-autopay">Запустить автоплатежи</button>
+                <button class="secondary-button" type="button" data-action="preview-autopay">Обновить предпросмотр</button>
               </section>
 
               <section class="detail-panel">
                 <div class="panel-title">Быстрые действия</div>
                 <button class="primary-button" id="organizer-calculate-button" type="button" data-action="calculate-collection">Пересчитать сбор</button>
-                <button class="secondary-button" id="organizer-review-button" type="button" data-action="send-review">Отправить на review</button>
+                <button class="secondary-button" id="organizer-review-button" type="button" data-action="send-review">Отправить на согласование</button>
                 <button class="secondary-button" type="button">Отправить напоминание</button>
               </section>
             </div>

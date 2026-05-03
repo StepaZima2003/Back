@@ -262,7 +262,7 @@ async function runAction(action, source) {
         break;
     }
   } catch (error) {
-    setStatus(error instanceof Error ? error.message : "Action failed", false);
+    setStatus(error instanceof Error ? error.message : "Действие не выполнено", false);
   }
 }
 
@@ -290,7 +290,7 @@ async function bootstrap() {
   await loginDemoActors();
   await ensureDemoData();
   await refreshAppData();
-  setStatus("demo data ready", true);
+  setStatus("Демо-данные готовы", true);
   renderAll();
   document.body.classList.remove("is-booting");
 }
@@ -298,10 +298,10 @@ async function bootstrap() {
 async function pingHealth() {
   const response = await fetch("/health");
   if (!response.ok) {
-    throw new Error(`Health check failed: ${response.status}`);
+    throw new Error(`Проверка API не прошла: ${response.status}`);
   }
   const health = await response.json();
-  setStatus(`${health.service} online`, true);
+  setStatus(`${health.service} онлайн`, true);
 }
 
 async function loginDemoActors() {
@@ -819,7 +819,7 @@ function renderHome() {
         .slice(0, 3)
         .map((notification) => renderNotificationCard(notification, { compact: true }))
         .join("")
-    : renderEmptyCard("Inbox пока пуст.");
+    : renderEmptyCard("Входящие пока пусты.");
 }
 
 function renderHomeBento() {
@@ -885,7 +885,7 @@ function renderCollectionsScreen() {
 
   if (state.collectionsFilter === "active") {
     list.innerHTML =
-      renderCollectionSection("Требуют действия", actionableBundles, "Оплата, review и pending items") +
+      renderCollectionSection("Требуют действия", actionableBundles, "Оплата, согласование и ожидающие действия") +
       renderCollectionSection("Спокойные", sortBundles(passiveBundles), "Без срочных действий");
     if (!actionableBundles.length && !passiveBundles.length) {
       list.innerHTML = renderEmptyCard("Нет активных сборов.");
@@ -1009,7 +1009,7 @@ function renderPayMethods() {
   const list = document.getElementById("pay-methods-list");
   const activeMethods = state.paymentMethods.filter((method) => method.status === "active");
   if (!activeMethods.length) {
-    list.innerHTML = renderEmptyCard("Нет активной карты. Demo bind создастся автоматически.");
+    list.innerHTML = renderEmptyCard("Нет активной карты. Демо-привязка создастся автоматически.");
     return;
   }
 
@@ -1047,7 +1047,7 @@ function renderOrganizerScreen() {
   );
   text(
     "organizer-review-button",
-    bundle.calculation ? "Отправить на review" : "Сначала пересчитать"
+    bundle.calculation ? "Отправить на согласование" : "Сначала пересчитать"
   );
 
   const attention = document.getElementById("organizer-attention-list");
@@ -1069,7 +1069,7 @@ function renderOrganizerScreen() {
         items.push(`
           <div class="line-item">
             <span>${escapeHtml(payerName)} отправил ручную оплату</span>
-            <span class="pill pill-warn">proof</span>
+            <span class="pill pill-warn">подтверждение</span>
           </div>
         `);
       }
@@ -1253,7 +1253,7 @@ function renderOrganizerScreen() {
         ? `
           <div class="line-item">
             <span>Последний запуск</span>
-            <strong>${executionSummary.createdCount} created / ${executionSummary.skippedCount} skipped</strong>
+            <strong>${executionSummary.createdCount} создано / ${executionSummary.skippedCount} пропущено</strong>
           </div>
         `
         : ""
@@ -1287,7 +1287,7 @@ function renderOrganizerScreen() {
           `;
         })
         .join("")
-    : renderEmptyCard("Preview autopay появится после расчета и настройки правил.");
+    : renderEmptyCard("Предпросмотр автоплатежей появится после расчета и настройки правил.");
 }
 
 function renderOrganizerExpenseDraft() {
@@ -1297,14 +1297,14 @@ function renderOrganizerExpenseDraft() {
   }
 
   if (!state.draftExpenseItems.length) {
-    draftNode.innerHTML = renderEmptyCard("Добавь позиции чека, если нужен itemized split.");
+    draftNode.innerHTML = renderEmptyCard("Добавь позиции чека, если нужно разделение по позициям.");
     return;
   }
 
   const totalMinor = state.draftExpenseItems.reduce((sum, item) => sum + item.amountMinor, 0);
   draftNode.innerHTML = `
     <article class="detail-panel">
-      <div class="panel-title">Черновик itemized receipt</div>
+      <div class="panel-title">Черновик чека по позициям</div>
       ${state.draftExpenseItems
         .map(
           (item) => `
@@ -1450,7 +1450,7 @@ function renderOrganizerExpenseCard(bundle, expense) {
           `;
         })
         .join("")
-    : '<div class="line-item muted"><span>Позиции чека не заданы</span><em>flat split</em></div>';
+    : '<div class="line-item muted"><span>Позиции чека не заданы</span><em>равное деление</em></div>';
 
   return `
     <article class="detail-panel bottom-gap">
@@ -1501,12 +1501,12 @@ function renderFriendsScreen() {
                 <div class="person-name">${escapeHtml(friend.displayName)}</div>
                 <div class="person-sub">${friend.sharedCollections} общих сборов</div>
               </div>
-              <span class="${index === 0 ? "status-chip online" : "pill pill-muted"}">${index === 0 ? "" : "ok"}</span>
+              <span class="${index === 0 ? "status-chip online" : "pill pill-muted"}">${index === 0 ? "" : "готово"}</span>
             </div>
           `
         )
         .join("")
-    : renderEmptyCard("Пока нет друзей. Demo-актеры будут добавлены автоматически.");
+    : renderEmptyCard("Пока нет друзей. Демо-участники будут добавлены автоматически.");
 }
 
 function renderGroupsScreen() {
@@ -1546,7 +1546,7 @@ function renderProfileScreen() {
         ${renderProfilePaymentMethods()}
       </div>
       <div class="form-block">
-        <label class="field-label" for="profile-card-mask">Mock карта</label>
+        <label class="field-label" for="profile-card-mask">Тестовая карта</label>
         <input class="text-input" id="profile-card-mask" placeholder="2200 **** **** 4821" />
       </div>
       <div class="chip-wrap">
@@ -1554,7 +1554,7 @@ function renderProfileScreen() {
         <button class="chip" type="button" data-card-brand="visa">Visa</button>
         <button class="chip" type="button" data-card-brand="mastercard">Mastercard</button>
       </div>
-      <button class="secondary-button" type="button" data-action="create-payment-setup">Начать setup</button>
+      <button class="secondary-button" type="button" data-action="create-payment-setup">Начать привязку</button>
     `;
   }
 
@@ -1691,7 +1691,7 @@ async function deprecatedConfirmCurrentParticipantReview() {
   setStatus("Review подтвержден", true);
   return;
   if (draftItems.length) {
-    setStatus(`Itemized расход «${title}» добавлен`, true);
+    setStatus(`Расход по позициям «${title}» добавлен`, true);
     return;
   }
   setStatus("Review подтвержден", true);
@@ -2066,7 +2066,7 @@ function clearDraftExpenseItems(options = {}) {
   }
   renderOrganizerExpenseDraft();
   if (!options.silent) {
-    setStatus("Черновик itemized receipt очищен", true);
+    setStatus("Черновик чека по позициям очищен", true);
   }
 }
 
@@ -2122,7 +2122,7 @@ async function excludeExpenseItemForParticipant(source) {
       participantId,
       expenseItemId,
       splitMode: "excluded",
-      reason: reasonInput?.value?.trim() || "Excluded from frontend itemized flow"
+      reason: reasonInput?.value?.trim() || "Исключено из сценария чека по позициям"
     }
   });
 
@@ -2168,7 +2168,7 @@ async function sendCollectionToReview() {
   await refreshAppData();
   renderAll();
   renderScreenDependents();
-  setStatus("Сбор отправлен на review", true);
+  setStatus("Сбор отправлен на согласование", true);
 }
 
 async function updateDisputeFromAction(source, action) {
@@ -2230,7 +2230,7 @@ async function updateManualPaymentFromAction(source, action) {
 async function createPaymentMethodSetup() {
   const maskedPan = document.getElementById("profile-card-mask")?.value?.trim();
   if (!maskedPan) {
-    setStatus("Укажи mock карту", false);
+    setStatus("Укажи тестовую карту", false);
     return;
   }
 
@@ -2245,7 +2245,7 @@ async function createPaymentMethodSetup() {
 
   await refreshAppData();
   renderAll();
-  setStatus("Setup intent создан. Подтверди его ниже.", true);
+  setStatus("Заявка на привязку создана. Подтверди ее ниже.", true);
 }
 
 async function updatePaymentMethodSetup(source, action) {
@@ -2257,7 +2257,7 @@ async function updatePaymentMethodSetup(source, action) {
   if (action === "confirm") {
     const maskedPan = document.getElementById("profile-card-mask")?.value?.trim();
     if (!maskedPan) {
-      setStatus("Укажи mock карту для confirm", false);
+      setStatus("Укажи тестовую карту для подтверждения", false);
       return;
     }
 
@@ -2276,14 +2276,14 @@ async function updatePaymentMethodSetup(source, action) {
       token: state.session.accessToken,
       body: {
         errorCode: "frontend_mock_failure",
-        reason: "Failed from frontend profile flow"
+        reason: "Ошибка из сценария профиля"
       }
     });
   }
 
   await refreshAppData();
   renderAll();
-  setStatus(action === "confirm" ? "Setup подтвержден" : "Setup переведен в failed", true);
+  setStatus(action === "confirm" ? "Привязка подтверждена" : "Привязка переведена в ошибку", true);
 }
 
 async function revokePaymentMethodFromAction(source) {
@@ -2338,7 +2338,7 @@ async function saveAutopayRule() {
 
   await refreshAppData();
   renderAll();
-  setStatus("Autopay правило сохранено", true);
+  setStatus("Правило автоплатежей сохранено", true);
 }
 
 async function syncOrganizerAutopayPreview(options = {}) {
@@ -2357,7 +2357,7 @@ async function syncOrganizerAutopayPreview(options = {}) {
   }
   if (!options.silent) {
     const eligibleCount = preview.filter((item) => item.status === "eligible").length;
-    setStatus(`Autopay preview обновлен: ${eligibleCount} eligible`, true);
+    setStatus(`Предпросмотр автоплатежей обновлен: готово к списанию ${eligibleCount}`, true);
   }
   return preview;
 }
@@ -2383,7 +2383,7 @@ async function executeOrganizerAutopay() {
 
   await refreshAppData();
   renderAll();
-  setStatus(`Autopay: ${result.createdPayments.length} created, ${result.skipped.length} skipped`, true);
+  setStatus(`Автоплатежи: создано ${result.createdPayments.length}, пропущено ${result.skipped.length}`, true);
 }
 
 function openNotification(notificationId) {
@@ -2520,7 +2520,7 @@ function renderProfilePaymentMethods() {
           ? `
             <div class="inline-actions">
               <button class="mini-action primary" type="button" data-action="confirm-payment-setup" data-method-id="${method.id}">Подтвердить</button>
-              <button class="mini-action danger" type="button" data-action="fail-payment-setup" data-method-id="${method.id}">Fail</button>
+              <button class="mini-action danger" type="button" data-action="fail-payment-setup" data-method-id="${method.id}">Ошибка</button>
             </div>
           `
           : method.status === "active"
@@ -2536,9 +2536,9 @@ function renderProfilePaymentMethods() {
           <div class="line-item">
             <div class="line-item-copy">
               <span>${escapeHtml(paymentMethodTitle(method))}</span>
-              <div class="section-note">${escapeHtml(method.brand.toUpperCase())}${method.providerSetupId ? ` · setup ${escapeHtml(method.providerSetupId)}` : ""}</div>
+              <div class="section-note">${escapeHtml(method.brand.toUpperCase())}${method.providerSetupId ? ` · привязка ${escapeHtml(method.providerSetupId)}` : ""}</div>
             </div>
-            <strong>${escapeHtml(paymentMethodStatusLabel(method.status))}${method.isDefault ? " · default" : ""}</strong>
+            <strong>${escapeHtml(paymentMethodStatusLabel(method.status))}${method.isDefault ? " · основная" : ""}</strong>
           </div>
           ${method.lastSetupErrorMessage ? `<div class="section-note">${escapeHtml(method.lastSetupErrorMessage)}</div>` : ""}
           ${actions}
@@ -2571,7 +2571,7 @@ function renderProfileFrequentPeople() {
 
 function renderProfileAutopayRules() {
   if (!state.autopayRules.length) {
-    return renderEmptyCard("Autopay rules пока не настроены.");
+    return renderEmptyCard("Правила автоплатежей пока не настроены.");
   }
 
   return state.autopayRules
@@ -2751,15 +2751,15 @@ function labelizeCollectionStatus(status) {
     participants_selected: "участники",
     expenses_added: "расходы",
     rules_configured: "правила",
-    review: "review",
+    review: "согласование",
     dispute_pending: "спор",
-    finalized: "final",
+    finalized: "итог",
     payment_pending: "к оплате",
     partially_paid: "частично оплачено",
     paid: "оплачено",
     closed: "закрыт",
     cancelled: "отменен",
-    blocked: "blocked"
+    blocked: "заблокировано"
   };
   return labels[status] ?? status;
 }
@@ -2824,7 +2824,7 @@ async function confirmCurrentParticipantReview() {
   await refreshAppData();
   renderAll();
   renderScreenDependents();
-  setStatus("Review confirmed", true);
+  setStatus("Согласование подтверждено", true);
 }
 
 function renderOrganizerExpenseCard(bundle, expense) {
@@ -2856,14 +2856,14 @@ function renderOrganizerExpenseCard(bundle, expense) {
                         `
                       )
                       .join("")
-                  : '<div class="line-item muted"><span>No item-level rules</span><em>ok</em></div>'
+                  : '<div class="line-item muted"><span>Нет правил по позициям</span><em>готово</em></div>'
               }
-              <button class="mini-action" type="button" data-action="add-expense-rule" data-expense-id="${expense.id}" data-expense-item-id="${item.id}">Apply rule to item</button>
+              <button class="mini-action" type="button" data-action="add-expense-rule" data-expense-id="${expense.id}" data-expense-item-id="${item.id}">Применить правило</button>
             </div>
           `;
         })
         .join("")
-    : '<div class="line-item muted"><span>No receipt items yet</span><em>flat split</em></div>';
+    : '<div class="line-item muted"><span>Позиции чека пока не добавлены</span><em>равное деление</em></div>';
 
   return `
     <article class="detail-panel bottom-gap">
@@ -2968,26 +2968,26 @@ async function addExpenseRuleForParticipant(source) {
   await refreshAppData();
   renderAll();
   renderScreenDependents();
-  setStatus(`Item-level rule ${splitMode} added`, true);
+  setStatus(`Правило по позиции добавлено: ${splitMode}`, true);
 }
 
 function paymentMethodStatusLabel(status) {
   const labels = {
-    pending_binding: "pending",
-    requires_confirmation: "requires confirmation",
-    active: "active",
-    failed: "failed",
-    expired: "expired",
-    revoked: "revoked"
+    pending_binding: "ожидает",
+    requires_confirmation: "нужно подтверждение",
+    active: "активна",
+    failed: "ошибка",
+    expired: "истекла",
+    revoked: "отвязана"
   };
   return labels[status] ?? status;
 }
 
 function autoPaymentPreviewStatusLabel(status) {
   const labels = {
-    eligible: "eligible",
-    blocked: "blocked",
-    already_exists: "already exists"
+    eligible: "готово",
+    blocked: "заблокировано",
+    already_exists: "уже создано"
   };
   return labels[status] ?? status;
 }
@@ -3022,13 +3022,13 @@ function autoPaymentReasonLabel(reasonCode) {
 
 function notificationTypeLabel(type) {
   const labels = {
-    collection_review_requested: "review",
-    participant_confirmed: "confirm",
+    collection_review_requested: "согласование",
+    participant_confirmed: "подтверждено",
     dispute_created: "спор",
-    dispute_updated: "update",
-    manual_payment_submitted: "proof",
-    manual_payment_confirmed: "manual ok",
-    manual_payment_rejected: "manual no"
+    dispute_updated: "обновление",
+    manual_payment_submitted: "подтверждение",
+    manual_payment_confirmed: "ручная оплата",
+    manual_payment_rejected: "отклонено"
   };
   return labels[type] ?? type;
 }
@@ -3226,5 +3226,5 @@ bootstrap().catch((error) => {
   console.error(error);
   document.body.classList.remove("is-booting");
   haptic("warning");
-  setStatus(error instanceof Error ? error.message : "frontend bootstrap failed", false);
+  setStatus(error instanceof Error ? error.message : "Фронтенд не запустился", false);
 });

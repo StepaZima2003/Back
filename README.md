@@ -1,6 +1,6 @@
-# SocialSplitApp
+# Вместе
 
-Стартовая реализация MVP 1 по ТЗ `Social Split App Full Tz V2.pdf`.
+Стартовая реализация MVP 1 для приложения `Вместе` по ТЗ `Social Split App Full Tz V2.pdf`.
 
 Первый инкремент фокусируется на backend как источнике истины:
 

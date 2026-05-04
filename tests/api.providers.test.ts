@@ -32,7 +32,7 @@ describe.each<ProviderName>(["memory", "prisma"])("api provider parity: %s", (pr
     });
     expect(rootResponse.statusCode).toBe(200);
     expect(rootResponse.headers["content-type"]).toContain("text/html");
-    expect(rootResponse.body).toContain("<title>SplitFriends</title>");
+    expect(rootResponse.body).toContain("<title>Вместе</title>");
     expect(rootResponse.body).toContain("Создать сбор");
 
     const apiResponse = await app.inject({

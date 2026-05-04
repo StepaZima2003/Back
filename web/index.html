@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>SplitFriends</title>
+    <title>Вместе</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
@@ -31,7 +31,43 @@
                 <button class="avatar-chip" id="home-user-avatar" type="button">--</button>
               </header>
 
-              <section class="bento-grid" id="home-bento-grid" aria-label="Краткая статистика"></section>
+              
+              <section class="brand-hero">
+                <div class="brand-copy">
+                  <span class="brand-badge">Вместе</span>
+                  <h2 class="brand-title">Делить расходы спокойно и по-человечески</h2>
+                  <p class="brand-text">Маскот бренда помогает проверить расчет, не забыть про оплату и удерживать компанию в одном ритме.</p>
+                </div>
+                <div class="mascot-stage mascot-stage-home" aria-hidden="true">
+                  <div class="mascot mascot-home">
+                    <div class="mascot-spark mascot-spark-a"></div>
+                    <div class="mascot-spark mascot-spark-b"></div>
+                    <div class="mascot-spark mascot-spark-c"></div>
+                    <div class="mascot-accessory mascot-receipt">
+                      <span></span>
+                      <span></span>
+                      <span></span>
+                    </div>
+                    <div class="mascot-accessory mascot-bubble">
+                      <div class="mascot-bubble-icon"></div>
+                    </div>
+                    <div class="mascot-body">
+                      <div class="mascot-glyph">В</div>
+                      <div class="mascot-face">
+                        <span class="mascot-eye mascot-eye-left"></span>
+                        <span class="mascot-eye mascot-eye-right"></span>
+                        <span class="mascot-smile"></span>
+                      </div>
+                      <span class="mascot-arm mascot-arm-left"></span>
+                      <span class="mascot-arm mascot-arm-right"></span>
+                      <span class="mascot-leg mascot-leg-left"></span>
+                      <span class="mascot-leg mascot-leg-right"></span>
+                    </div>
+                  </div>
+                </div>
+              </section>
+
+<section class="bento-grid" id="home-bento-grid" aria-label="Краткая статистика"></section>
 
               <section class="section-block">
                 <div class="section-head">
@@ -191,7 +227,31 @@
 
           <section class="screen" data-screen="paid">
             <div class="screen-scroll centered-screen">
-              <div class="success-mark">✓</div>
+              <div class="success-mascot">
+                <div class="mascot-stage mascot-stage-success" aria-hidden="true">
+                  <div class="mascot mascot-success">
+                    <div class="mascot-spark mascot-spark-a"></div>
+                    <div class="mascot-spark mascot-spark-b"></div>
+                    <div class="mascot-spark mascot-spark-c"></div>
+                    <div class="mascot-check">
+                      <span class="mascot-check-mark"></span>
+                    </div>
+                    <div class="mascot-body">
+                      <div class="mascot-glyph">В</div>
+                      <div class="mascot-face mascot-face-happy">
+                        <span class="mascot-eye mascot-eye-left"></span>
+                        <span class="mascot-eye mascot-eye-right"></span>
+                        <span class="mascot-smile mascot-smile-open"></span>
+                      </div>
+                      <span class="mascot-arm mascot-arm-left mascot-arm-lifted"></span>
+                      <span class="mascot-arm mascot-arm-right mascot-arm-lifted"></span>
+                      <span class="mascot-leg mascot-leg-left"></span>
+                      <span class="mascot-leg mascot-leg-right"></span>
+                    </div>
+                  </div>
+                </div>
+                <span class="brand-badge brand-badge-success">Вместе</span>
+              </div>
               <h1>Оплачено</h1>
               <p class="success-copy" id="paid-success-copy">Платеж подтвержден.</p>
               <article class="detail-panel">

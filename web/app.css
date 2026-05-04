@@ -3861,29 +3861,86 @@ body {
 .showcase-payment-grid {
   margin-top: 16px;
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1.35fr) minmax(148px, 0.95fr);
   gap: 14px;
+  align-items: stretch;
 }
 
 .mock-payment-card {
-  min-height: 132px;
+  min-height: 166px;
+  display: grid;
+  gap: 18px;
+  align-content: space-between;
+}
+
+.mock-payment-card.is-primary {
+  background:
+    radial-gradient(circle at top right, rgba(112, 235, 201, 0.14), transparent 38%),
+    linear-gradient(180deg, rgba(32, 44, 77, 0.96) 0%, rgba(18, 28, 52, 0.98) 100%);
+}
+
+.mock-payment-card-head {
   display: flex;
-  flex-direction: column;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
+  gap: 12px;
 }
 
 .mock-card-chip {
-  width: 44px;
-  height: 30px;
-  border-radius: 10px;
+  width: 48px;
+  height: 32px;
+  border-radius: 12px;
   background: linear-gradient(145deg, #ffb440, #ff5f5f);
+  box-shadow: 0 10px 20px rgba(255, 126, 87, 0.22);
+}
+
+.mock-card-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 52px;
+  min-height: 28px;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: rgba(122, 236, 197, 0.12);
+  border: 1px solid rgba(122, 236, 197, 0.22);
+  color: #9ef0d5;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+}
+
+.mock-payment-card-copy {
+  display: grid;
+  gap: 8px;
+}
+
+.mock-payment-card-number {
+  color: #f6f8ff;
+  font-size: 22px;
+  line-height: 1.1;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 .mock-payment-card.is-add {
+  justify-items: start;
+  align-content: center;
+  color: rgba(192, 199, 219, 0.92);
+  background:
+    linear-gradient(180deg, rgba(32, 43, 75, 0.96) 0%, rgba(20, 29, 54, 0.98) 100%);
+}
+
+.mock-add-icon-wrap {
+  width: 52px;
+  height: 52px;
+  border-radius: 16px;
   display: grid;
   place-items: center;
-  color: rgba(192, 199, 219, 0.82);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(176, 191, 231, 0.12);
 }
 
 .mock-add-icon {

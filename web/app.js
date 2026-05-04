@@ -1260,22 +1260,35 @@ function renderShowcase() {
 
   const paymentMethods = document.getElementById("showcase-payment-methods");
   if (paymentMethods) {
-    const activeMethods = state.paymentMethods.filter((method) => method.status === "active").slice(0, 2);
-    const cards = activeMethods.map(
-      (method) => `
-        <article class="mock-payment-card">
-          <div class="mock-card-chip"></div>
-          <div>
-            <strong>${escapeHtml(method.maskedPan)}</strong>
-            <p>${escapeHtml(method.isDefault ? "Основная карта" : paymentMethodStatusLabel(method.status))}</p>
+    const primaryMethod =
+      state.paymentMethods.find((method) => method.status === "active" && method.isDefault) ??
+      state.paymentMethods.find((method) => method.status === "active") ??
+      null;
+    const cards = [];
+    if (primaryMethod) {
+      cards.push(`
+        <article class="mock-payment-card is-primary">
+          <div class="mock-payment-card-head">
+            <div class="mock-card-chip"></div>
+            <span class="mock-card-badge">${escapeHtml(showcasePaymentBrandLabel(primaryMethod.brand))}</span>
+          </div>
+          <div class="mock-payment-card-copy">
+            <div class="mock-payment-card-number">${escapeHtml(primaryMethod.maskedPan)}</div>
+            <strong>${escapeHtml(primaryMethod.isDefault ? "Основная карта" : "Активная карта")}</strong>
+            <p>Быстрые переводы и автосписания</p>
           </div>
         </article>
-      `
-    );
+      `);
+    }
     cards.push(`
       <article class="mock-payment-card is-add">
-        <div class="mock-add-icon" aria-hidden="true"></div>
-        <p>Добавить карту</p>
+        <div class="mock-add-icon-wrap" aria-hidden="true">
+          <div class="mock-add-icon"></div>
+        </div>
+        <div class="mock-payment-card-copy">
+          <strong>Добавить карту</strong>
+          <p>Привязка за минуту</p>
+        </div>
       </article>
     `);
     paymentMethods.innerHTML = cards.join("");
@@ -3622,6 +3635,19 @@ function displayNameByParticipantId(participants, participantId) {
 
 function paymentMethodTitle(method) {
   return `РљР°СЂС‚Р° ${method.maskedPan}`;
+}
+
+function showcasePaymentBrandLabel(brand) {
+  switch (brand) {
+    case "mir":
+      return "МИР";
+    case "visa":
+      return "VISA";
+    case "mastercard":
+      return "MC";
+    default:
+      return "КАРТА";
+  }
 }
 
 function labelizeCollectionType(type) {

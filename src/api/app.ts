@@ -1,5 +1,5 @@
 import { readFile } from "node:fs/promises";
-import { join } from "node:path";
+import { extname, join } from "node:path";
 import Fastify from "fastify";
 import { ZodError } from "zod";
 import { registerAuthRoutes } from "./routes/auth";
@@ -76,6 +76,28 @@ export async function buildApp(options: BuildAppOptions = {}) {
   app.get("/app.js", async (_request, reply) => {
     const js = await readFile(join(process.cwd(), "web", "app.js"), "utf8");
     reply.type("application/javascript; charset=utf-8").send(js);
+  });
+
+  app.get<{ Params: { file: string } }>("/assets/:file", async (request, reply) => {
+    const file = request.params.file;
+    if (!/^[a-zA-Z0-9._-]+$/.test(file)) {
+      reply.status(400).send({
+        error: "BAD_ASSET_REQUEST",
+        message: "Invalid asset name."
+      });
+      return;
+    }
+
+    const asset = await readFile(join(process.cwd(), "web", "assets", file));
+    const extension = extname(file).toLowerCase();
+    const mimeTypes: Record<string, string> = {
+      ".png": "image/png",
+      ".jpg": "image/jpeg",
+      ".jpeg": "image/jpeg",
+      ".svg": "image/svg+xml",
+      ".webp": "image/webp"
+    };
+    reply.type(mimeTypes[extension] ?? "application/octet-stream").send(asset);
   });
 
   app.get("/openapi.yaml", async (_request, reply) => {

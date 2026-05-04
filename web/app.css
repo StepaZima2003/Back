@@ -2851,32 +2851,46 @@ body {
   display: flex;
   flex-direction: column;
   gap: 22px;
+  position: relative;
+}
+
+.showcase-brand-lockup::before {
+  content: "";
+  position: absolute;
+  left: -88px;
+  top: -96px;
+  width: 380px;
+  height: 380px;
+  background: url("/assets/logo-aura.png") center/contain no-repeat;
+  opacity: 0.38;
+  filter: blur(6px);
+  pointer-events: none;
+}
+
+.vmeste-logo-wrap {
+  position: relative;
+  width: 124px;
+  height: 124px;
+}
+
+.vmeste-logo-aura,
+.vmeste-logo {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: contain;
+}
+
+.vmeste-logo-aura {
+  transform: scale(1.85);
+  opacity: 0.52;
+  filter: blur(12px);
 }
 
 .vmeste-logo {
-  width: 104px;
-  height: 96px;
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 6px;
-}
-
-.vmeste-logo-cell {
-  display: block;
-  background: linear-gradient(160deg, #90ed74 0%, #59d9bf 52%, #6da9ff 100%);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.26),
-    0 16px 36px rgba(62, 205, 175, 0.18);
-}
-
-.vmeste-logo-cell-a,
-.vmeste-logo-cell-c {
-  border-radius: 999px 999px 999px 18px;
-}
-
-.vmeste-logo-cell-b,
-.vmeste-logo-cell-d {
-  border-radius: 999px 999px 18px 999px;
+  filter: drop-shadow(0 18px 38px rgba(82, 219, 199, 0.28));
 }
 
 .showcase-brand-name {
@@ -3480,34 +3494,48 @@ body {
 }
 
 .showcase-expense-icon {
-  width: 40px;
-  height: 40px;
-  border-radius: 14px;
+  width: 52px;
+  height: 52px;
+  border-radius: 16px;
   display: grid;
   place-items: center;
-  color: #fff;
-  font-size: 18px;
-  background: linear-gradient(140deg, rgba(255, 140, 108, 0.9), rgba(135, 78, 255, 0.9));
+  overflow: hidden;
+  border: 1px solid rgba(196, 208, 238, 0.08);
+  background: linear-gradient(180deg, rgba(22, 31, 55, 0.96) 0%, rgba(15, 24, 45, 0.98) 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.04),
+    0 12px 26px rgba(0, 0, 0, 0.26);
 }
 
-.showcase-expense-icon.fresh {
-  background: linear-gradient(140deg, rgba(117, 238, 117, 0.92), rgba(28, 138, 90, 0.92));
+.showcase-expense-icon img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
 }
 
-.showcase-expense-icon.drink {
-  background: linear-gradient(140deg, rgba(255, 125, 104, 0.92), rgba(192, 72, 91, 0.92));
+.showcase-expense-icon.tone-steak {
+  box-shadow: 0 0 0 1px rgba(255, 124, 99, 0.12), 0 14px 24px rgba(208, 89, 53, 0.18);
 }
 
-.showcase-expense-icon.fire {
-  background: linear-gradient(140deg, rgba(255, 176, 77, 0.92), rgba(155, 73, 31, 0.92));
+.showcase-expense-icon.tone-vegetables {
+  box-shadow: 0 0 0 1px rgba(101, 239, 149, 0.14), 0 14px 24px rgba(56, 170, 93, 0.18);
 }
 
-.showcase-expense-icon.sauce {
-  background: linear-gradient(140deg, rgba(101, 221, 145, 0.92), rgba(69, 121, 88, 0.92));
+.showcase-expense-icon.tone-drink {
+  box-shadow: 0 0 0 1px rgba(255, 170, 108, 0.14), 0 14px 24px rgba(201, 97, 49, 0.18);
 }
 
-.showcase-expense-icon.bread {
-  background: linear-gradient(140deg, rgba(247, 188, 115, 0.92), rgba(177, 117, 55, 0.92));
+.showcase-expense-icon.tone-charcoal {
+  box-shadow: 0 0 0 1px rgba(255, 109, 61, 0.16), 0 14px 24px rgba(191, 72, 36, 0.18);
+}
+
+.showcase-expense-icon.tone-sauces {
+  box-shadow: 0 0 0 1px rgba(255, 149, 114, 0.12), 0 14px 24px rgba(195, 82, 53, 0.16);
+}
+
+.showcase-expense-icon.tone-bread {
+  box-shadow: 0 0 0 1px rgba(255, 186, 103, 0.12), 0 14px 24px rgba(202, 129, 58, 0.18);
 }
 
 .mock-receipt-stage {
@@ -3523,39 +3551,119 @@ body {
 }
 
 .mock-receipt-paper {
-  width: min(100%, 196px);
-  min-height: 292px;
-  padding: 20px 18px;
-  border-radius: 4px;
-  background: linear-gradient(180deg, #fffaf2 0%, #f2eadb 100%);
-  color: #29241d;
-  box-shadow: 0 18px 36px rgba(8, 5, 2, 0.26);
-  font-size: 12px;
-  line-height: 1.45;
+  width: min(100%, 214px);
+  min-height: 330px;
+  padding: 18px 16px 20px;
+  border-radius: 6px 6px 12px 12px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.68), rgba(255, 255, 255, 0) 14%),
+    linear-gradient(180deg, #fffcf6 0%, #f3e9d9 100%);
+  color: #2c241d;
+  box-shadow:
+    0 22px 44px rgba(8, 5, 2, 0.32),
+    inset 0 1px 0 rgba(255, 255, 255, 0.6);
+  font-size: 11px;
+  line-height: 1.48;
+  position: relative;
 }
 
-.mock-receipt-paper .receipt-store,
+.mock-receipt-paper::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -6px;
+  height: 12px;
+  background:
+    radial-gradient(circle at 8px 0, transparent 8px, #efe5d6 8px 10px, transparent 10px) 0 0/18px 12px repeat-x;
+}
+
+.mock-receipt-paper .receipt-brand,
 .mock-receipt-paper .receipt-total {
   text-align: center;
+}
+
+.mock-receipt-paper .receipt-store {
+  font-size: 16px;
   font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.mock-receipt-paper .receipt-substore,
+.mock-receipt-paper .receipt-item-meta,
+.mock-receipt-paper .receipt-footer {
+  color: rgba(69, 58, 45, 0.78);
+  font-size: 10px;
+}
+
+.mock-receipt-paper .receipt-substore {
+  margin-top: 4px;
 }
 
 .mock-receipt-paper .receipt-date {
-  margin: 6px 0 16px;
+  margin: 10px 0 12px;
   text-align: center;
-  font-size: 11px;
+  font-size: 10px;
+}
+
+.mock-receipt-paper .receipt-meta-grid {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2px 12px;
+  margin-bottom: 10px;
+}
+
+.mock-receipt-paper .receipt-meta-grid span:nth-child(odd) {
+  color: rgba(69, 58, 45, 0.72);
+}
+
+.mock-receipt-paper .receipt-meta-grid span:nth-child(even) {
+  text-align: right;
+  font-weight: 700;
+}
+
+.mock-receipt-paper .receipt-divider {
+  margin: 10px 0;
+  border-top: 1px dashed rgba(59, 47, 35, 0.4);
 }
 
 .mock-receipt-paper .receipt-line {
   display: flex;
   justify-content: space-between;
+  align-items: flex-start;
   gap: 12px;
+  margin-bottom: 6px;
+}
+
+.mock-receipt-paper .receipt-line > div {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.mock-receipt-paper .receipt-item-title {
+  font-weight: 700;
+}
+
+.mock-receipt-paper .receipt-line-total {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed rgba(54, 45, 35, 0.4);
+  font-size: 13px;
+  font-weight: 800;
 }
 
 .mock-receipt-paper .receipt-total {
-  margin-top: 18px;
-  padding-top: 12px;
-  border-top: 1px dashed rgba(54, 45, 35, 0.4);
+  margin-top: 12px;
+}
+
+.mock-receipt-paper .receipt-footer {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  text-align: center;
 }
 
 .mock-segmented {

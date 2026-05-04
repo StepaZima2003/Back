@@ -1,8 +1,8 @@
-const DEMO = {
-  alex: { key: "alex", phone: "+79990030001", displayName: "Алексей" },
-  sasha: { key: "sasha", phone: "+79990030002", displayName: "Саша" },
-  dima: { key: "dima", phone: "+79990030003", displayName: "Дима" },
-  masha: { key: "masha", phone: "+79990030004", displayName: "Маша" }
+﻿const DEMO = {
+  alex: { key: "alex", phone: "+79990030001", displayName: "РђР»РµРєСЃРµР№" },
+  sasha: { key: "sasha", phone: "+79990030002", displayName: "РЎР°С€Р°" },
+  dima: { key: "dima", phone: "+79990030003", displayName: "Р”РёРјР°" },
+  masha: { key: "masha", phone: "+79990030004", displayName: "РњР°С€Р°" }
 };
 
 const state = {
@@ -295,7 +295,7 @@ async function runAction(action, source) {
         break;
     }
   } catch (error) {
-    setStatus(error instanceof Error ? error.message : "Действие не выполнено", false);
+    setStatus(error instanceof Error ? error.message : "Р”РµР№СЃС‚РІРёРµ РЅРµ РІС‹РїРѕР»РЅРµРЅРѕ", false);
   }
 }
 
@@ -323,7 +323,7 @@ async function bootstrap() {
   await loginDemoActors();
   await ensureDemoData();
   await refreshAppData();
-  setStatus("Демо-данные готовы", true);
+  setStatus("Р”РµРјРѕ-РґР°РЅРЅС‹Рµ РіРѕС‚РѕРІС‹", true);
   renderAll();
   document.body.classList.remove("is-booting");
 }
@@ -331,10 +331,10 @@ async function bootstrap() {
 async function pingHealth() {
   const response = await fetch("/health");
   if (!response.ok) {
-    throw new Error(`Проверка API не прошла: ${response.status}`);
+    throw new Error(`РџСЂРѕРІРµСЂРєР° API РЅРµ РїСЂРѕС€Р»Р°: ${response.status}`);
   }
   const health = await response.json();
-  setStatus(`${health.service} онлайн`, true);
+  setStatus(`${health.service} РѕРЅР»Р°Р№РЅ`, true);
 }
 
 async function loginDemoActors() {
@@ -376,12 +376,12 @@ async function ensureDemoData() {
     await seedFriendships();
   }
 
-  let dachaGroup = (await fetchJson("/groups", { token: state.actors.alex.accessToken })).find((group) => group.title === "Дача");
+  let dachaGroup = (await fetchJson("/groups", { token: state.actors.alex.accessToken })).find((group) => group.title === "Р”Р°С‡Р°");
   if (!dachaGroup) {
     dachaGroup = await fetchJson("/groups", {
       method: "POST",
       token: state.actors.alex.accessToken,
-      body: { title: "Дача", groupType: "trip" }
+      body: { title: "Р”Р°С‡Р°", groupType: "trip" }
     });
   }
 
@@ -399,15 +399,15 @@ async function ensureDemoData() {
     });
   }
 
-  if (!titleSet.has("Шашлыки в субботу")) {
+  if (!titleSet.has("РЁР°С€Р»С‹РєРё РІ СЃСѓР±Р±РѕС‚Сѓ")) {
     await seedPicnicCollection();
   }
 
-  if (!titleSet.has("Дача на майские")) {
+  if (!titleSet.has("Р”Р°С‡Р° РЅР° РјР°Р№СЃРєРёРµ")) {
     await seedOrganizerCollection(dachaGroup.id);
   }
 
-  if (!titleSet.has("Подарок Ире")) {
+  if (!titleSet.has("РџРѕРґР°СЂРѕРє РСЂРµ")) {
     await seedGiftCollection();
   }
 }
@@ -448,7 +448,7 @@ async function seedPicnicCollection() {
   const created = await fetchJson("/collections", {
     method: "POST",
     token: state.actors.sasha.accessToken,
-    body: { title: "Шашлыки в субботу", type: "picnic" }
+    body: { title: "РЁР°С€Р»С‹РєРё РІ СЃСѓР±Р±РѕС‚Сѓ", type: "picnic" }
   });
 
   const collectionId = created.collection.id;
@@ -458,7 +458,7 @@ async function seedPicnicCollection() {
     token: state.actors.sasha.accessToken,
     body: {
       linkedUserId: state.actors.alex.user.id,
-      displayName: "Алексей"
+      displayName: "РђР»РµРєСЃРµР№"
     }
   });
 
@@ -467,7 +467,7 @@ async function seedPicnicCollection() {
     token: state.actors.sasha.accessToken,
     body: {
       linkedUserId: state.actors.dima.user.id,
-      displayName: "Дима"
+      displayName: "Р”РёРјР°"
     }
   });
 
@@ -475,12 +475,12 @@ async function seedPicnicCollection() {
     method: "POST",
     token: state.actors.sasha.accessToken,
     body: {
-      displayName: "Аня",
+      displayName: "РђРЅСЏ",
       responsiblePayerParticipantId: alexParticipant.id
     }
   });
 
-  const invitedNames = ["Маша", "Илья", "Катя", "Олег"];
+  const invitedNames = ["РњР°С€Р°", "РР»СЊСЏ", "РљР°С‚СЏ", "РћР»РµРі"];
   const seededParticipants = [alexParticipant, dimaParticipant, guest];
   for (const [index, name] of invitedNames.entries()) {
     const participant = await fetchJson(`/collections/${collectionId}/participants`, {
@@ -498,7 +498,7 @@ async function seedPicnicCollection() {
     method: "POST",
     token: state.actors.sasha.accessToken,
     body: {
-      title: "Продукты и беседка",
+      title: "РџСЂРѕРґСѓРєС‚С‹ Рё Р±РµСЃРµРґРєР°",
       amountMinor: 14000,
       payments: [{ paidByParticipantId: organizerParticipant.id, amountMinor: 14000, paymentSource: "card" }]
     }
@@ -513,7 +513,7 @@ async function seedPicnicCollection() {
     token: state.actors.sasha.accessToken
   });
 
-  const autoPaidNames = new Set(["Маша", "Илья", "Катя"]);
+  const autoPaidNames = new Set(["РњР°С€Р°", "РР»СЊСЏ", "РљР°С‚СЏ"]);
   for (const participant of seededParticipants.filter((item) => autoPaidNames.has(item.displayNameSnapshot))) {
     const payment = await fetchJson(`/collections/${collectionId}/payments/mock-intents`, {
       method: "POST",
@@ -537,7 +537,7 @@ async function seedOrganizerCollection(groupId) {
   const created = await fetchJson("/collections", {
     method: "POST",
     token: state.actors.alex.accessToken,
-    body: { title: "Дача на майские", type: "trip", groupId }
+    body: { title: "Р”Р°С‡Р° РЅР° РјР°Р№СЃРєРёРµ", type: "trip", groupId }
   });
 
   const collectionId = created.collection.id;
@@ -547,7 +547,7 @@ async function seedOrganizerCollection(groupId) {
     token: state.actors.alex.accessToken,
     body: {
       linkedUserId: state.actors.dima.user.id,
-      displayName: "Дима"
+      displayName: "Р”РёРјР°"
     }
   });
 
@@ -556,7 +556,7 @@ async function seedOrganizerCollection(groupId) {
     token: state.actors.alex.accessToken,
     body: {
       linkedUserId: state.actors.sasha.user.id,
-      displayName: "Саша"
+      displayName: "РЎР°С€Р°"
     }
   });
 
@@ -564,7 +564,7 @@ async function seedOrganizerCollection(groupId) {
     method: "POST",
     token: state.actors.alex.accessToken,
     body: {
-      title: "Аренда дома",
+      title: "РђСЂРµРЅРґР° РґРѕРјР°",
       amountMinor: 15000,
       payments: [{ paidByParticipantId: organizerParticipant.id, amountMinor: 15000, paymentSource: "card" }]
     }
@@ -585,7 +585,7 @@ async function seedOrganizerCollection(groupId) {
     body: {
       participantId: dimaParticipant.id,
       type: "partial_time",
-      message: "Меня не было на ужине и бане."
+      message: "РњРµРЅСЏ РЅРµ Р±С‹Р»Рѕ РЅР° СѓР¶РёРЅРµ Рё Р±Р°РЅРµ."
     }
   });
 }
@@ -594,7 +594,7 @@ async function seedGiftCollection() {
   const created = await fetchJson("/collections", {
     method: "POST",
     token: state.actors.alex.accessToken,
-    body: { title: "Подарок Ире", type: "gift" }
+    body: { title: "РџРѕРґР°СЂРѕРє РСЂРµ", type: "gift" }
   });
 
   const collectionId = created.collection.id;
@@ -604,7 +604,7 @@ async function seedGiftCollection() {
     token: state.actors.alex.accessToken,
     body: {
       linkedUserId: state.actors.sasha.user.id,
-      displayName: "Саша"
+      displayName: "РЎР°С€Р°"
     }
   });
   await fetchJson(`/collections/${collectionId}/participants`, {
@@ -612,14 +612,14 @@ async function seedGiftCollection() {
     token: state.actors.alex.accessToken,
     body: {
       linkedUserId: state.actors.masha.user.id,
-      displayName: "Маша"
+      displayName: "РњР°С€Р°"
     }
   });
   await fetchJson(`/collections/${collectionId}/expenses`, {
     method: "POST",
     token: state.actors.alex.accessToken,
     body: {
-      title: "Подарочный сертификат",
+      title: "РџРѕРґР°СЂРѕС‡РЅС‹Р№ СЃРµСЂС‚РёС„РёРєР°С‚",
       amountMinor: 10000,
       payments: [{ paidByParticipantId: organizerParticipant.id, amountMinor: 10000, paymentSource: "card" }]
     }
@@ -728,7 +728,7 @@ async function buildFriendDirectory() {
     return {
       id: friendship.id,
       userId: friendUserId,
-      displayName: friend?.displayName ?? "Участник",
+      displayName: friend?.displayName ?? "РЈС‡Р°СЃС‚РЅРёРє",
       phone: friend?.phone ?? "",
       sharedCollections: state.collectionBundles.filter((bundle) =>
         bundle.participants.some((participant) => participant.linkedUserId === friendUserId)
@@ -825,33 +825,33 @@ function renderShowcase() {
 
   text("showcase-collection-title", bundle.collection.title);
   text("showcase-collected-amount", formatMoney(bundle.collectedMinor));
-  text("showcase-collected-subtitle", `из ${formatMoney(bundle.collection.totalAmountMinor)}`);
+  text("showcase-collected-subtitle", `РёР· ${formatMoney(bundle.collection.totalAmountMinor)}`);
   text("showcase-progress-value", `${bundle.progressPercent}%`);
-  text("showcase-remaining-note", `Осталось собрать ${formatMoney(remainingMinor)}`);
-  text("showcase-deadline-note", bundle.progressPercent >= 100 ? "Все участники закрыли свои доли" : "Напоминания можно отправить в один тап");
+  text("showcase-remaining-note", `РћСЃС‚Р°Р»РѕСЃСЊ СЃРѕР±СЂР°С‚СЊ ${formatMoney(remainingMinor)}`);
+  text("showcase-deadline-note", bundle.progressPercent >= 100 ? "Р’СЃРµ СѓС‡Р°СЃС‚РЅРёРєРё Р·Р°РєСЂС‹Р»Рё СЃРІРѕРё РґРѕР»Рё" : "РќР°РїРѕРјРёРЅР°РЅРёСЏ РјРѕР¶РЅРѕ РѕС‚РїСЂР°РІРёС‚СЊ РІ РѕРґРёРЅ С‚Р°Рї");
   text("showcase-expenses-total", formatMoney(bundle.collection.totalAmountMinor));
-  text("showcase-expenses-count", `${expenseItemsCount} позиций`);
-  text("showcase-participants-total", `${bundle.participants.length} человек`);
+  text("showcase-expenses-count", `${expenseItemsCount} РїРѕР·РёС†РёР№`);
+  text("showcase-participants-total", `${bundle.participants.length} С‡РµР»РѕРІРµРє`);
   text("showcase-expenses-screen-total", formatMoney(bundle.collection.totalAmountMinor));
-  text("showcase-expenses-screen-count", `${expenseItemsCount} позиций`);
+  text("showcase-expenses-screen-count", `${expenseItemsCount} РїРѕР·РёС†РёР№`);
   text("showcase-settlement-total", formatMoney(remainingMinor));
   text(
     "showcase-reminder-note",
-    dueParticipants.some((item) => item.dueMinor > 0) ? "Напоминания готовы к отправке" : "Все долги закрыты"
+    dueParticipants.some((item) => item.dueMinor > 0) ? "РќР°РїРѕРјРёРЅР°РЅРёСЏ РіРѕС‚РѕРІС‹ Рє РѕС‚РїСЂР°РІРєРµ" : "Р’СЃРµ РґРѕР»РіРё Р·Р°РєСЂС‹С‚С‹"
   );
   text(
     "showcase-finish-title",
-    remainingMinor <= 0 || bundle.collection.status === "paid" || bundle.collection.status === "closed" ? "Сбор завершен!" : "Сбор идет по плану"
+    remainingMinor <= 0 || bundle.collection.status === "paid" || bundle.collection.status === "closed" ? "РЎР±РѕСЂ Р·Р°РІРµСЂС€РµРЅ!" : "РЎР±РѕСЂ РёРґРµС‚ РїРѕ РїР»Р°РЅСѓ"
   );
   text(
     "showcase-finish-subtitle",
     remainingMinor <= 0 || bundle.collection.status === "paid" || bundle.collection.status === "closed"
-      ? "Все рассчитались. До новых встреч."
-      : `Осталось собрать ${formatMoney(remainingMinor)}. Вся история уже под контролем.`
+      ? "Р’СЃРµ СЂР°СЃСЃС‡РёС‚Р°Р»РёСЃСЊ. Р”Рѕ РЅРѕРІС‹С… РІСЃС‚СЂРµС‡."
+      : `РћСЃС‚Р°Р»РѕСЃСЊ СЃРѕР±СЂР°С‚СЊ ${formatMoney(remainingMinor)}. Р’СЃСЏ РёСЃС‚РѕСЂРёСЏ СѓР¶Рµ РїРѕРґ РєРѕРЅС‚СЂРѕР»РµРј.`
   );
   text(
     "showcase-receipt-note",
-    bundle.expenses.length ? `Найдено ${expenseItemsCount} позиций. Проверьте состав и подтвердите.` : "Добавьте первый расход и подтвердите состав."
+    bundle.expenses.length ? `РќР°Р№РґРµРЅРѕ ${expenseItemsCount} РїРѕР·РёС†РёР№. РџСЂРѕРІРµСЂСЊС‚Рµ СЃРѕСЃС‚Р°РІ Рё РїРѕРґС‚РІРµСЂРґРёС‚Рµ.` : "Р”РѕР±Р°РІСЊС‚Рµ РїРµСЂРІС‹Р№ СЂР°СЃС…РѕРґ Рё РїРѕРґС‚РІРµСЂРґРёС‚Рµ СЃРѕСЃС‚Р°РІ."
   );
 
   const progressRing = document.getElementById("showcase-progress-ring");
@@ -886,7 +886,7 @@ function renderShowcase() {
             .filter((payment) => payment.payerParticipantId === participant.id && payment.status === "confirmed")
             .reduce((sum, payment) => sum + payment.amountMinor, 0);
         const amountMinor = dueMinor > 0 ? dueMinor : paidMinor;
-        const statusLabel = dueMinor > 0 ? "к оплате" : paidMinor > 0 ? "внесено" : "в сборе";
+        const statusLabel = dueMinor > 0 ? "Рє РѕРїР»Р°С‚Рµ" : paidMinor > 0 ? "РІРЅРµСЃРµРЅРѕ" : "РІ СЃР±РѕСЂРµ";
         return `
           <article class="showcase-participant-card">
             <span class="showcase-avatar-chip" style="${showcaseAvatarStyle(index + 1)}">${escapeHtml(initials(participant.displayNameSnapshot))}</span>
@@ -901,7 +901,7 @@ function renderShowcase() {
 
   const expenseChips = document.getElementById("showcase-expense-chips");
   if (expenseChips) {
-    const categories = ["Все", ...new Set(bundle.expenses.map((expense) => inferExpenseCategory(expense.title)).filter(Boolean))].slice(0, 5);
+    const categories = ["Р’СЃРµ", ...new Set(bundle.expenses.map((expense) => inferExpenseCategory(expense.title)).filter(Boolean))].slice(0, 5);
     expenseChips.innerHTML = categories
       .map((category, index) => `<button class="mock-chip${index === 0 ? " is-active" : ""}" type="button">${escapeHtml(category)}</button>`)
       .join("");
@@ -911,32 +911,73 @@ function renderShowcase() {
   if (expensesList) {
     expensesList.innerHTML = bundle.expenses.length
       ? bundle.expenses.slice(0, 6).map((expense) => renderShowcaseExpenseRow(expense)).join("")
-      : renderShowcaseEmpty("Добавьте первый расход, и он появится здесь.");
+      : renderShowcaseEmpty("Р”РѕР±Р°РІСЊС‚Рµ РїРµСЂРІС‹Р№ СЂР°СЃС…РѕРґ, Рё РѕРЅ РїРѕСЏРІРёС‚СЃСЏ Р·РґРµСЃСЊ.");
   }
 
   const receiptPaper = document.getElementById("showcase-receipt-paper");
   if (receiptPaper) {
-    const receiptLines = bundle.expenses.length
-      ? bundle.expenses
-          .slice(0, 6)
-          .map(
-            (expense) => `
-              <div class="receipt-line">
-                <span>${escapeHtml(truncateText(expense.title, 18))}</span>
-                <span>${formatMoney(expense.amountMinor)}</span>
+    const receiptItems = bundle.expenses.length
+      ? bundle.expenses.slice(0, 6).map((expense, index) => {
+          const quantity = showcaseReceiptQuantity(expense.title, index);
+          const unitMinor = quantity > 0 ? Math.max(100, Math.round(expense.amountMinor / quantity)) : expense.amountMinor;
+          return `
+            <div class="receipt-line receipt-line-item">
+              <div>
+                <span class="receipt-item-title">${escapeHtml(truncateText(expense.title, 24))}</span>
+                <span class="receipt-item-meta">${quantity} x ${formatMoney(unitMinor)}</span>
               </div>
-            `
-          )
-          .join("")
-      : '<div class="receipt-line"><span>Нет распознанных позиций</span><span>0 ₽</span></div>';
+              <span>${formatMoney(expense.amountMinor)}</span>
+            </div>
+          `;
+        })
+      : [
+          `
+            <div class="receipt-line receipt-line-item">
+              <div>
+                <span class="receipt-item-title">Нет распознанных позиций</span>
+                <span class="receipt-item-meta">Добавьте первый расход</span>
+              </div>
+              <span>0 ₽</span>
+            </div>
+          `
+        ];
+    const serviceFeeMinor = remainingMinor > 0 ? 0 : Math.round(bundle.collection.totalAmountMinor * 0.02);
+    const subtotalMinor = Math.max(bundle.collection.totalAmountMinor - serviceFeeMinor, 0);
     receiptPaper.innerHTML = `
-      <div class="receipt-store">ООО "Вместе"</div>
+      <div class="receipt-brand">
+        <div class="receipt-store">Гриль Хаус</div>
+        <div class="receipt-substore">Чек распознан в Вместе</div>
+      </div>
       <div class="receipt-date">${escapeHtml(formatNotificationTime(bundle.collection.updatedAt ?? bundle.collection.createdAt ?? new Date().toISOString()))}</div>
-      ${receiptLines}
-      <div class="receipt-total">ИТОГО ${formatMoney(bundle.collection.totalAmountMinor)}</div>
+      <div class="receipt-meta-grid">
+        <span>Сбор</span>
+        <span>${escapeHtml(truncateText(bundle.collection.title, 18))}</span>
+        <span>Касса</span>
+        <span>№ 03 / 1284</span>
+        <span>Оплата</span>
+        <span>Карта •• 4242</span>
+      </div>
+      <div class="receipt-divider"></div>
+      ${receiptItems.join("")}
+      <div class="receipt-divider"></div>
+      <div class="receipt-line">
+        <span>Подытог</span>
+        <span>${formatMoney(subtotalMinor)}</span>
+      </div>
+      <div class="receipt-line">
+        <span>Сервис</span>
+        <span>${formatMoney(serviceFeeMinor)}</span>
+      </div>
+      <div class="receipt-line receipt-line-total">
+        <span>ИТОГО</span>
+        <span>${formatMoney(bundle.collection.totalAmountMinor)}</span>
+      </div>
+      <div class="receipt-footer">
+        <span>Спасибо за покупку</span>
+        <span>Вместе подготовит распределение автоматически</span>
+      </div>
     `;
   }
-
   const debtList = document.getElementById("showcase-debt-list");
   if (debtList) {
     const debtors = dueParticipants.filter((item) => item.dueMinor > 0).slice(0, 4);
@@ -950,19 +991,19 @@ function renderShowcase() {
                   <div class="showcase-person-name">${escapeHtml(item.participant.displayNameSnapshot)}</div>
                   <div class="showcase-person-meta">${formatMoney(item.dueMinor)}</div>
                 </div>
-                <button class="mock-remind-button" type="button" data-go="inbox" data-nav="home">Напомнить</button>
+                <button class="mock-remind-button" type="button" data-go="inbox" data-nav="home">РќР°РїРѕРјРЅРёС‚СЊ</button>
               </article>
             `
           )
           .join("")
-      : renderShowcaseEmpty("Никто ничего не должен. Этот сбор уже закрыт.");
+      : renderShowcaseEmpty("РќРёРєС‚Рѕ РЅРёС‡РµРіРѕ РЅРµ РґРѕР»Р¶РµРЅ. Р­С‚РѕС‚ СЃР±РѕСЂ СѓР¶Рµ Р·Р°РєСЂС‹С‚.");
   }
 
   const notificationsList = document.getElementById("showcase-notifications-list");
   if (notificationsList) {
     notificationsList.innerHTML = state.notifications.length
       ? state.notifications.slice(0, 3).map((notification, index) => renderShowcaseNotificationRow(notification, index)).join("")
-      : renderShowcaseEmpty("Новых уведомлений пока нет.");
+      : renderShowcaseEmpty("РќРѕРІС‹С… СѓРІРµРґРѕРјР»РµРЅРёР№ РїРѕРєР° РЅРµС‚.");
   }
 
   const paymentMethods = document.getElementById("showcase-payment-methods");
@@ -974,7 +1015,7 @@ function renderShowcase() {
           <div class="mock-card-chip"></div>
           <div>
             <strong>${escapeHtml(method.maskedPan)}</strong>
-            <p>${escapeHtml(method.isDefault ? "Основная карта" : paymentMethodStatusLabel(method.status))}</p>
+            <p>${escapeHtml(method.isDefault ? "РћСЃРЅРѕРІРЅР°СЏ РєР°СЂС‚Р°" : paymentMethodStatusLabel(method.status))}</p>
           </div>
         </article>
       `
@@ -982,7 +1023,7 @@ function renderShowcase() {
     cards.push(`
       <article class="mock-payment-card is-add">
         <div class="mock-add-icon" aria-hidden="true"></div>
-        <p>Добавить карту</p>
+        <p>Р”РѕР±Р°РІРёС‚СЊ РєР°СЂС‚Сѓ</p>
       </article>
     `);
     paymentMethods.innerHTML = cards.join("");
@@ -991,10 +1032,12 @@ function renderShowcase() {
 
 function renderShowcaseExpenseRow(expense) {
   const category = inferExpenseCategory(expense.title);
-  const { icon, tone } = showcaseExpenseVisual(expense.title);
+  const { asset, tone } = showcaseExpenseVisual(expense.title);
   return `
     <article class="showcase-expense-row">
-      <span class="showcase-expense-icon ${tone}">${icon}</span>
+      <span class="showcase-expense-icon ${tone}">
+        <img src="${asset}" alt="${escapeHtml(category)}" />
+      </span>
       <div>
         <div class="showcase-expense-row-title">${escapeHtml(expense.title)}</div>
         <div class="showcase-expense-row-subtitle">${escapeHtml(category)}</div>
@@ -1006,7 +1049,7 @@ function renderShowcaseExpenseRow(expense) {
 
 function renderShowcaseNotificationRow(notification, index) {
   const badgeClass = index === 0 ? "" : index === 1 ? " is-warn" : " is-muted";
-  const badgeLabel = index === 0 ? "✓" : index === 1 ? "!" : "+";
+  const badgeLabel = index === 0 ? "вњ“" : index === 1 ? "!" : "+";
   return `
     <article class="mock-notification-row">
       <div class="mock-notification-main">
@@ -1038,48 +1081,48 @@ function showcaseAvatarStyle(index) {
 
 function inferExpenseCategory(title) {
   const value = String(title ?? "").toLowerCase();
-  if (value.includes("мяс") || value.includes("шашлык")) {
-    return "Еда";
+  if (value.includes("РјСЏСЃ") || value.includes("С€Р°С€Р»С‹Рє")) {
+    return "Р•РґР°";
   }
-  if (value.includes("овощ") || value.includes("зел")) {
-    return "Овощи";
+  if (value.includes("РѕРІРѕС‰") || value.includes("Р·РµР»")) {
+    return "РћРІРѕС‰Рё";
   }
-  if (value.includes("напит") || value.includes("сок") || value.includes("вода")) {
-    return "Напитки";
+  if (value.includes("РЅР°РїРёС‚") || value.includes("СЃРѕРє") || value.includes("РІРѕРґР°")) {
+    return "РќР°РїРёС‚РєРё";
   }
-  if (value.includes("уголь") || value.includes("розжиг")) {
-    return "Для мангала";
+  if (value.includes("СѓРіРѕР»СЊ") || value.includes("СЂРѕР·Р¶РёРі")) {
+    return "Р”Р»СЏ РјР°РЅРіР°Р»Р°";
   }
-  if (value.includes("соус") || value.includes("спец")) {
-    return "Соусы";
+  if (value.includes("СЃРѕСѓСЃ") || value.includes("СЃРїРµС†")) {
+    return "РЎРѕСѓСЃС‹";
   }
-  if (value.includes("хлеб") || value.includes("лаваш")) {
-    return "Выпечка";
+  if (value.includes("С…Р»РµР±") || value.includes("Р»Р°РІР°С€")) {
+    return "Р’С‹РїРµС‡РєР°";
   }
-  return "Все";
+  return "Р’СЃРµ";
 }
 
 function showcaseExpenseVisual(title) {
   const value = String(title ?? "").toLowerCase();
   if (value.includes("мяс") || value.includes("шашлык")) {
-    return { icon: "🥩", tone: "" };
+    return { asset: "/assets/expense-steak.png", tone: "tone-steak" };
   }
   if (value.includes("овощ") || value.includes("зел")) {
-    return { icon: "🥬", tone: "fresh" };
+    return { asset: "/assets/expense-vegetables.png", tone: "tone-vegetables" };
   }
   if (value.includes("напит") || value.includes("сок") || value.includes("вода")) {
-    return { icon: "🥤", tone: "drink" };
+    return { asset: "/assets/expense-drink.png", tone: "tone-drink" };
   }
   if (value.includes("уголь") || value.includes("розжиг")) {
-    return { icon: "🔥", tone: "fire" };
+    return { asset: "/assets/expense-charcoal.png", tone: "tone-charcoal" };
   }
   if (value.includes("соус") || value.includes("спец")) {
-    return { icon: "🥫", tone: "sauce" };
+    return { asset: "/assets/expense-sauces.png", tone: "tone-sauces" };
   }
   if (value.includes("хлеб") || value.includes("лаваш")) {
-    return { icon: "🥖", tone: "bread" };
+    return { asset: "/assets/expense-bread.png", tone: "tone-bread" };
   }
-  return { icon: "•", tone: "" };
+  return { asset: "/assets/expense-steak.png", tone: "tone-steak" };
 }
 
 function truncateText(value, length) {
@@ -1088,6 +1131,26 @@ function truncateText(value, length) {
     return source;
   }
   return `${source.slice(0, Math.max(0, length - 1))}…`;
+}
+
+function showcaseReceiptQuantity(title, index) {
+  const value = String(title ?? "").toLowerCase();
+  if (value.includes("мяс") || value.includes("шашлык")) {
+    return 2;
+  }
+  if (value.includes("напит")) {
+    return 5;
+  }
+  if (value.includes("овощ") || value.includes("хлеб")) {
+    return 3;
+  }
+  if (value.includes("соус")) {
+    return 2;
+  }
+  if (value.includes("уголь") || value.includes("розжиг")) {
+    return 1;
+  }
+  return (index % 3) + 1;
 }
 
 function renderBootSkeletons() {
@@ -1134,16 +1197,16 @@ function renderBootSkeletons() {
   const showcaseNotifications = document.getElementById("showcase-notifications-list");
   const showcasePayments = document.getElementById("showcase-payment-methods");
   if (showcaseExpenses) {
-    showcaseExpenses.innerHTML = `${renderShowcaseEmpty("Загружаем расходы...")}${renderShowcaseEmpty("Загружаем расходы...")}`;
+    showcaseExpenses.innerHTML = `${renderShowcaseEmpty("Р—Р°РіСЂСѓР¶Р°РµРј СЂР°СЃС…РѕРґС‹...")}${renderShowcaseEmpty("Р—Р°РіСЂСѓР¶Р°РµРј СЂР°СЃС…РѕРґС‹...")}`;
   }
   if (showcaseDebts) {
-    showcaseDebts.innerHTML = `${renderShowcaseEmpty("Готовим список должников...")}${renderShowcaseEmpty("Готовим список должников...")}`;
+    showcaseDebts.innerHTML = `${renderShowcaseEmpty("Р“РѕС‚РѕРІРёРј СЃРїРёСЃРѕРє РґРѕР»Р¶РЅРёРєРѕРІ...")}${renderShowcaseEmpty("Р“РѕС‚РѕРІРёРј СЃРїРёСЃРѕРє РґРѕР»Р¶РЅРёРєРѕРІ...")}`;
   }
   if (showcaseNotifications) {
-    showcaseNotifications.innerHTML = `${renderShowcaseEmpty("Подтягиваем уведомления...")}`;
+    showcaseNotifications.innerHTML = `${renderShowcaseEmpty("РџРѕРґС‚СЏРіРёРІР°РµРј СѓРІРµРґРѕРјР»РµРЅРёСЏ...")}`;
   }
   if (showcasePayments) {
-    showcasePayments.innerHTML = `${renderShowcaseEmpty("Проверяем методы оплаты...")}`;
+    showcasePayments.innerHTML = `${renderShowcaseEmpty("РџСЂРѕРІРµСЂСЏРµРј РјРµС‚РѕРґС‹ РѕРїР»Р°С‚С‹...")}`;
   }
 }
 
@@ -1166,22 +1229,22 @@ function renderScreenDependents() {
 }
 
 function renderHome() {
-  text("home-user-name", state.me?.displayName ?? "Алексей");
-  text("home-user-avatar", initials(state.me?.displayName ?? "Алексей"));
-  text("home-due-note", `${state.dueBundles.length} активных сборов`);
-  text("home-organizer-note", `${state.organizerBundles.length} сборов под контролем`);
+  text("home-user-name", state.me?.displayName ?? "РђР»РµРєСЃРµР№");
+  text("home-user-avatar", initials(state.me?.displayName ?? "РђР»РµРєСЃРµР№"));
+  text("home-due-note", `${state.dueBundles.length} Р°РєС‚РёРІРЅС‹С… СЃР±РѕСЂРѕРІ`);
+  text("home-organizer-note", `${state.organizerBundles.length} СЃР±РѕСЂРѕРІ РїРѕРґ РєРѕРЅС‚СЂРѕР»РµРј`);
 
   renderHomeBento();
 
   const dueList = document.getElementById("home-due-list");
   dueList.innerHTML = state.dueBundles.length
     ? state.dueBundles.slice(0, 2).map((bundle) => renderCollectionCard(bundle, { variant: "due", go: "collection", nav: "home" })).join("")
-    : renderEmptyCard("Нет сборов, где нужно платить.");
+    : renderEmptyCard("РќРµС‚ СЃР±РѕСЂРѕРІ, РіРґРµ РЅСѓР¶РЅРѕ РїР»Р°С‚РёС‚СЊ.");
 
   const organizerList = document.getElementById("home-organizer-list");
   organizerList.innerHTML = state.organizerBundles.length
     ? state.organizerBundles.slice(0, 2).map((bundle) => renderCollectionCard(bundle, { variant: "organizer", go: "organizer", nav: "collections" })).join("")
-    : renderEmptyCard("Организаторских сборов пока нет.");
+    : renderEmptyCard("РћСЂРіР°РЅРёР·Р°С‚РѕСЂСЃРєРёС… СЃР±РѕСЂРѕРІ РїРѕРєР° РЅРµС‚.");
 
   const homeNotifications = document.getElementById("home-notifications-list");
   homeNotifications.innerHTML = state.notifications.length
@@ -1189,7 +1252,7 @@ function renderHome() {
         .slice(0, 3)
         .map((notification) => renderNotificationCard(notification, { compact: true }))
         .join("")
-    : renderEmptyCard("Входящие пока пусты.");
+    : renderEmptyCard("Р’С…РѕРґСЏС‰РёРµ РїРѕРєР° РїСѓСЃС‚С‹.");
 }
 
 function renderHomeBento() {
@@ -1206,19 +1269,19 @@ function renderHomeBento() {
 
   node.innerHTML = `
     <article class="bento-item bento-item-large">
-      <span>К оплате</span>
+      <span>Рљ РѕРїР»Р°С‚Рµ</span>
       <strong>${formatMoney(dueTotalMinor)}</strong>
-      <em>${state.dueBundles.length} активных сборов</em>
+      <em>${state.dueBundles.length} Р°РєС‚РёРІРЅС‹С… СЃР±РѕСЂРѕРІ</em>
     </article>
     <article class="bento-item">
-      <span>Собрано</span>
+      <span>РЎРѕР±СЂР°РЅРѕ</span>
       <strong>${collectedPercent}%</strong>
       <em>${formatMoney(collectedMinor)}</em>
     </article>
     <article class="bento-item ${openDisputes ? "bento-item-alert" : "bento-item-calm"}">
-      <span>Споры</span>
+      <span>РЎРїРѕСЂС‹</span>
       <strong>${openDisputes}</strong>
-      <em>${openDisputes ? "нужна реакция" : "чисто"}</em>
+      <em>${openDisputes ? "РЅСѓР¶РЅР° СЂРµР°РєС†РёСЏ" : "С‡РёСЃС‚Рѕ"}</em>
     </article>
   `;
 }
@@ -1227,7 +1290,7 @@ function renderInboxScreen() {
   const list = document.getElementById("inbox-list");
   list.innerHTML = state.notifications.length
     ? state.notifications.map((notification) => renderNotificationCard(notification)).join("")
-    : renderEmptyCard("Уведомлений пока нет.");
+    : renderEmptyCard("РЈРІРµРґРѕРјР»РµРЅРёР№ РїРѕРєР° РЅРµС‚.");
 }
 
 function renderCollectionsScreen() {
@@ -1246,19 +1309,19 @@ function renderCollectionsScreen() {
 
   summary.innerHTML = `
     <article class="detail-panel">
-      <div class="panel-title">Срез</div>
-      <div class="line-item"><span>Активные</span><strong>${activeParticipantBundles.length}</strong></div>
-      <div class="line-item"><span>История</span><strong>${historyParticipantBundles.length}</strong></div>
-      <div class="line-item"><span>Организую</span><strong>${organizerBundles.length}</strong></div>
+      <div class="panel-title">РЎСЂРµР·</div>
+      <div class="line-item"><span>РђРєС‚РёРІРЅС‹Рµ</span><strong>${activeParticipantBundles.length}</strong></div>
+      <div class="line-item"><span>РСЃС‚РѕСЂРёСЏ</span><strong>${historyParticipantBundles.length}</strong></div>
+      <div class="line-item"><span>РћСЂРіР°РЅРёР·СѓСЋ</span><strong>${organizerBundles.length}</strong></div>
     </article>
   `;
 
   if (state.collectionsFilter === "active") {
     list.innerHTML =
-      renderCollectionSection("Требуют действия", actionableBundles, "Оплата, согласование и ожидающие действия") +
-      renderCollectionSection("Спокойные", sortBundles(passiveBundles), "Без срочных действий");
+      renderCollectionSection("РўСЂРµР±СѓСЋС‚ РґРµР№СЃС‚РІРёСЏ", actionableBundles, "РћРїР»Р°С‚Р°, СЃРѕРіР»Р°СЃРѕРІР°РЅРёРµ Рё РѕР¶РёРґР°СЋС‰РёРµ РґРµР№СЃС‚РІРёСЏ") +
+      renderCollectionSection("РЎРїРѕРєРѕР№РЅС‹Рµ", sortBundles(passiveBundles), "Р‘РµР· СЃСЂРѕС‡РЅС‹С… РґРµР№СЃС‚РІРёР№");
     if (!actionableBundles.length && !passiveBundles.length) {
-      list.innerHTML = renderEmptyCard("Нет активных сборов.");
+      list.innerHTML = renderEmptyCard("РќРµС‚ Р°РєС‚РёРІРЅС‹С… СЃР±РѕСЂРѕРІ.");
     }
     return;
   }
@@ -1267,19 +1330,19 @@ function renderCollectionsScreen() {
     const paidBundles = historyParticipantBundles.filter((bundle) => bundle.collection.status === "paid" || bundle.collection.status === "closed");
     const cancelledBundles = historyParticipantBundles.filter((bundle) => bundle.collection.status === "cancelled");
     list.innerHTML =
-      renderCollectionSection("Завершенные", sortBundles(paidBundles), "Оплаченные и закрытые") +
-      renderCollectionSection("Отмененные", sortBundles(cancelledBundles), "Сохранены для истории");
+      renderCollectionSection("Р—Р°РІРµСЂС€РµРЅРЅС‹Рµ", sortBundles(paidBundles), "РћРїР»Р°С‡РµРЅРЅС‹Рµ Рё Р·Р°РєСЂС‹С‚С‹Рµ") +
+      renderCollectionSection("РћС‚РјРµРЅРµРЅРЅС‹Рµ", sortBundles(cancelledBundles), "РЎРѕС…СЂР°РЅРµРЅС‹ РґР»СЏ РёСЃС‚РѕСЂРёРё");
     if (!paidBundles.length && !cancelledBundles.length) {
-      list.innerHTML = renderEmptyCard("История пока пустая.");
+      list.innerHTML = renderEmptyCard("РСЃС‚РѕСЂРёСЏ РїРѕРєР° РїСѓСЃС‚Р°СЏ.");
     }
     return;
   }
 
   list.innerHTML =
-    renderCollectionSection("Живые сборы", sortBundles(liveOrganizerBundles), "Ты управляешь процессом") +
-    renderCollectionSection("Архив организатора", sortBundles(archivedOrganizerBundles), "Закрытые и завершенные");
+    renderCollectionSection("Р–РёРІС‹Рµ СЃР±РѕСЂС‹", sortBundles(liveOrganizerBundles), "РўС‹ СѓРїСЂР°РІР»СЏРµС€СЊ РїСЂРѕС†РµСЃСЃРѕРј") +
+    renderCollectionSection("РђСЂС…РёРІ РѕСЂРіР°РЅРёР·Р°С‚РѕСЂР°", sortBundles(archivedOrganizerBundles), "Р—Р°РєСЂС‹С‚С‹Рµ Рё Р·Р°РІРµСЂС€РµРЅРЅС‹Рµ");
   if (!liveOrganizerBundles.length && !archivedOrganizerBundles.length) {
-    list.innerHTML = renderEmptyCard("Организаторских сборов пока нет.");
+    list.innerHTML = renderEmptyCard("РћСЂРіР°РЅРёР·Р°С‚РѕСЂСЃРєРёС… СЃР±РѕСЂРѕРІ РїРѕРєР° РЅРµС‚.");
   }
 }
 
@@ -1289,15 +1352,15 @@ function renderCollectionScreen() {
     return;
   }
 
-  const organizerName = state.userDirectory.get(bundle.collection.organizerId)?.displayName ?? "Организатор";
+  const organizerName = state.userDirectory.get(bundle.collection.organizerId)?.displayName ?? "РћСЂРіР°РЅРёР·Р°С‚РѕСЂ";
   text("collection-title", bundle.collection.title);
-  text("collection-subtitle", `Организатор ${organizerName} · ${bundle.participants.length} участников`);
+  text("collection-subtitle", `РћСЂРіР°РЅРёР·Р°С‚РѕСЂ ${organizerName} В· ${bundle.participants.length} СѓС‡Р°СЃС‚РЅРёРєРѕРІ`);
   text("collection-type-pill", labelizeCollectionType(bundle.collection.type));
   text("collection-balance-main", formatMoney(bundle.userDueMinor));
   text("collection-balance-sub", coveredParticipantsLabel(bundle.coveredParticipants));
   text("collection-progress-copy", `${formatMoney(bundle.collectedMinor)} / ${formatMoney(bundle.collection.totalAmountMinor)}`);
   text("collection-progress-percent", `${bundle.progressPercent}%`);
-  text("collection-pay-button", bundle.userDueMinor > 0 ? `Оплатить ${formatMoney(bundle.userDueMinor)}` : "Уже оплачено");
+  text("collection-pay-button", bundle.userDueMinor > 0 ? `РћРїР»Р°С‚РёС‚СЊ ${formatMoney(bundle.userDueMinor)}` : "РЈР¶Рµ РѕРїР»Р°С‡РµРЅРѕ");
   text("dispute-subtitle", bundle.collection.title);
   setProgress("collection-progress-fill", bundle.progressPercent);
   setCollectionBalancePill("collection-balance-pill", bundle.userDueMinor);
@@ -1312,7 +1375,7 @@ function renderCollectionScreen() {
         participant.id === bundle.currentParticipant?.id
           ? coveredParticipantsLabel(bundle.coveredParticipants)
           : participant.paymentResponsibleParticipantId
-            ? `Платит ${displayNameByParticipantId(bundle.participants, participant.paymentResponsibleParticipantId)}`
+            ? `РџР»Р°С‚РёС‚ ${displayNameByParticipantId(bundle.participants, participant.paymentResponsibleParticipantId)}`
             : null;
       return renderParticipantRow(participant, subLabel);
     })
@@ -1325,7 +1388,7 @@ function renderCollectionScreen() {
       bundle.currentParticipant &&
       bundle.currentParticipant.status !== "confirmed";
     reviewButton.hidden = !canConfirmReview;
-    reviewButton.textContent = canConfirmReview ? `Подтвердить ${formatMoney(bundle.userDueMinor || 0)}` : "Подтверждено";
+    reviewButton.textContent = canConfirmReview ? `РџРѕРґС‚РІРµСЂРґРёС‚СЊ ${formatMoney(bundle.userDueMinor || 0)}` : "РџРѕРґС‚РІРµСЂР¶РґРµРЅРѕ";
   }
 
   const disputesList = document.getElementById("collection-disputes-list");
@@ -1335,13 +1398,13 @@ function renderCollectionScreen() {
           const disputeParticipant = bundle.participants.find((participant) => participant.id === dispute.participantId);
           return `
             <div class="line-item">
-              <span>${escapeHtml(disputeParticipant?.displayNameSnapshot ?? "Участник")}: ${escapeHtml(disputeStatusLabel(dispute.status))}</span>
+              <span>${escapeHtml(disputeParticipant?.displayNameSnapshot ?? "РЈС‡Р°СЃС‚РЅРёРє")}: ${escapeHtml(disputeStatusLabel(dispute.status))}</span>
               <strong>${escapeHtml(labelizeDisputeType(dispute.type))}</strong>
             </div>
           `;
         })
         .join("")
-    : renderEmptyCard("Споров по этому сбору пока нет.");
+    : renderEmptyCard("РЎРїРѕСЂРѕРІ РїРѕ СЌС‚РѕРјСѓ СЃР±РѕСЂСѓ РїРѕРєР° РЅРµС‚.");
 
   const auditNode = document.getElementById("collection-audit-log");
   if (auditNode) {
@@ -1361,9 +1424,9 @@ function renderPayScreen() {
   text("pay-balance-sub", coveredParticipantsLabel(bundle.coveredParticipants));
   text(
     "pay-submit-button",
-    bundle.userDueMinor > 0 ? `Продолжить к подтверждению ${formatMoney(bundle.userDueMinor)}` : "Уже оплачено"
+    bundle.userDueMinor > 0 ? `РџСЂРѕРґРѕР»Р¶РёС‚СЊ Рє РїРѕРґС‚РІРµСЂР¶РґРµРЅРёСЋ ${formatMoney(bundle.userDueMinor)}` : "РЈР¶Рµ РѕРїР»Р°С‡РµРЅРѕ"
   );
-  text("pay-manual-button", bundle.userDueMinor > 0 ? `Пометить ${formatMoney(bundle.userDueMinor)}` : "Ручная оплата не нужна");
+  text("pay-manual-button", bundle.userDueMinor > 0 ? `РџРѕРјРµС‚РёС‚СЊ ${formatMoney(bundle.userDueMinor)}` : "Р СѓС‡РЅР°СЏ РѕРїР»Р°С‚Р° РЅРµ РЅСѓР¶РЅР°");
   renderPayMethods();
 
   const confirmNode = document.getElementById("pay-confirmation-panel");
@@ -1378,20 +1441,20 @@ function renderPayScreen() {
         .map(
           (payment) => `
             <div class="line-item">
-              <span>${escapeHtml(manualPaymentMethodLabel(payment.method))} · ${escapeHtml(manualPaymentStatusLabel(payment.status))}</span>
+              <span>${escapeHtml(manualPaymentMethodLabel(payment.method))} В· ${escapeHtml(manualPaymentStatusLabel(payment.status))}</span>
               <strong>${formatMoney(payment.amountMinor)}</strong>
             </div>
           `
         )
         .join("")
-    : renderEmptyCard("Здесь появятся ручные переводы, если ты отметишь оплату.");
+    : renderEmptyCard("Р—РґРµСЃСЊ РїРѕСЏРІСЏС‚СЃСЏ СЂСѓС‡РЅС‹Рµ РїРµСЂРµРІРѕРґС‹, РµСЃР»Рё С‚С‹ РѕС‚РјРµС‚РёС€СЊ РѕРїР»Р°С‚Сѓ.");
 }
 
 function renderPayMethods() {
   const list = document.getElementById("pay-methods-list");
   const activeMethods = state.paymentMethods.filter((method) => method.status === "active");
   if (!activeMethods.length) {
-    list.innerHTML = renderEmptyCard("Нет активной карты. Демо-привязка создастся автоматически.");
+    list.innerHTML = renderEmptyCard("РќРµС‚ Р°РєС‚РёРІРЅРѕР№ РєР°СЂС‚С‹. Р”РµРјРѕ-РїСЂРёРІСЏР·РєР° СЃРѕР·РґР°СЃС‚СЃСЏ Р°РІС‚РѕРјР°С‚РёС‡РµСЃРєРё.");
     return;
   }
 
@@ -1402,9 +1465,9 @@ function renderPayMethods() {
         <button class="option-card${selected ? " selected" : ""}" type="button" data-payment-method-id="${method.id}">
           <div>
             <div class="card-title">${escapeHtml(paymentMethodTitle(method))}</div>
-            <div class="card-subtitle">${escapeHtml(method.brand.toUpperCase())} · ${method.isDefault ? "основная" : "привязана"}</div>
+            <div class="card-subtitle">${escapeHtml(method.brand.toUpperCase())} В· ${method.isDefault ? "РѕСЃРЅРѕРІРЅР°СЏ" : "РїСЂРёРІСЏР·Р°РЅР°"}</div>
           </div>
-          ${selected ? '<span class="check-dot">✓</span>' : ""}
+          ${selected ? '<span class="check-dot">вњ“</span>' : ""}
         </button>
       `;
     })
@@ -1418,16 +1481,16 @@ function renderOrganizerScreen() {
   }
 
   text("organizer-title", bundle.collection.title);
-  text("organizer-subtitle", `Ты организатор · ${bundle.participants.length} участников`);
-  text("organizer-dispute-pill", `${bundle.disputes.length} споров`);
+  text("organizer-subtitle", `РўС‹ РѕСЂРіР°РЅРёР·Р°С‚РѕСЂ В· ${bundle.participants.length} СѓС‡Р°СЃС‚РЅРёРєРѕРІ`);
+  text("organizer-dispute-pill", `${bundle.disputes.length} СЃРїРѕСЂРѕРІ`);
   text("organizer-collected-main", formatMoney(bundle.collectedMinor));
   text("organizer-remaining-main", formatMoney(Math.max(bundle.collection.totalAmountMinor - bundle.collectedMinor, 0)));
   text("organizer-status-note", labelizeCollectionStatus(bundle.collection.status));
   text(
     "organizer-calculate-button",
-    bundle.expenses.length ? `Пересчитать (${bundle.expenses.length} расходов)` : "Пересчитать сбор"
+    bundle.expenses.length ? `РџРµСЂРµСЃС‡РёС‚Р°С‚СЊ (${bundle.expenses.length} СЂР°СЃС…РѕРґРѕРІ)` : "РџРµСЂРµСЃС‡РёС‚Р°С‚СЊ СЃР±РѕСЂ"
   );
-  text("organizer-review-button", bundle.calculation ? "Отправить на согласование" : "Сначала пересчитать");
+  text("organizer-review-button", bundle.calculation ? "РћС‚РїСЂР°РІРёС‚СЊ РЅР° СЃРѕРіР»Р°СЃРѕРІР°РЅРёРµ" : "РЎРЅР°С‡Р°Р»Р° РїРµСЂРµСЃС‡РёС‚Р°С‚СЊ");
 
   const attention = document.getElementById("organizer-attention-list");
   const items = [];
@@ -1435,8 +1498,8 @@ function renderOrganizerScreen() {
     const participant = bundle.participants.find((item) => item.id === dispute.participantId);
     items.push(`
       <div class="line-item">
-        <span>${escapeHtml(participant?.displayNameSnapshot ?? "Участник")}: ${escapeHtml(dispute.message)}</span>
-        <span class="pill pill-danger">спор</span>
+        <span>${escapeHtml(participant?.displayNameSnapshot ?? "РЈС‡Р°СЃС‚РЅРёРє")}: ${escapeHtml(dispute.message)}</span>
+        <span class="pill pill-danger">СЃРїРѕСЂ</span>
       </div>
     `);
   }
@@ -1447,15 +1510,15 @@ function renderOrganizerScreen() {
         const payerName = displayNameByParticipantId(bundle.participants, payment.payerParticipantId);
         items.push(`
           <div class="line-item">
-            <span>${escapeHtml(payerName)} отправил ручную оплату</span>
-            <span class="pill pill-warn">подтверждение</span>
+            <span>${escapeHtml(payerName)} РѕС‚РїСЂР°РІРёР» СЂСѓС‡РЅСѓСЋ РѕРїР»Р°С‚Сѓ</span>
+            <span class="pill pill-warn">РїРѕРґС‚РІРµСЂР¶РґРµРЅРёРµ</span>
           </div>
         `);
       }
     } else {
       items.push(`
         <div class="line-item">
-          <span>Все спокойно, споров и ручных подтверждений нет.</span>
+          <span>Р’СЃРµ СЃРїРѕРєРѕР№РЅРѕ, СЃРїРѕСЂРѕРІ Рё СЂСѓС‡РЅС‹С… РїРѕРґС‚РІРµСЂР¶РґРµРЅРёР№ РЅРµС‚.</span>
           <span class="pill pill-success">ok</span>
         </div>
       `);
@@ -1472,9 +1535,9 @@ function renderOrganizerScreen() {
             dispute.status === "created" || dispute.status === "under_review"
               ? `
                   <div class="inline-actions">
-                    <button class="mini-action primary" type="button" data-action="accept-dispute" data-dispute-id="${dispute.id}">Принять</button>
-                    <button class="mini-action" type="button" data-action="resolve-dispute" data-dispute-id="${dispute.id}">Пересчитать</button>
-                    <button class="mini-action danger" type="button" data-action="reject-dispute" data-dispute-id="${dispute.id}">Отклонить</button>
+                    <button class="mini-action primary" type="button" data-action="accept-dispute" data-dispute-id="${dispute.id}">РџСЂРёРЅСЏС‚СЊ</button>
+                    <button class="mini-action" type="button" data-action="resolve-dispute" data-dispute-id="${dispute.id}">РџРµСЂРµСЃС‡РёС‚Р°С‚СЊ</button>
+                    <button class="mini-action danger" type="button" data-action="reject-dispute" data-dispute-id="${dispute.id}">РћС‚РєР»РѕРЅРёС‚СЊ</button>
                   </div>
                 `
               : "";
@@ -1482,7 +1545,7 @@ function renderOrganizerScreen() {
             <div class="dispute-card">
               <div class="line-item">
                 <div class="line-item-copy">
-                  <span>${escapeHtml(participant?.displayNameSnapshot ?? "Участник")} · ${escapeHtml(labelizeDisputeType(dispute.type))}</span>
+                  <span>${escapeHtml(participant?.displayNameSnapshot ?? "РЈС‡Р°СЃС‚РЅРёРє")} В· ${escapeHtml(labelizeDisputeType(dispute.type))}</span>
                   <div class="section-note">${escapeHtml(dispute.message)}</div>
                 </div>
                 <strong>${escapeHtml(disputeStatusLabel(dispute.status))}</strong>
@@ -1492,7 +1555,7 @@ function renderOrganizerScreen() {
           `;
         })
         .join("")
-    : renderEmptyCard("Активных споров нет.");
+    : renderEmptyCard("РђРєС‚РёРІРЅС‹С… СЃРїРѕСЂРѕРІ РЅРµС‚.");
 
   if (organizerFriendSelect) {
     const availableFriends = state.friends.filter(
@@ -1500,9 +1563,9 @@ function renderOrganizerScreen() {
     );
     organizerFriendSelect.innerHTML = availableFriends.length
       ? availableFriends
-          .map((friend) => `<option value="${friend.userId}">${escapeHtml(friend.displayName)} · ${escapeHtml(friend.phone || "друг")}</option>`)
+          .map((friend) => `<option value="${friend.userId}">${escapeHtml(friend.displayName)} В· ${escapeHtml(friend.phone || "РґСЂСѓРі")}</option>`)
           .join("")
-      : '<option value="">Нет друзей вне этого сбора</option>';
+      : '<option value="">РќРµС‚ РґСЂСѓР·РµР№ РІРЅРµ СЌС‚РѕРіРѕ СЃР±РѕСЂР°</option>';
     organizerFriendSelect.disabled = !availableFriends.length;
   }
 
@@ -1510,19 +1573,19 @@ function renderOrganizerScreen() {
     const eligiblePayers = bundle.participants.filter((participant) => participant.participantType !== "child");
     organizerChildResponsibleSelect.innerHTML = eligiblePayers.length
       ? eligiblePayers.map((participant) => `<option value="${participant.id}">${escapeHtml(participant.displayNameSnapshot)}</option>`).join("")
-      : '<option value="">Сначала добавь взрослого участника</option>';
+      : '<option value="">РЎРЅР°С‡Р°Р»Р° РґРѕР±Р°РІСЊ РІР·СЂРѕСЃР»РѕРіРѕ СѓС‡Р°СЃС‚РЅРёРєР°</option>';
     organizerChildResponsibleSelect.disabled = !eligiblePayers.length;
   }
 
   const organizerParticipants = document.getElementById("organizer-participants-list");
   organizerParticipants.innerHTML = bundle.participants.length
     ? bundle.participants.map((participant) => renderOrganizerParticipantCard(bundle, participant)).join("")
-    : renderEmptyCard("Участников пока нет.");
+    : renderEmptyCard("РЈС‡Р°СЃС‚РЅРёРєРѕРІ РїРѕРєР° РЅРµС‚.");
 
   const organizerExpenses = document.getElementById("organizer-expenses-list");
   organizerExpenses.innerHTML = bundle.expenses.length
     ? bundle.expenses.map((expense) => renderOrganizerExpenseCard(bundle, expense)).join("")
-    : renderEmptyCard("Расходов пока нет.");
+    : renderEmptyCard("Р Р°СЃС…РѕРґРѕРІ РїРѕРєР° РЅРµС‚.");
 
   renderOrganizerExpenseDraft();
 
@@ -1534,13 +1597,13 @@ function renderOrganizerScreen() {
           const toName = displayNameByParticipantId(bundle.participants, transfer.toResponsiblePayerId);
           return `
             <div class="line-item">
-              <span>${escapeHtml(fromName)} → ${escapeHtml(toName)}</span>
+              <span>${escapeHtml(fromName)} в†’ ${escapeHtml(toName)}</span>
               <strong>${formatMoney(transfer.amountMinor)}</strong>
             </div>
           `;
         })
         .join("")
-    : renderEmptyCard("После расчета здесь появятся переводы.");
+    : renderEmptyCard("РџРѕСЃР»Рµ СЂР°СЃС‡РµС‚Р° Р·РґРµСЃСЊ РїРѕСЏРІСЏС‚СЃСЏ РїРµСЂРµРІРѕРґС‹.");
 
   const organizerManualPayments = document.getElementById("organizer-manual-payments-list");
   organizerManualPayments.innerHTML = bundle.manualPayments.length
@@ -1552,8 +1615,8 @@ function renderOrganizerScreen() {
             payment.status === "submitted"
               ? `
                   <div class="inline-actions">
-                    <button class="mini-action primary" type="button" data-action="confirm-manual-payment" data-manual-payment-id="${payment.id}">Подтвердить</button>
-                    <button class="mini-action danger" type="button" data-action="reject-manual-payment" data-manual-payment-id="${payment.id}">Отклонить</button>
+                    <button class="mini-action primary" type="button" data-action="confirm-manual-payment" data-manual-payment-id="${payment.id}">РџРѕРґС‚РІРµСЂРґРёС‚СЊ</button>
+                    <button class="mini-action danger" type="button" data-action="reject-manual-payment" data-manual-payment-id="${payment.id}">РћС‚РєР»РѕРЅРёС‚СЊ</button>
                   </div>
                 `
               : "";
@@ -1561,8 +1624,8 @@ function renderOrganizerScreen() {
             <div class="dispute-card">
               <div class="line-item">
                 <div class="line-item-copy">
-                  <span>${escapeHtml(payerName)} → ${escapeHtml(receiverName)}</span>
-                  <div class="section-note">${escapeHtml(manualPaymentMethodLabel(payment.method))}${payment.comment ? ` · ${escapeHtml(payment.comment)}` : ""}</div>
+                  <span>${escapeHtml(payerName)} в†’ ${escapeHtml(receiverName)}</span>
+                  <div class="section-note">${escapeHtml(manualPaymentMethodLabel(payment.method))}${payment.comment ? ` В· ${escapeHtml(payment.comment)}` : ""}</div>
                 </div>
                 <strong>${escapeHtml(manualPaymentStatusLabel(payment.status))}</strong>
               </div>
@@ -1572,7 +1635,7 @@ function renderOrganizerScreen() {
           `;
         })
         .join("")
-    : renderEmptyCard("Ручных оплат пока нет.");
+    : renderEmptyCard("Р СѓС‡РЅС‹С… РѕРїР»Р°С‚ РїРѕРєР° РЅРµС‚.");
 
   const autopaySummary = document.getElementById("organizer-autopay-summary");
   const autopayList = document.getElementById("organizer-autopay-list");
@@ -1585,21 +1648,21 @@ function renderOrganizerScreen() {
 
   autopaySummary.innerHTML = `
     <div class="line-item">
-      <span>Готово к списанию</span>
+      <span>Р“РѕС‚РѕРІРѕ Рє СЃРїРёСЃР°РЅРёСЋ</span>
       <strong>${eligibleCount}</strong>
     </div>
     <div class="line-item">
-      <span>Заблокировано</span>
+      <span>Р—Р°Р±Р»РѕРєРёСЂРѕРІР°РЅРѕ</span>
       <strong>${blockedCount}</strong>
     </div>
     <div class="line-item">
-      <span>Уже создано</span>
+      <span>РЈР¶Рµ СЃРѕР·РґР°РЅРѕ</span>
       <strong>${existingCount}</strong>
     </div>
     ${executionSummary ? `
       <div class="line-item">
-        <span>Последний запуск</span>
-        <strong>${executionSummary.createdCount} создано / ${executionSummary.skippedCount} пропущено</strong>
+        <span>РџРѕСЃР»РµРґРЅРёР№ Р·Р°РїСѓСЃРє</span>
+        <strong>${executionSummary.createdCount} СЃРѕР·РґР°РЅРѕ / ${executionSummary.skippedCount} РїСЂРѕРїСѓС‰РµРЅРѕ</strong>
       </div>
     ` : ""}
   `;
@@ -1609,16 +1672,16 @@ function renderOrganizerScreen() {
         .map((item) => {
           const participantName = displayNameByParticipantId(bundle.participants, item.participantId);
           const responsibleName = displayNameByParticipantId(bundle.participants, item.responsibleParticipantId);
-          const availableAt = item.availableAt ? ` · с ${formatNotificationTime(item.availableAt)}` : "";
+          const availableAt = item.availableAt ? ` В· СЃ ${formatNotificationTime(item.availableAt)}` : "";
           const note =
             item.status === "eligible"
-              ? `${item.category ? `${escapeHtml(item.category)} · ` : ""}${escapeHtml(responsibleName)}${availableAt}`
+              ? `${item.category ? `${escapeHtml(item.category)} В· ` : ""}${escapeHtml(responsibleName)}${availableAt}`
               : `${escapeHtml(autoPaymentReasonLabel(item.reasonCode))}${availableAt}`;
           return `
             <div class="dispute-card">
               <div class="line-item">
                 <div class="line-item-copy">
-                  <span>${escapeHtml(participantName)} → ${escapeHtml(responsibleName)}</span>
+                  <span>${escapeHtml(participantName)} в†’ ${escapeHtml(responsibleName)}</span>
                   <div class="section-note">${note}</div>
                 </div>
                 <strong>${formatMoney(item.amountMinor)}</strong>
@@ -1631,7 +1694,7 @@ function renderOrganizerScreen() {
           `;
         })
         .join("")
-    : renderEmptyCard("Предпросмотр автоплатежей появится после расчета и настройки правил.");
+    : renderEmptyCard("РџСЂРµРґРїСЂРѕСЃРјРѕС‚СЂ Р°РІС‚РѕРїР»Р°С‚РµР¶РµР№ РїРѕСЏРІРёС‚СЃСЏ РїРѕСЃР»Рµ СЂР°СЃС‡РµС‚Р° Рё РЅР°СЃС‚СЂРѕР№РєРё РїСЂР°РІРёР».");
 
   if (autopayConfirm) {
     autopayConfirm.innerHTML = renderAutopayConfirmationPanel(bundle, preview);
@@ -1652,14 +1715,14 @@ function renderOrganizerExpenseDraft() {
   }
 
   if (!state.draftExpenseItems.length) {
-    draftNode.innerHTML = renderEmptyCard("Добавь позиции чека, если нужно разделение по позициям.");
+    draftNode.innerHTML = renderEmptyCard("Р”РѕР±Р°РІСЊ РїРѕР·РёС†РёРё С‡РµРєР°, РµСЃР»Рё РЅСѓР¶РЅРѕ СЂР°Р·РґРµР»РµРЅРёРµ РїРѕ РїРѕР·РёС†РёСЏРј.");
     return;
   }
 
   const totalMinor = state.draftExpenseItems.reduce((sum, item) => sum + item.amountMinor, 0);
   draftNode.innerHTML = `
     <article class="detail-panel">
-      <div class="panel-title">Черновик чека по позициям</div>
+      <div class="panel-title">Р§РµСЂРЅРѕРІРёРє С‡РµРєР° РїРѕ РїРѕР·РёС†РёСЏРј</div>
       ${state.draftExpenseItems
         .map(
           (item) => `
@@ -1671,7 +1734,7 @@ function renderOrganizerExpenseDraft() {
         )
         .join("")}
       <div class="line-item">
-        <span>Итого по позициям</span>
+        <span>РС‚РѕРіРѕ РїРѕ РїРѕР·РёС†РёСЏРј</span>
         <strong>${formatMoney(totalMinor)}</strong>
       </div>
     </article>
@@ -1691,14 +1754,14 @@ function renderOrganizerParticipantCard(bundle, participant) {
     <div class="dispute-card">
       <div class="line-item">
         <div class="line-item-copy">
-          <span>${escapeHtml(participant.displayNameSnapshot)} · ${escapeHtml(role)}</span>
-          <div class="section-note">${responsiblePayerName ? `За него платит ${escapeHtml(responsiblePayerName)}` : "Платит сам за себя"}</div>
+          <span>${escapeHtml(participant.displayNameSnapshot)} В· ${escapeHtml(role)}</span>
+          <div class="section-note">${responsiblePayerName ? `Р—Р° РЅРµРіРѕ РїР»Р°С‚РёС‚ ${escapeHtml(responsiblePayerName)}` : "РџР»Р°С‚РёС‚ СЃР°Рј Р·Р° СЃРµР±СЏ"}</div>
         </div>
         <strong>${escapeHtml(paymentStatusLabel(participant.paymentStatus))}</strong>
       </div>
       <div class="inline-actions">
         <select id="participant-responsible-${participant.id}" class="text-input compact-select">${payerOptions}</select>
-        <button class="mini-action" type="button" data-action="set-responsible-payer" data-participant-id="${participant.id}">Сохранить плательщика</button>
+        <button class="mini-action" type="button" data-action="set-responsible-payer" data-participant-id="${participant.id}">РЎРѕС…СЂР°РЅРёС‚СЊ РїР»Р°С‚РµР»СЊС‰РёРєР°</button>
       </div>
       <div class="inline-actions preset-row">
         ${presetButtons}
@@ -1706,7 +1769,7 @@ function renderOrganizerParticipantCard(bundle, participant) {
       <div class="inline-actions">
         <select id="participant-relationship-${participant.id}" class="text-input compact-select">${relationshipOptions}</select>
         <input id="participant-weight-${participant.id}" class="text-input compact-select" inputmode="decimal" value="${escapeHtml(String(participant.defaultWeight ?? 1))}" />
-        <button class="mini-action primary" type="button" data-action="save-participant-profile" data-participant-id="${participant.id}">Сохранить профиль</button>
+        <button class="mini-action primary" type="button" data-action="save-participant-profile" data-participant-id="${participant.id}">РЎРѕС…СЂР°РЅРёС‚СЊ РїСЂРѕС„РёР»СЊ</button>
       </div>
     </div>
   `;
@@ -1716,7 +1779,7 @@ function buildResponsiblePayerOptions(participants, participantId) {
   const current = participants.find((participant) => participant.id === participantId) ?? null;
   const eligible = participants.filter((participant) => participant.id !== participantId && participant.participantType !== "child");
   const selectedId = current?.paymentResponsibleParticipantId ?? "";
-  const selfOption = `<option value=""${selectedId === "" ? " selected" : ""}>Платит сам</option>`;
+  const selfOption = `<option value=""${selectedId === "" ? " selected" : ""}>РџР»Р°С‚РёС‚ СЃР°Рј</option>`;
   const payerOptions = eligible
     .map(
       (participant) =>
@@ -1728,10 +1791,10 @@ function buildResponsiblePayerOptions(participants, participantId) {
 
 function renderParticipantPresetButtons(participantId) {
   const presets = [
-    { label: "Ребенок 0.5", relationshipHint: "child", defaultWeight: "0.5" },
-    { label: "Партнер 1", relationshipHint: "partner", defaultWeight: "1" },
-    { label: "Гость 1", relationshipHint: "guest", defaultWeight: "1" },
-    { label: "Семья 1", relationshipHint: "family", defaultWeight: "1" }
+    { label: "Р РµР±РµРЅРѕРє 0.5", relationshipHint: "child", defaultWeight: "0.5" },
+    { label: "РџР°СЂС‚РЅРµСЂ 1", relationshipHint: "partner", defaultWeight: "1" },
+    { label: "Р“РѕСЃС‚СЊ 1", relationshipHint: "guest", defaultWeight: "1" },
+    { label: "РЎРµРјСЊСЏ 1", relationshipHint: "family", defaultWeight: "1" }
   ];
 
   return presets
@@ -1744,13 +1807,13 @@ function renderParticipantPresetButtons(participantId) {
 
 function buildRelationshipHintOptions(selected) {
   const options = [
-    ["self", "Сам"],
-    ["partner", "Партнер"],
-    ["child", "Ребенок"],
-    ["guest", "Гость"],
-    ["family", "Семья"],
-    ["colleague", "Коллега"],
-    ["other", "Другое"]
+    ["self", "РЎР°Рј"],
+    ["partner", "РџР°СЂС‚РЅРµСЂ"],
+    ["child", "Р РµР±РµРЅРѕРє"],
+    ["guest", "Р“РѕСЃС‚СЊ"],
+    ["family", "РЎРµРјСЊСЏ"],
+    ["colleague", "РљРѕР»Р»РµРіР°"],
+    ["other", "Р”СЂСѓРіРѕРµ"]
   ];
   return options
     .map(([value, label]) => `<option value="${value}"${selected === value ? " selected" : ""}>${escapeHtml(label)}</option>`)
@@ -1759,15 +1822,15 @@ function buildRelationshipHintOptions(selected) {
 
 function participantRoleLabel(bundle, participant) {
   if (participant.linkedUserId === bundle.collection.organizerId) {
-    return "Организатор";
+    return "РћСЂРіР°РЅРёР·Р°С‚РѕСЂ";
   }
   if (participant.participantType === "child") {
-    return "Ребенок";
+    return "Р РµР±РµРЅРѕРє";
   }
   if (participant.participantType === "guest") {
-    return "Гость";
+    return "Р“РѕСЃС‚СЊ";
   }
-  return "Участник";
+  return "РЈС‡Р°СЃС‚РЅРёРє";
 }
 
 function renderOrganizerExpenseCard(bundle, expense) {
@@ -1798,44 +1861,44 @@ function renderOrganizerExpenseCard(bundle, expense) {
                         `
                       )
                       .join("")
-                  : '<div class="line-item muted"><span>Без item-level исключений</span><em>ok</em></div>'
+                  : '<div class="line-item muted"><span>Р‘РµР· item-level РёСЃРєР»СЋС‡РµРЅРёР№</span><em>ok</em></div>'
               }
-              <button class="mini-action" type="button" data-action="exclude-expense-item" data-expense-id="${expense.id}" data-expense-item-id="${item.id}">Исключить для выбранного</button>
+              <button class="mini-action" type="button" data-action="exclude-expense-item" data-expense-id="${expense.id}" data-expense-item-id="${item.id}">РСЃРєР»СЋС‡РёС‚СЊ РґР»СЏ РІС‹Р±СЂР°РЅРЅРѕРіРѕ</button>
             </div>
           `;
         })
         .join("")
-    : '<div class="line-item muted"><span>Позиции чека не заданы</span><em>равное деление</em></div>';
+    : '<div class="line-item muted"><span>РџРѕР·РёС†РёРё С‡РµРєР° РЅРµ Р·Р°РґР°РЅС‹</span><em>СЂР°РІРЅРѕРµ РґРµР»РµРЅРёРµ</em></div>';
 
   return `
     <article class="detail-panel bottom-gap">
       <div class="line-item">
         <div class="line-item-copy">
           <span>${escapeHtml(expense.title)}</span>
-          <div class="section-note">${expenseItems.length ? `${expenseItems.length} позиций` : "без itemization"}</div>
+          <div class="section-note">${expenseItems.length ? `${expenseItems.length} РїРѕР·РёС†РёР№` : "Р±РµР· itemization"}</div>
         </div>
         <strong>${formatMoney(expense.amountMinor)}</strong>
       </div>
       ${itemsMarkup}
       <div class="mini-section">
-        <label class="field-label" for="expense-item-title-${expense.id}">Новая позиция</label>
-        <input id="expense-item-title-${expense.id}" class="text-input" placeholder="Например, десерт" />
+        <label class="field-label" for="expense-item-title-${expense.id}">РќРѕРІР°СЏ РїРѕР·РёС†РёСЏ</label>
+        <input id="expense-item-title-${expense.id}" class="text-input" placeholder="РќР°РїСЂРёРјРµСЂ, РґРµСЃРµСЂС‚" />
       </div>
       <div class="mini-section">
-        <label class="field-label" for="expense-item-amount-${expense.id}">Сумма позиции, ₽</label>
+        <label class="field-label" for="expense-item-amount-${expense.id}">РЎСѓРјРјР° РїРѕР·РёС†РёРё, в‚Ѕ</label>
         <input id="expense-item-amount-${expense.id}" class="text-input" inputmode="decimal" placeholder="300" />
       </div>
-      <button class="secondary-button" type="button" data-action="add-expense-item" data-expense-id="${expense.id}">Добавить позицию</button>
+      <button class="secondary-button" type="button" data-action="add-expense-item" data-expense-id="${expense.id}">Р”РѕР±Р°РІРёС‚СЊ РїРѕР·РёС†РёСЋ</button>
       ${
         expenseItems.length
           ? `
             <div class="mini-section">
-              <label class="field-label" for="expense-rule-participant-${expense.id}">Исключить участника из выбранной позиции</label>
+              <label class="field-label" for="expense-rule-participant-${expense.id}">РСЃРєР»СЋС‡РёС‚СЊ СѓС‡Р°СЃС‚РЅРёРєР° РёР· РІС‹Р±СЂР°РЅРЅРѕР№ РїРѕР·РёС†РёРё</label>
               <select id="expense-rule-participant-${expense.id}" class="text-input">${participantOptions}</select>
             </div>
             <div class="mini-section">
-              <label class="field-label" for="expense-rule-reason-${expense.id}">Причина</label>
-              <input id="expense-rule-reason-${expense.id}" class="text-input" placeholder="Например, не пил вино" />
+              <label class="field-label" for="expense-rule-reason-${expense.id}">РџСЂРёС‡РёРЅР°</label>
+              <input id="expense-rule-reason-${expense.id}" class="text-input" placeholder="РќР°РїСЂРёРјРµСЂ, РЅРµ РїРёР» РІРёРЅРѕ" />
             </div>
           `
           : ""
@@ -1854,14 +1917,14 @@ function renderFriendsScreen() {
               <div class="avatar ${avatarTone(index)}">${escapeHtml(initials(friend.displayName))}</div>
               <div class="person-meta">
                 <div class="person-name">${escapeHtml(friend.displayName)}</div>
-                <div class="person-sub">${friend.sharedCollections} общих сборов</div>
+                <div class="person-sub">${friend.sharedCollections} РѕР±С‰РёС… СЃР±РѕСЂРѕРІ</div>
               </div>
-              <span class="${index === 0 ? "status-chip online" : "pill pill-muted"}">${index === 0 ? "" : "готово"}</span>
+              <span class="${index === 0 ? "status-chip online" : "pill pill-muted"}">${index === 0 ? "" : "РіРѕС‚РѕРІРѕ"}</span>
             </div>
           `
         )
         .join("")
-    : renderEmptyCard("Пока нет друзей. Демо-участники будут добавлены автоматически.");
+    : renderEmptyCard("РџРѕРєР° РЅРµС‚ РґСЂСѓР·РµР№. Р”РµРјРѕ-СѓС‡Р°СЃС‚РЅРёРєРё Р±СѓРґСѓС‚ РґРѕР±Р°РІР»РµРЅС‹ Р°РІС‚РѕРјР°С‚РёС‡РµСЃРєРё.");
 }
 
 function renderGroupsScreen() {
@@ -1881,12 +1944,12 @@ function renderGroupsScreen() {
           `
         )
         .join("")
-    : renderEmptyCard("Групп пока нет.");
+    : renderEmptyCard("Р“СЂСѓРїРї РїРѕРєР° РЅРµС‚.");
 }
 
 function renderProfileScreen() {
-  text("profile-avatar", initials(state.me?.displayName ?? "Алексей"));
-  text("profile-name", state.me?.displayName ?? "Алексей");
+  text("profile-avatar", initials(state.me?.displayName ?? "РђР»РµРєСЃРµР№"));
+  text("profile-name", state.me?.displayName ?? "РђР»РµРєСЃРµР№");
   text("profile-phone", state.me?.phone ?? "");
 
   const profilePanels = [...document.querySelectorAll('[data-screen="profile"] .detail-panel')];
@@ -1896,12 +1959,12 @@ function renderProfileScreen() {
 
   if (paymentPanel) {
     paymentPanel.innerHTML = `
-      <div class="panel-title">Оплата</div>
+      <div class="panel-title">РћРїР»Р°С‚Р°</div>
       <div id="profile-payment-methods-list">
         ${renderProfilePaymentMethods()}
       </div>
       <div class="form-block">
-        <label class="field-label" for="profile-card-mask">Тестовая карта</label>
+        <label class="field-label" for="profile-card-mask">РўРµСЃС‚РѕРІР°СЏ РєР°СЂС‚Р°</label>
         <input class="text-input" id="profile-card-mask" placeholder="2200 **** **** 4821" />
       </div>
       <div class="chip-wrap">
@@ -1909,13 +1972,13 @@ function renderProfileScreen() {
         <button class="chip" type="button" data-card-brand="visa">Visa</button>
         <button class="chip" type="button" data-card-brand="mastercard">Mastercard</button>
       </div>
-      <button class="secondary-button" type="button" data-action="create-payment-setup">Начать привязку</button>
+      <button class="secondary-button" type="button" data-action="create-payment-setup">РќР°С‡Р°С‚СЊ РїСЂРёРІСЏР·РєСѓ</button>
     `;
   }
 
   if (frequentPanel) {
     frequentPanel.innerHTML = `
-      <div class="panel-title">Часто участвующие</div>
+      <div class="panel-title">Р§Р°СЃС‚Рѕ СѓС‡Р°СЃС‚РІСѓСЋС‰РёРµ</div>
       <div id="profile-frequent-list">
         ${renderProfileFrequentPeople()}
       </div>
@@ -1925,35 +1988,35 @@ function renderProfileScreen() {
   if (autopayPanel) {
     const globalRule = getGlobalAutopayRule();
     autopayPanel.innerHTML = `
-        <div class="panel-title">Автоплата</div>
+        <div class="panel-title">РђРІС‚РѕРїР»Р°С‚Р°</div>
         <div id="profile-autopay-rules-list">
           ${renderProfileAutopayRules()}
         </div>
         <div class="setting-row">
           <div>
-            <div class="setting-title">Включить правило</div>
-            <div class="setting-sub">Общее правило для новых сборов</div>
+            <div class="setting-title">Р’РєР»СЋС‡РёС‚СЊ РїСЂР°РІРёР»Рѕ</div>
+            <div class="setting-sub">РћР±С‰РµРµ РїСЂР°РІРёР»Рѕ РґР»СЏ РЅРѕРІС‹С… СЃР±РѕСЂРѕРІ</div>
           </div>
           <button class="switch${globalRule?.enabled ? " is-on" : ""}" id="profile-autopay-enabled" type="button"><span></span></button>
         </div>
         <div class="consent-card">
           <div class="setting-row">
             <div class="switch-copy">
-              <div class="setting-title">Согласие на автосписания</div>
-              <div class="setting-sub">Разрешаю запускать автоматические списания после окна возражений и в пределах лимита.</div>
+              <div class="setting-title">РЎРѕРіР»Р°СЃРёРµ РЅР° Р°РІС‚РѕСЃРїРёСЃР°РЅРёСЏ</div>
+              <div class="setting-sub">Р Р°Р·СЂРµС€Р°СЋ Р·Р°РїСѓСЃРєР°С‚СЊ Р°РІС‚РѕРјР°С‚РёС‡РµСЃРєРёРµ СЃРїРёСЃР°РЅРёСЏ РїРѕСЃР»Рµ РѕРєРЅР° РІРѕР·СЂР°Р¶РµРЅРёР№ Рё РІ РїСЂРµРґРµР»Р°С… Р»РёРјРёС‚Р°.</div>
             </div>
             <button class="switch${globalRule?.enabled ? " is-on" : ""}" id="profile-autopay-consent" type="button"><span></span></button>
           </div>
         </div>
         <div class="form-block">
-          <label class="field-label" for="profile-autopay-limit">Лимит на сбор, ₽</label>
+          <label class="field-label" for="profile-autopay-limit">Р›РёРјРёС‚ РЅР° СЃР±РѕСЂ, в‚Ѕ</label>
           <input class="text-input" id="profile-autopay-limit" inputmode="decimal" value="${escapeHtml(String((globalRule?.singleCollectionLimitMinor ?? 150000) / 100))}" />
         </div>
         <div class="form-block">
-          <label class="field-label" for="profile-autopay-window">Окно возражений, часы</label>
+          <label class="field-label" for="profile-autopay-window">РћРєРЅРѕ РІРѕР·СЂР°Р¶РµРЅРёР№, С‡Р°СЃС‹</label>
           <input class="text-input" id="profile-autopay-window" inputmode="numeric" value="${escapeHtml(String(globalRule?.objectionWindowHours ?? 24))}" />
         </div>
-        <button class="secondary-button" type="button" data-action="save-autopay-rule">Сохранить правило</button>
+        <button class="secondary-button" type="button" data-action="save-autopay-rule">РЎРѕС…СЂР°РЅРёС‚СЊ РїСЂР°РІРёР»Рѕ</button>
       `;
     }
   }
@@ -1966,7 +2029,7 @@ async function submitPayment() {
 
   const confirmed = document.getElementById("pay-confirm-switch")?.classList.contains("is-on") ?? false;
   if (!confirmed) {
-    setStatus("Подтверди списание перед оплатой", false);
+    setStatus("РџРѕРґС‚РІРµСЂРґРё СЃРїРёСЃР°РЅРёРµ РїРµСЂРµРґ РѕРїР»Р°С‚РѕР№", false);
     haptic("warning");
     return;
   }
@@ -2014,9 +2077,9 @@ async function submitPayment() {
 
   const updatedBundle = getSelectedCollectionBundle();
   if (updatedBundle) {
-    text("paid-success-copy", `${formatMoney(state.lastPaymentSummary.amountMinor)} переведены по сбору «${state.lastPaymentSummary.collectionTitle}».`);
+    text("paid-success-copy", `${formatMoney(state.lastPaymentSummary.amountMinor)} РїРµСЂРµРІРµРґРµРЅС‹ РїРѕ СЃР±РѕСЂСѓ В«${state.lastPaymentSummary.collectionTitle}В».`);
     text("paid-progress-copy", `${formatMoney(updatedBundle.collectedMinor)} / ${formatMoney(updatedBundle.collection.totalAmountMinor)}`);
-    text("paid-progress-tail", updatedBundle.progressPercent === 100 ? "Сбор закрыт" : `Осталось ${formatMoney(updatedBundle.collection.totalAmountMinor - updatedBundle.collectedMinor)}`);
+    text("paid-progress-tail", updatedBundle.progressPercent === 100 ? "РЎР±РѕСЂ Р·Р°РєСЂС‹С‚" : `РћСЃС‚Р°Р»РѕСЃСЊ ${formatMoney(updatedBundle.collection.totalAmountMinor - updatedBundle.collectedMinor)}`);
     setProgress("paid-progress-fill", updatedBundle.progressPercent);
   }
 
@@ -2061,20 +2124,20 @@ async function deprecatedConfirmCurrentParticipantReview() {
   await refreshAppData();
   renderAll();
   renderScreenDependents();
-  setStatus("Review подтвержден", true);
+  setStatus("Review РїРѕРґС‚РІРµСЂР¶РґРµРЅ", true);
   return;
   if (draftItems.length) {
-    setStatus(`Расход по позициям «${title}» добавлен`, true);
+    setStatus(`Р Р°СЃС…РѕРґ РїРѕ РїРѕР·РёС†РёСЏРј В«${title}В» РґРѕР±Р°РІР»РµРЅ`, true);
     return;
   }
-  setStatus("Review подтвержден", true);
+  setStatus("Review РїРѕРґС‚РІРµСЂР¶РґРµРЅ", true);
 }
 
 async function markManualPaymentFromUi() {
   const bundle = getSelectedCollectionBundle();
   const transferPlan = getCurrentUserTransfers(bundle);
   if (!bundle?.currentParticipant || !transferPlan.length) {
-    setStatus("Нет ручного перевода для подтверждения", false);
+    setStatus("РќРµС‚ СЂСѓС‡РЅРѕРіРѕ РїРµСЂРµРІРѕРґР° РґР»СЏ РїРѕРґС‚РІРµСЂР¶РґРµРЅРёСЏ", false);
     return;
   }
 
@@ -2108,13 +2171,13 @@ async function markManualPaymentFromUi() {
   await refreshAppData();
   renderAll();
   renderScreenDependents();
-  setStatus("Ручная оплата отправлена на подтверждение", true);
+  setStatus("Р СѓС‡РЅР°СЏ РѕРїР»Р°С‚Р° РѕС‚РїСЂР°РІР»РµРЅР° РЅР° РїРѕРґС‚РІРµСЂР¶РґРµРЅРёРµ", true);
 }
 
 async function createCollectionFromForm() {
   const title = collectionNameInput?.value?.trim();
   if (!title) {
-    setStatus("Укажи название сбора", false);
+    setStatus("РЈРєР°Р¶Рё РЅР°Р·РІР°РЅРёРµ СЃР±РѕСЂР°", false);
     return;
   }
 
@@ -2147,14 +2210,14 @@ async function createCollectionFromForm() {
   renderAll();
   setActiveScreen("organizer", "collections");
   renderScreenDependents();
-  setStatus(`Создан сбор «${createdCollection.title}»`, true);
+  setStatus(`РЎРѕР·РґР°РЅ СЃР±РѕСЂ В«${createdCollection.title}В»`, true);
   triggerCompletionFeedback();
 }
 
 async function inviteFriendFromForm() {
   const phone = friendPhoneInput?.value?.trim();
   if (!phone) {
-    setStatus("Укажи номер друга", false);
+    setStatus("РЈРєР°Р¶Рё РЅРѕРјРµСЂ РґСЂСѓРіР°", false);
     return;
   }
 
@@ -2179,13 +2242,13 @@ async function inviteFriendFromForm() {
 
   await refreshAppData();
   renderAll();
-  setStatus(matchedActor ? "Друг добавлен и подтвержден" : "Приглашение другу отправлено", true);
+  setStatus(matchedActor ? "Р”СЂСѓРі РґРѕР±Р°РІР»РµРЅ Рё РїРѕРґС‚РІРµСЂР¶РґРµРЅ" : "РџСЂРёРіР»Р°С€РµРЅРёРµ РґСЂСѓРіСѓ РѕС‚РїСЂР°РІР»РµРЅРѕ", true);
 }
 
 async function createGroupFromForm() {
   const title = groupNameInput?.value?.trim();
   if (!title) {
-    setStatus("Укажи название группы", false);
+    setStatus("РЈРєР°Р¶Рё РЅР°Р·РІР°РЅРёРµ РіСЂСѓРїРїС‹", false);
     return;
   }
 
@@ -2204,14 +2267,14 @@ async function createGroupFromForm() {
 
   await refreshAppData();
   renderAll();
-  setStatus(`Создана группа «${group.title}»`, true);
+  setStatus(`РЎРѕР·РґР°РЅР° РіСЂСѓРїРїР° В«${group.title}В»`, true);
 }
 
 async function addCollectionFriend() {
   const bundle = getSelectedOrganizerBundle();
   const linkedUserId = organizerFriendSelect?.value;
   if (!bundle || !linkedUserId) {
-    setStatus("Выбери друга для добавления", false);
+    setStatus("Р’С‹Р±РµСЂРё РґСЂСѓРіР° РґР»СЏ РґРѕР±Р°РІР»РµРЅРёСЏ", false);
     return;
   }
 
@@ -2221,21 +2284,21 @@ async function addCollectionFriend() {
     token: state.session.accessToken,
     body: {
       linkedUserId,
-      displayName: friend?.displayName ?? "Участник"
+      displayName: friend?.displayName ?? "РЈС‡Р°СЃС‚РЅРёРє"
     }
   });
 
   await refreshAppData();
   renderAll();
   renderScreenDependents();
-  setStatus(friend ? `${friend.displayName} добавлен в сбор` : "Участник добавлен", true);
+  setStatus(friend ? `${friend.displayName} РґРѕР±Р°РІР»РµРЅ РІ СЃР±РѕСЂ` : "РЈС‡Р°СЃС‚РЅРёРє РґРѕР±Р°РІР»РµРЅ", true);
 }
 
 async function addCollectionGuest() {
   const bundle = getSelectedOrganizerBundle();
   const displayName = organizerGuestNameInput?.value?.trim();
   if (!bundle || !displayName) {
-    setStatus("Укажи имя гостя", false);
+    setStatus("РЈРєР°Р¶Рё РёРјСЏ РіРѕСЃС‚СЏ", false);
     return;
   }
 
@@ -2252,7 +2315,7 @@ async function addCollectionGuest() {
   await refreshAppData();
   renderAll();
   renderScreenDependents();
-  setStatus(`Гость «${displayName}» добавлен`, true);
+  setStatus(`Р“РѕСЃС‚СЊ В«${displayName}В» РґРѕР±Р°РІР»РµРЅ`, true);
 }
 
 async function addCollectionChild() {
@@ -2260,7 +2323,7 @@ async function addCollectionChild() {
   const displayName = organizerChildNameInput?.value?.trim();
   const responsiblePayerParticipantId = organizerChildResponsibleSelect?.value;
   if (!bundle || !displayName || !responsiblePayerParticipantId) {
-    setStatus("Укажи ребенка и кто за него платит", false);
+    setStatus("РЈРєР°Р¶Рё СЂРµР±РµРЅРєР° Рё РєС‚Рѕ Р·Р° РЅРµРіРѕ РїР»Р°С‚РёС‚", false);
     return;
   }
 
@@ -2280,7 +2343,7 @@ async function addCollectionChild() {
   await refreshAppData();
   renderAll();
   renderScreenDependents();
-  setStatus(`Ребенок «${displayName}» добавлен`, true);
+  setStatus(`Р РµР±РµРЅРѕРє В«${displayName}В» РґРѕР±Р°РІР»РµРЅ`, true);
 }
 
 async function setResponsiblePayerFromAction(source) {
@@ -2304,7 +2367,7 @@ async function setResponsiblePayerFromAction(source) {
   await refreshAppData();
   renderAll();
   renderScreenDependents();
-  setStatus("Ответственный плательщик обновлен", true);
+  setStatus("РћС‚РІРµС‚СЃС‚РІРµРЅРЅС‹Р№ РїР»Р°С‚РµР»СЊС‰РёРє РѕР±РЅРѕРІР»РµРЅ", true);
 }
 
 async function updateParticipantProfileFromAction(source) {
@@ -2319,7 +2382,7 @@ async function updateParticipantProfileFromAction(source) {
   const relationshipHint = relationshipSelect?.value ?? "other";
   const defaultWeight = parseNumberInput(weightInput?.value, 1);
   if (!Number.isFinite(defaultWeight) || defaultWeight <= 0) {
-    setStatus("Вес участника должен быть больше нуля", false);
+    setStatus("Р’РµСЃ СѓС‡Р°СЃС‚РЅРёРєР° РґРѕР»Р¶РµРЅ Р±С‹С‚СЊ Р±РѕР»СЊС€Рµ РЅСѓР»СЏ", false);
     return;
   }
 
@@ -2335,7 +2398,7 @@ async function updateParticipantProfileFromAction(source) {
   await refreshAppData();
   renderAll();
   renderScreenDependents();
-  setStatus(`Профиль участника обновлен: ${relationshipHint}, вес ${defaultWeight}`, true);
+  setStatus(`РџСЂРѕС„РёР»СЊ СѓС‡Р°СЃС‚РЅРёРєР° РѕР±РЅРѕРІР»РµРЅ: ${relationshipHint}, РІРµСЃ ${defaultWeight}`, true);
 }
 
 async function applyParticipantPresetFromAction(source) {
@@ -2366,7 +2429,7 @@ async function addCollectionExpense() {
     ? draftItems.reduce((sum, item) => sum + item.amountMinor, 0)
     : parseMoneyToMinor(organizerExpenseAmountInput?.value ?? "");
   if (!bundle || !title || amountMinor <= 0) {
-    setStatus("Заполни название и сумму расхода", false);
+    setStatus("Р—Р°РїРѕР»РЅРё РЅР°Р·РІР°РЅРёРµ Рё СЃСѓРјРјСѓ СЂР°СЃС…РѕРґР°", false);
     return;
   }
 
@@ -2397,14 +2460,14 @@ async function addCollectionExpense() {
   await refreshAppData();
   renderAll();
   renderScreenDependents();
-  setStatus(`Расход «${title}» добавлен`, true);
+  setStatus(`Р Р°СЃС…РѕРґ В«${title}В» РґРѕР±Р°РІР»РµРЅ`, true);
 }
 
 function addDraftExpenseItem() {
   const title = organizerExpenseItemTitleInput?.value?.trim();
   const amountMinor = parseMoneyToMinor(organizerExpenseItemAmountInput?.value ?? "");
   if (!title || amountMinor <= 0) {
-    setStatus("Заполни название и сумму позиции", false);
+    setStatus("Р—Р°РїРѕР»РЅРё РЅР°Р·РІР°РЅРёРµ Рё СЃСѓРјРјСѓ РїРѕР·РёС†РёРё", false);
     return;
   }
 
@@ -2423,7 +2486,7 @@ function addDraftExpenseItem() {
 
   syncDraftExpenseAmount();
   renderOrganizerExpenseDraft();
-  setStatus(`Позиция «${title}» добавлена в черновик`, true);
+  setStatus(`РџРѕР·РёС†РёСЏ В«${title}В» РґРѕР±Р°РІР»РµРЅР° РІ С‡РµСЂРЅРѕРІРёРє`, true);
 }
 
 function clearDraftExpenseItems(options = {}) {
@@ -2439,7 +2502,7 @@ function clearDraftExpenseItems(options = {}) {
   }
   renderOrganizerExpenseDraft();
   if (!options.silent) {
-    setStatus("Черновик чека по позициям очищен", true);
+    setStatus("Р§РµСЂРЅРѕРІРёРє С‡РµРєР° РїРѕ РїРѕР·РёС†РёСЏРј РѕС‡РёС‰РµРЅ", true);
   }
 }
 
@@ -2454,7 +2517,7 @@ async function addExpenseItemToExistingExpense(source) {
   const title = titleInput?.value?.trim();
   const amountMinor = parseMoneyToMinor(amountInput?.value ?? "");
   if (!title || amountMinor <= 0) {
-    setStatus("Заполни название и сумму новой позиции", false);
+    setStatus("Р—Р°РїРѕР»РЅРё РЅР°Р·РІР°РЅРёРµ Рё СЃСѓРјРјСѓ РЅРѕРІРѕР№ РїРѕР·РёС†РёРё", false);
     return;
   }
 
@@ -2470,7 +2533,7 @@ async function addExpenseItemToExistingExpense(source) {
   await refreshAppData();
   renderAll();
   renderScreenDependents();
-  setStatus(`Позиция «${title}» добавлена в расход`, true);
+  setStatus(`РџРѕР·РёС†РёСЏ В«${title}В» РґРѕР±Р°РІР»РµРЅР° РІ СЂР°СЃС…РѕРґ`, true);
 }
 
 async function excludeExpenseItemForParticipant(source) {
@@ -2484,7 +2547,7 @@ async function excludeExpenseItemForParticipant(source) {
   const reasonInput = document.getElementById(`expense-rule-reason-${expenseId}`);
   const participantId = participantSelect?.value;
   if (!participantId) {
-    setStatus("Выбери участника для item-level rule", false);
+    setStatus("Р’С‹Р±РµСЂРё СѓС‡Р°СЃС‚РЅРёРєР° РґР»СЏ item-level rule", false);
     return;
   }
 
@@ -2495,14 +2558,14 @@ async function excludeExpenseItemForParticipant(source) {
       participantId,
       expenseItemId,
       splitMode: "excluded",
-      reason: reasonInput?.value?.trim() || "Исключено из сценария чека по позициям"
+      reason: reasonInput?.value?.trim() || "РСЃРєР»СЋС‡РµРЅРѕ РёР· СЃС†РµРЅР°СЂРёСЏ С‡РµРєР° РїРѕ РїРѕР·РёС†РёСЏРј"
     }
   });
 
   await refreshAppData();
   renderAll();
   renderScreenDependents();
-  setStatus("Item-level exclusion правило добавлено", true);
+  setStatus("Item-level exclusion РїСЂР°РІРёР»Рѕ РґРѕР±Р°РІР»РµРЅРѕ", true);
 }
 
 async function calculateSelectedCollection() {
@@ -2519,7 +2582,7 @@ async function calculateSelectedCollection() {
   await refreshAppData();
   renderAll();
   renderScreenDependents();
-  setStatus("Сбор пересчитан", true);
+  setStatus("РЎР±РѕСЂ РїРµСЂРµСЃС‡РёС‚Р°РЅ", true);
 }
 
 async function sendCollectionToReview() {
@@ -2529,7 +2592,7 @@ async function sendCollectionToReview() {
   }
 
   if (!bundle.calculation) {
-    setStatus("Сначала пересчитай сбор", false);
+    setStatus("РЎРЅР°С‡Р°Р»Р° РїРµСЂРµСЃС‡РёС‚Р°Р№ СЃР±РѕСЂ", false);
     return;
   }
 
@@ -2541,7 +2604,7 @@ async function sendCollectionToReview() {
   await refreshAppData();
   renderAll();
   renderScreenDependents();
-  setStatus("Сбор отправлен на согласование", true);
+  setStatus("РЎР±РѕСЂ РѕС‚РїСЂР°РІР»РµРЅ РЅР° СЃРѕРіР»Р°СЃРѕРІР°РЅРёРµ", true);
 }
 
 async function updateDisputeFromAction(source, action) {
@@ -2573,7 +2636,7 @@ async function updateDisputeFromAction(source, action) {
   renderAll();
   renderScreenDependents();
   setStatus(
-    action === "accept" ? "Спор принят" : action === "reject" ? "Спор отклонен" : "Сбор пересчитан по спору",
+    action === "accept" ? "РЎРїРѕСЂ РїСЂРёРЅСЏС‚" : action === "reject" ? "РЎРїРѕСЂ РѕС‚РєР»РѕРЅРµРЅ" : "РЎР±РѕСЂ РїРµСЂРµСЃС‡РёС‚Р°РЅ РїРѕ СЃРїРѕСЂСѓ",
     true
   );
 }
@@ -2597,13 +2660,13 @@ async function updateManualPaymentFromAction(source, action) {
   await refreshAppData();
   renderAll();
   renderScreenDependents();
-  setStatus(action === "confirm" ? "Ручная оплата подтверждена" : "Ручная оплата отклонена", true);
+  setStatus(action === "confirm" ? "Р СѓС‡РЅР°СЏ РѕРїР»Р°С‚Р° РїРѕРґС‚РІРµСЂР¶РґРµРЅР°" : "Р СѓС‡РЅР°СЏ РѕРїР»Р°С‚Р° РѕС‚РєР»РѕРЅРµРЅР°", true);
 }
 
 async function createPaymentMethodSetup() {
   const maskedPan = document.getElementById("profile-card-mask")?.value?.trim();
   if (!maskedPan) {
-    setStatus("Укажи тестовую карту", false);
+    setStatus("РЈРєР°Р¶Рё С‚РµСЃС‚РѕРІСѓСЋ РєР°СЂС‚Сѓ", false);
     return;
   }
 
@@ -2618,7 +2681,7 @@ async function createPaymentMethodSetup() {
 
   await refreshAppData();
   renderAll();
-  setStatus("Заявка на привязку создана. Подтверди ее ниже.", true);
+  setStatus("Р—Р°СЏРІРєР° РЅР° РїСЂРёРІСЏР·РєСѓ СЃРѕР·РґР°РЅР°. РџРѕРґС‚РІРµСЂРґРё РµРµ РЅРёР¶Рµ.", true);
 }
 
 async function updatePaymentMethodSetup(source, action) {
@@ -2630,7 +2693,7 @@ async function updatePaymentMethodSetup(source, action) {
   if (action === "confirm") {
     const maskedPan = document.getElementById("profile-card-mask")?.value?.trim();
     if (!maskedPan) {
-      setStatus("Укажи тестовую карту для подтверждения", false);
+      setStatus("РЈРєР°Р¶Рё С‚РµСЃС‚РѕРІСѓСЋ РєР°СЂС‚Сѓ РґР»СЏ РїРѕРґС‚РІРµСЂР¶РґРµРЅРёСЏ", false);
       return;
     }
 
@@ -2649,14 +2712,14 @@ async function updatePaymentMethodSetup(source, action) {
       token: state.session.accessToken,
       body: {
         errorCode: "frontend_mock_failure",
-        reason: "Ошибка из сценария профиля"
+        reason: "РћС€РёР±РєР° РёР· СЃС†РµРЅР°СЂРёСЏ РїСЂРѕС„РёР»СЏ"
       }
     });
   }
 
   await refreshAppData();
   renderAll();
-  setStatus(action === "confirm" ? "Привязка подтверждена" : "Привязка переведена в ошибку", true);
+  setStatus(action === "confirm" ? "РџСЂРёРІСЏР·РєР° РїРѕРґС‚РІРµСЂР¶РґРµРЅР°" : "РџСЂРёРІСЏР·РєР° РїРµСЂРµРІРµРґРµРЅР° РІ РѕС€РёР±РєСѓ", true);
 }
 
 async function revokePaymentMethodFromAction(source) {
@@ -2672,7 +2735,7 @@ async function revokePaymentMethodFromAction(source) {
 
   await refreshAppData();
   renderAll();
-  setStatus("Карта отвязана", true);
+  setStatus("РљР°СЂС‚Р° РѕС‚РІСЏР·Р°РЅР°", true);
 }
 
 async function saveAutopayRule() {
@@ -2683,7 +2746,7 @@ async function saveAutopayRule() {
   const objectionWindowHours = parseIntegerInput(document.getElementById("profile-autopay-window")?.value, 24);
 
   if (enabled && !consentEnabled) {
-    setStatus("Для автоплатежей нужно явное согласие", false);
+    setStatus("Р”Р»СЏ Р°РІС‚РѕРїР»Р°С‚РµР¶РµР№ РЅСѓР¶РЅРѕ СЏРІРЅРѕРµ СЃРѕРіР»Р°СЃРёРµ", false);
     haptic("warning");
     return;
   }
@@ -2718,7 +2781,7 @@ async function saveAutopayRule() {
 
   await refreshAppData();
   renderAll();
-  setStatus(enabled ? "Правило автоплатежей сохранено и активировано" : "Правило автоплатежей сохранено", true);
+  setStatus(enabled ? "РџСЂР°РІРёР»Рѕ Р°РІС‚РѕРїР»Р°С‚РµР¶РµР№ СЃРѕС…СЂР°РЅРµРЅРѕ Рё Р°РєС‚РёРІРёСЂРѕРІР°РЅРѕ" : "РџСЂР°РІРёР»Рѕ Р°РІС‚РѕРїР»Р°С‚РµР¶РµР№ СЃРѕС…СЂР°РЅРµРЅРѕ", true);
 }
 
 async function syncOrganizerAutopayPreview(options = {}) {
@@ -2738,7 +2801,7 @@ async function syncOrganizerAutopayPreview(options = {}) {
   }
   if (!options.silent) {
     const eligibleCount = preview.filter((item) => item.status === "eligible").length;
-    setStatus(`Предпросмотр автоплатежей обновлен: готово к списанию ${eligibleCount}`, true);
+    setStatus(`РџСЂРµРґРїСЂРѕСЃРјРѕС‚СЂ Р°РІС‚РѕРїР»Р°С‚РµР¶РµР№ РѕР±РЅРѕРІР»РµРЅ: РіРѕС‚РѕРІРѕ Рє СЃРїРёСЃР°РЅРёСЋ ${eligibleCount}`, true);
   }
   return preview;
 }
@@ -2755,17 +2818,17 @@ async function executeOrganizerAutopay() {
   const eligibleCount = preview.filter((item) => item.status === "eligible").length;
 
   if (!rule?.enabled) {
-    setStatus("Сначала включи и сохрани правило автоплатежей", false);
+    setStatus("РЎРЅР°С‡Р°Р»Р° РІРєР»СЋС‡Рё Рё СЃРѕС…СЂР°РЅРё РїСЂР°РІРёР»Рѕ Р°РІС‚РѕРїР»Р°С‚РµР¶РµР№", false);
     haptic("warning");
     return;
   }
   if (!eligibleCount) {
-    setStatus("Нет готовых автоплатежей для запуска", false);
+    setStatus("РќРµС‚ РіРѕС‚РѕРІС‹С… Р°РІС‚РѕРїР»Р°С‚РµР¶РµР№ РґР»СЏ Р·Р°РїСѓСЃРєР°", false);
     haptic("warning");
     return;
   }
   if (!confirmed) {
-    setStatus("Подтверди массовый запуск автоплатежей", false);
+    setStatus("РџРѕРґС‚РІРµСЂРґРё РјР°СЃСЃРѕРІС‹Р№ Р·Р°РїСѓСЃРє Р°РІС‚РѕРїР»Р°С‚РµР¶РµР№", false);
     haptic("warning");
     return;
   }
@@ -2786,7 +2849,7 @@ async function executeOrganizerAutopay() {
 
   await refreshAppData();
   renderAll();
-  setStatus(`Автоплатежи: создано ${result.createdPayments.length}, пропущено ${result.skipped.length}`, true);
+  setStatus(`РђРІС‚РѕРїР»Р°С‚РµР¶Рё: СЃРѕР·РґР°РЅРѕ ${result.createdPayments.length}, РїСЂРѕРїСѓС‰РµРЅРѕ ${result.skipped.length}`, true);
 }
 
 function openNotification(notificationId) {
@@ -2800,7 +2863,7 @@ function openNotification(notificationId) {
 
   const bundle = state.collectionBundles.find((item) => item.collection.id === notification.collectionId);
   if (!bundle) {
-    setStatus("Сбор из уведомления не найден", false);
+    setStatus("РЎР±РѕСЂ РёР· СѓРІРµРґРѕРјР»РµРЅРёСЏ РЅРµ РЅР°Р№РґРµРЅ", false);
     return;
   }
 
@@ -2859,14 +2922,14 @@ function renderCollectionCard(bundle, options) {
   const isOrganizer = options.variant === "organizer";
   const dueText = bundle.userDueMinor > 0 ? formatMoney(bundle.userDueMinor) : formatMoney(Math.max(bundle.collection.totalAmountMinor - bundle.collectedMinor, 0));
   const noteBase = isOrganizer
-    ? `${bundle.disputes.length} споров · ${bundle.participants.length} участников`
+    ? `${bundle.disputes.length} СЃРїРѕСЂРѕРІ В· ${bundle.participants.length} СѓС‡Р°СЃС‚РЅРёРєРѕРІ`
     : coveredParticipantsLabel(bundle.coveredParticipants);
-  const note = `${labelizeCollectionStatus(bundle.collection.status)} · ${noteBase}`;
+  const note = `${labelizeCollectionStatus(bundle.collection.status)} В· ${noteBase}`;
   const metaRight = isOrganizer
-    ? `${bundle.disputes.length ? "есть спор" : "без споров"}`
-    : `${bundle.payments.filter((payment) => payment.status === "succeeded").length + bundle.manualPayments.filter((payment) => payment.status === "confirmed").length} оплат`;
+    ? `${bundle.disputes.length ? "РµСЃС‚СЊ СЃРїРѕСЂ" : "Р±РµР· СЃРїРѕСЂРѕРІ"}`
+    : `${bundle.payments.filter((payment) => payment.status === "succeeded").length + bundle.manualPayments.filter((payment) => payment.status === "confirmed").length} РѕРїР»Р°С‚`;
   const pill = isOrganizer
-    ? `<span class="pill ${bundle.disputes.length ? "pill-danger" : "pill-muted"}">${bundle.disputes.length ? "Возражение" : "Организатор"}</span>`
+    ? `<span class="pill ${bundle.disputes.length ? "pill-danger" : "pill-muted"}">${bundle.disputes.length ? "Р’РѕР·СЂР°Р¶РµРЅРёРµ" : "РћСЂРіР°РЅРёР·Р°С‚РѕСЂ"}</span>`
     : `<span class="amount-main">${dueText}</span>`;
   const dataAttr = isOrganizer ? `data-organizer-collection-id="${bundle.collection.id}"` : `data-collection-id="${bundle.collection.id}"`;
 
@@ -2892,8 +2955,8 @@ function renderNotificationCard(notification, options = {}) {
   const compact = options.compact === true;
   const kindLabel = notificationTypeLabel(notification.type);
   const scopeLabel = notification.collectionId
-    ? state.collections.find((collection) => collection.id === notification.collectionId)?.title ?? "Сбор"
-    : "Система";
+    ? state.collections.find((collection) => collection.id === notification.collectionId)?.title ?? "РЎР±РѕСЂ"
+    : "РЎРёСЃС‚РµРјР°";
 
   return `
     <button class="notification-card${notification.readAt ? "" : " unread"}" type="button" data-notification-id="${notification.id}">
@@ -2914,7 +2977,7 @@ function renderNotificationCard(notification, options = {}) {
 
 function renderProfilePaymentMethods() {
   if (!state.paymentMethods.length) {
-    return renderEmptyCard("Платежных методов пока нет.");
+    return renderEmptyCard("РџР»Р°С‚РµР¶РЅС‹С… РјРµС‚РѕРґРѕРІ РїРѕРєР° РЅРµС‚.");
   }
 
   return state.paymentMethods
@@ -2923,14 +2986,14 @@ function renderProfilePaymentMethods() {
         method.status === "requires_confirmation"
           ? `
             <div class="inline-actions">
-              <button class="mini-action primary" type="button" data-action="confirm-payment-setup" data-method-id="${method.id}">Подтвердить</button>
-              <button class="mini-action danger" type="button" data-action="fail-payment-setup" data-method-id="${method.id}">Ошибка</button>
+              <button class="mini-action primary" type="button" data-action="confirm-payment-setup" data-method-id="${method.id}">РџРѕРґС‚РІРµСЂРґРёС‚СЊ</button>
+              <button class="mini-action danger" type="button" data-action="fail-payment-setup" data-method-id="${method.id}">РћС€РёР±РєР°</button>
             </div>
           `
           : method.status === "active"
             ? `
               <div class="inline-actions">
-                <button class="mini-action danger" type="button" data-action="revoke-payment-method" data-method-id="${method.id}">Отвязать</button>
+                <button class="mini-action danger" type="button" data-action="revoke-payment-method" data-method-id="${method.id}">РћС‚РІСЏР·Р°С‚СЊ</button>
               </div>
             `
             : "";
@@ -2940,9 +3003,9 @@ function renderProfilePaymentMethods() {
           <div class="line-item">
             <div class="line-item-copy">
               <span>${escapeHtml(paymentMethodTitle(method))}</span>
-              <div class="section-note">${escapeHtml(method.brand.toUpperCase())}${method.providerSetupId ? ` · привязка ${escapeHtml(method.providerSetupId)}` : ""}</div>
+              <div class="section-note">${escapeHtml(method.brand.toUpperCase())}${method.providerSetupId ? ` В· РїСЂРёРІСЏР·РєР° ${escapeHtml(method.providerSetupId)}` : ""}</div>
             </div>
-            <strong>${escapeHtml(paymentMethodStatusLabel(method.status))}${method.isDefault ? " · основная" : ""}</strong>
+            <strong>${escapeHtml(paymentMethodStatusLabel(method.status))}${method.isDefault ? " В· РѕСЃРЅРѕРІРЅР°СЏ" : ""}</strong>
           </div>
           ${method.lastSetupErrorMessage ? `<div class="section-note">${escapeHtml(method.lastSetupErrorMessage)}</div>` : ""}
           ${actions}
@@ -2954,7 +3017,7 @@ function renderProfilePaymentMethods() {
 
 function renderProfileFrequentPeople() {
   if (!state.friends.length) {
-    return renderEmptyCard("Друзья появятся после приглашения.");
+    return renderEmptyCard("Р”СЂСѓР·СЊСЏ РїРѕСЏРІСЏС‚СЃСЏ РїРѕСЃР»Рµ РїСЂРёРіР»Р°С€РµРЅРёСЏ.");
   }
 
   return state.friends
@@ -2965,7 +3028,7 @@ function renderProfileFrequentPeople() {
           <div class="avatar ${avatarTone(index)}">${escapeHtml(initials(friend.displayName))}</div>
           <div class="person-meta">
             <div class="person-name">${escapeHtml(friend.displayName)}</div>
-            <div class="person-sub">${friend.sharedCollections} общих сборов</div>
+            <div class="person-sub">${friend.sharedCollections} РѕР±С‰РёС… СЃР±РѕСЂРѕРІ</div>
           </div>
         </div>
       `
@@ -2975,14 +3038,14 @@ function renderProfileFrequentPeople() {
 
 function renderProfileAutopayRules() {
   if (!state.autopayRules.length) {
-    return renderEmptyCard("Правила автоплатежей пока не настроены.");
+    return renderEmptyCard("РџСЂР°РІРёР»Р° Р°РІС‚РѕРїР»Р°С‚РµР¶РµР№ РїРѕРєР° РЅРµ РЅР°СЃС‚СЂРѕРµРЅС‹.");
   }
 
   return state.autopayRules
     .map(
       (rule) => `
         <div class="line-item">
-          <span>${rule.collectionId ? "сбор" : rule.groupId ? "группа" : "общее правило"} · ${rule.enabled ? "включено" : "выключено"}</span>
+          <span>${rule.collectionId ? "СЃР±РѕСЂ" : rule.groupId ? "РіСЂСѓРїРїР°" : "РѕР±С‰РµРµ РїСЂР°РІРёР»Рѕ"} В· ${rule.enabled ? "РІРєР»СЋС‡РµРЅРѕ" : "РІС‹РєР»СЋС‡РµРЅРѕ"}</span>
           <strong>${formatMoney(rule.singleCollectionLimitMinor)}</strong>
         </div>
       `
@@ -3069,7 +3132,7 @@ function renderParticipantRow(participant, subLabel) {
     <div class="person-row">
       <div class="avatar ${avatarToneByHint(participant.relationshipHint)}">${escapeHtml(initials(participant.displayNameSnapshot))}</div>
       <div class="person-meta">
-        <div class="person-name">${escapeHtml(participant.displayNameSnapshot)}${participant.linkedUserId === state.me.id ? " (ты)" : ""}</div>
+        <div class="person-name">${escapeHtml(participant.displayNameSnapshot)}${participant.linkedUserId === state.me.id ? " (С‚С‹)" : ""}</div>
         ${subLabel ? `<div class="person-sub">${escapeHtml(subLabel)}</div>` : ""}
       </div>
       <span class="pill ${paymentStatusPillClass(participant.paymentStatus)}">${escapeHtml(paymentStatusLabel(participant.paymentStatus))}</span>
@@ -3079,7 +3142,7 @@ function renderParticipantRow(participant, subLabel) {
 
 function renderExplanation(bundle) {
   if (!bundle.calculation || !bundle.coveredParticipants.length) {
-    return '<div class="line-item"><span>Расчет еще не готов.</span><strong>—</strong></div>';
+    return '<div class="line-item"><span>Р Р°СЃС‡РµС‚ РµС‰Рµ РЅРµ РіРѕС‚РѕРІ.</span><strong>вЂ”</strong></div>';
   }
 
   const lines = bundle.coveredParticipants
@@ -3095,14 +3158,14 @@ function renderExplanation(bundle) {
       const excluded = calc.explanation.excluded
         .map(
           (line) =>
-            `<div class="line-item muted"><span>${escapeHtml(line.expenseTitle)}</span><em>${escapeHtml(line.reason ?? "исключено из расчета")}</em></div>`
+            `<div class="line-item muted"><span>${escapeHtml(line.expenseTitle)}</span><em>${escapeHtml(line.reason ?? "РёСЃРєР»СЋС‡РµРЅРѕ РёР· СЂР°СЃС‡РµС‚Р°")}</em></div>`
         )
         .join("");
 
       return `
         <div class="mini-section">
-          <div class="mini-heading">${escapeHtml(participant.displayNameSnapshot)} — ${formatMoney(calc.owesAmountMinor)}</div>
-          ${included || '<div class="line-item"><span>Равномерное распределение</span><strong>включено</strong></div>'}
+          <div class="mini-heading">${escapeHtml(participant.displayNameSnapshot)} вЂ” ${formatMoney(calc.owesAmountMinor)}</div>
+          ${included || '<div class="line-item"><span>Р Р°РІРЅРѕРјРµСЂРЅРѕРµ СЂР°СЃРїСЂРµРґРµР»РµРЅРёРµ</span><strong>РІРєР»СЋС‡РµРЅРѕ</strong></div>'}
           ${excluded}
         </div>
       `;
@@ -3110,7 +3173,7 @@ function renderExplanation(bundle) {
     .filter(Boolean)
     .join('<div class="divider"></div>');
 
-  return lines || '<div class="line-item"><span>Подробности появятся после пересчета.</span><strong>—</strong></div>';
+  return lines || '<div class="line-item"><span>РџРѕРґСЂРѕР±РЅРѕСЃС‚Рё РїРѕСЏРІСЏС‚СЃСЏ РїРѕСЃР»Рµ РїРµСЂРµСЃС‡РµС‚Р°.</span><strong>вЂ”</strong></div>';
 }
 
 function renderEmptyCard(message) {
@@ -3118,7 +3181,7 @@ function renderEmptyCard(message) {
     <article class="detail-panel">
       <div class="line-item">
         <span>${escapeHtml(message)}</span>
-        <strong>—</strong>
+        <strong>вЂ”</strong>
       </div>
     </article>
   `;
@@ -3129,38 +3192,38 @@ function renderPayConfirmationPanel(bundle) {
   const isOpen = state.pendingPayConfirmationCollectionId === bundle.collection.id;
 
   if (!isOpen) {
-    return renderEmptyCard("Перед списанием покажем итог, карту и последнее подтверждение.");
+    return renderEmptyCard("РџРµСЂРµРґ СЃРїРёСЃР°РЅРёРµРј РїРѕРєР°Р¶РµРј РёС‚РѕРі, РєР°СЂС‚Сѓ Рё РїРѕСЃР»РµРґРЅРµРµ РїРѕРґС‚РІРµСЂР¶РґРµРЅРёРµ.");
   }
 
   return `
     <article class="detail-panel confirmation-panel">
-      <div class="panel-title">Финальное подтверждение</div>
+      <div class="panel-title">Р¤РёРЅР°Р»СЊРЅРѕРµ РїРѕРґС‚РІРµСЂР¶РґРµРЅРёРµ</div>
       <div class="confirmation-grid">
         <div class="line-item">
-          <span>Сбор</span>
+          <span>РЎР±РѕСЂ</span>
           <strong>${escapeHtml(bundle.collection.title)}</strong>
         </div>
         <div class="line-item">
-          <span>Сумма</span>
+          <span>РЎСѓРјРјР°</span>
           <strong>${formatMoney(bundle.userDueMinor)}</strong>
         </div>
         <div class="line-item">
-          <span>Карта</span>
-          <strong>${escapeHtml(selectedMethod ? paymentMethodTitle(selectedMethod) : "Будет создана тестовая карта")}</strong>
+          <span>РљР°СЂС‚Р°</span>
+          <strong>${escapeHtml(selectedMethod ? paymentMethodTitle(selectedMethod) : "Р‘СѓРґРµС‚ СЃРѕР·РґР°РЅР° С‚РµСЃС‚РѕРІР°СЏ РєР°СЂС‚Р°")}</strong>
         </div>
       </div>
       <div class="consent-card">
         <div class="setting-row">
           <div class="switch-copy">
-            <div class="setting-title">Подтверждаю списание</div>
-            <div class="setting-sub">Сумма и получатели проверены, можно создавать платеж.</div>
+            <div class="setting-title">РџРѕРґС‚РІРµСЂР¶РґР°СЋ СЃРїРёСЃР°РЅРёРµ</div>
+            <div class="setting-sub">РЎСѓРјРјР° Рё РїРѕР»СѓС‡Р°С‚РµР»Рё РїСЂРѕРІРµСЂРµРЅС‹, РјРѕР¶РЅРѕ СЃРѕР·РґР°РІР°С‚СЊ РїР»Р°С‚РµР¶.</div>
           </div>
-          <button class="switch" id="pay-confirm-switch" type="button" aria-label="Подтвердить списание"><span></span></button>
+          <button class="switch" id="pay-confirm-switch" type="button" aria-label="РџРѕРґС‚РІРµСЂРґРёС‚СЊ СЃРїРёСЃР°РЅРёРµ"><span></span></button>
         </div>
       </div>
       <div class="inline-actions stacked-actions">
-        <button class="primary-button" type="button" data-action="confirm-pay-now">Подтвердить оплату</button>
-        <button class="secondary-button" type="button" data-action="cancel-pay-confirm">Вернуться и проверить</button>
+        <button class="primary-button" type="button" data-action="confirm-pay-now">РџРѕРґС‚РІРµСЂРґРёС‚СЊ РѕРїР»Р°С‚Сѓ</button>
+        <button class="secondary-button" type="button" data-action="cancel-pay-confirm">Р’РµСЂРЅСѓС‚СЊСЃСЏ Рё РїСЂРѕРІРµСЂРёС‚СЊ</button>
       </div>
     </article>
   `;
@@ -3173,43 +3236,43 @@ function renderAutopayConfirmationPanel(bundle, preview) {
   const isOpen = state.pendingAutopayConfirmationCollectionId === bundle.collection.id;
 
   if (!isOpen) {
-    return renderEmptyCard("Здесь появится контрольный шаг перед массовым запуском автоплатежей.");
+    return renderEmptyCard("Р—РґРµСЃСЊ РїРѕСЏРІРёС‚СЃСЏ РєРѕРЅС‚СЂРѕР»СЊРЅС‹Р№ С€Р°Рі РїРµСЂРµРґ РјР°СЃСЃРѕРІС‹Рј Р·Р°РїСѓСЃРєРѕРј Р°РІС‚РѕРїР»Р°С‚РµР¶РµР№.");
   }
 
-  const consentState = rule?.enabled ? "Согласие активно" : "Сначала включи и сохрани правило автоплатежей";
+  const consentState = rule?.enabled ? "РЎРѕРіР»Р°СЃРёРµ Р°РєС‚РёРІРЅРѕ" : "РЎРЅР°С‡Р°Р»Р° РІРєР»СЋС‡Рё Рё СЃРѕС…СЂР°РЅРё РїСЂР°РІРёР»Рѕ Р°РІС‚РѕРїР»Р°С‚РµР¶РµР№";
   const consentClass = rule?.enabled ? "pill-success" : "pill-danger";
 
   return `
     <article class="detail-panel confirmation-panel">
-      <div class="panel-title">Контроль перед запуском</div>
+      <div class="panel-title">РљРѕРЅС‚СЂРѕР»СЊ РїРµСЂРµРґ Р·Р°РїСѓСЃРєРѕРј</div>
       <div class="line-item">
-        <span>Готовых участников</span>
+        <span>Р“РѕС‚РѕРІС‹С… СѓС‡Р°СЃС‚РЅРёРєРѕРІ</span>
         <strong>${eligibleCount}</strong>
       </div>
       <div class="line-item">
-        <span>Сумма к запуску</span>
+        <span>РЎСѓРјРјР° Рє Р·Р°РїСѓСЃРєСѓ</span>
         <strong>${formatMoney(totalMinor)}</strong>
       </div>
       <div class="line-item">
-        <span>Лимит правила</span>
+        <span>Р›РёРјРёС‚ РїСЂР°РІРёР»Р°</span>
         <strong>${formatMoney(rule?.singleCollectionLimitMinor ?? 0)}</strong>
       </div>
       <div class="line-item">
-        <span>Статус согласия</span>
+        <span>РЎС‚Р°С‚СѓСЃ СЃРѕРіР»Р°СЃРёСЏ</span>
         <span class="pill ${consentClass}">${consentState}</span>
       </div>
       <div class="consent-card">
         <div class="setting-row">
           <div class="switch-copy">
-            <div class="setting-title">Запустить списания по готовым участникам</div>
-            <div class="setting-sub">Будут созданы только те платежи, которые уже прошли все ограничения и окно возражений.</div>
+            <div class="setting-title">Р—Р°РїСѓСЃС‚РёС‚СЊ СЃРїРёСЃР°РЅРёСЏ РїРѕ РіРѕС‚РѕРІС‹Рј СѓС‡Р°СЃС‚РЅРёРєР°Рј</div>
+            <div class="setting-sub">Р‘СѓРґСѓС‚ СЃРѕР·РґР°РЅС‹ С‚РѕР»СЊРєРѕ С‚Рµ РїР»Р°С‚РµР¶Рё, РєРѕС‚РѕСЂС‹Рµ СѓР¶Рµ РїСЂРѕС€Р»Рё РІСЃРµ РѕРіСЂР°РЅРёС‡РµРЅРёСЏ Рё РѕРєРЅРѕ РІРѕР·СЂР°Р¶РµРЅРёР№.</div>
           </div>
-          <button class="switch" id="organizer-autopay-confirm-switch" type="button" aria-label="Подтвердить запуск автоплатежей"><span></span></button>
+          <button class="switch" id="organizer-autopay-confirm-switch" type="button" aria-label="РџРѕРґС‚РІРµСЂРґРёС‚СЊ Р·Р°РїСѓСЃРє Р°РІС‚РѕРїР»Р°С‚РµР¶РµР№"><span></span></button>
         </div>
       </div>
       <div class="inline-actions stacked-actions">
-        <button class="primary-button" type="button" data-action="confirm-execute-autopay">Подтвердить запуск</button>
-        <button class="secondary-button" type="button" data-action="cancel-autopay-confirm">Отмена</button>
+        <button class="primary-button" type="button" data-action="confirm-execute-autopay">РџРѕРґС‚РІРµСЂРґРёС‚СЊ Р·Р°РїСѓСЃРє</button>
+        <button class="secondary-button" type="button" data-action="cancel-autopay-confirm">РћС‚РјРµРЅР°</button>
       </div>
     </article>
   `;
@@ -3217,10 +3280,10 @@ function renderAutopayConfirmationPanel(bundle, preview) {
 
 function renderAuditTimeline(auditLog, bundle) {
   if (auditLog === null) {
-    return renderEmptyCard("Журнал действий загружается.");
+    return renderEmptyCard("Р–СѓСЂРЅР°Р» РґРµР№СЃС‚РІРёР№ Р·Р°РіСЂСѓР¶Р°РµС‚СЃСЏ.");
   }
   if (!auditLog.length) {
-    return renderEmptyCard("По этому сбору еще нет событий.");
+    return renderEmptyCard("РџРѕ СЌС‚РѕРјСѓ СЃР±РѕСЂСѓ РµС‰Рµ РЅРµС‚ СЃРѕР±С‹С‚РёР№.");
   }
 
   return `
@@ -3229,7 +3292,7 @@ function renderAuditTimeline(auditLog, bundle) {
         .slice()
         .reverse()
         .map((entry) => {
-          const actor = entry.actorUserId ? state.userDirectory.get(entry.actorUserId)?.displayName ?? "Участник" : "Система";
+          const actor = entry.actorUserId ? state.userDirectory.get(entry.actorUserId)?.displayName ?? "РЈС‡Р°СЃС‚РЅРёРє" : "РЎРёСЃС‚РµРјР°";
           const title = auditActionLabel(entry);
           const details = auditMetaLabel(entry, bundle);
           return `
@@ -3240,7 +3303,7 @@ function renderAuditTimeline(auditLog, bundle) {
                   <strong>${escapeHtml(title)}</strong>
                   <span>${escapeHtml(formatNotificationTime(entry.createdAt))}</span>
                 </div>
-                <div class="timeline-body">${escapeHtml(actor)}${details ? ` · ${escapeHtml(details)}` : ""}</div>
+                <div class="timeline-body">${escapeHtml(actor)}${details ? ` В· ${escapeHtml(details)}` : ""}</div>
               </div>
             </article>
           `;
@@ -3252,24 +3315,24 @@ function renderAuditTimeline(auditLog, bundle) {
 
 function auditActionLabel(entry) {
   const labels = {
-    "collection:created": "Сбор создан",
-    "collection:updated": "Сбор обновлен",
-    "collection:recalculated": "Сбор пересчитан",
-    "collection:sent_to_review": "Расчет отправлен на согласование",
-    "payment:created": "Платеж создан",
-    "payment:paid": "Платеж проведен",
-    "payment:updated": "Платеж обновлен",
-    "participant:confirmed": "Участник подтвердил расчет",
-    "dispute:disputed": "Создан спор",
-    "dispute:accepted": "Спор принят",
-    "dispute:rejected": "Спор отклонен",
-    "dispute:recalculated": "Спор закрыт пересчетом",
-    "manual_payment:paid": "Ручная оплата отмечена",
-    "manual_payment:confirmed": "Ручная оплата подтверждена",
-    "manual_payment:rejected": "Ручная оплата отклонена",
-    "notification:read": "Уведомление прочитано"
+    "collection:created": "РЎР±РѕСЂ СЃРѕР·РґР°РЅ",
+    "collection:updated": "РЎР±РѕСЂ РѕР±РЅРѕРІР»РµРЅ",
+    "collection:recalculated": "РЎР±РѕСЂ РїРµСЂРµСЃС‡РёС‚Р°РЅ",
+    "collection:sent_to_review": "Р Р°СЃС‡РµС‚ РѕС‚РїСЂР°РІР»РµРЅ РЅР° СЃРѕРіР»Р°СЃРѕРІР°РЅРёРµ",
+    "payment:created": "РџР»Р°С‚РµР¶ СЃРѕР·РґР°РЅ",
+    "payment:paid": "РџР»Р°С‚РµР¶ РїСЂРѕРІРµРґРµРЅ",
+    "payment:updated": "РџР»Р°С‚РµР¶ РѕР±РЅРѕРІР»РµРЅ",
+    "participant:confirmed": "РЈС‡Р°СЃС‚РЅРёРє РїРѕРґС‚РІРµСЂРґРёР» СЂР°СЃС‡РµС‚",
+    "dispute:disputed": "РЎРѕР·РґР°РЅ СЃРїРѕСЂ",
+    "dispute:accepted": "РЎРїРѕСЂ РїСЂРёРЅСЏС‚",
+    "dispute:rejected": "РЎРїРѕСЂ РѕС‚РєР»РѕРЅРµРЅ",
+    "dispute:recalculated": "РЎРїРѕСЂ Р·Р°РєСЂС‹С‚ РїРµСЂРµСЃС‡РµС‚РѕРј",
+    "manual_payment:paid": "Р СѓС‡РЅР°СЏ РѕРїР»Р°С‚Р° РѕС‚РјРµС‡РµРЅР°",
+    "manual_payment:confirmed": "Р СѓС‡РЅР°СЏ РѕРїР»Р°С‚Р° РїРѕРґС‚РІРµСЂР¶РґРµРЅР°",
+    "manual_payment:rejected": "Р СѓС‡РЅР°СЏ РѕРїР»Р°С‚Р° РѕС‚РєР»РѕРЅРµРЅР°",
+    "notification:read": "РЈРІРµРґРѕРјР»РµРЅРёРµ РїСЂРѕС‡РёС‚Р°РЅРѕ"
   };
-  return labels[`${entry.entityType}:${entry.action}`] ?? `${entry.entityType} · ${entry.action}`;
+  return labels[`${entry.entityType}:${entry.action}`] ?? `${entry.entityType} В· ${entry.action}`;
 }
 
 function auditMetaLabel(entry, bundle) {
@@ -3292,45 +3355,45 @@ function auditMetaLabel(entry, bundle) {
 function coveredParticipantsLabel(participants) {
 
   if (!participants.length) {
-    return "Персональная доля";
+    return "РџРµСЂСЃРѕРЅР°Р»СЊРЅР°СЏ РґРѕР»СЏ";
   }
   if (participants.length === 1) {
-    return `За ${participants[0].displayNameSnapshot}`;
+    return `Р—Р° ${participants[0].displayNameSnapshot}`;
   }
   return participants.map((participant) => participant.displayNameSnapshot).join(" + ");
 }
 
 function displayNameByParticipantId(participants, participantId) {
-  return participants.find((participant) => participant.id === participantId)?.displayNameSnapshot ?? "другого участника";
+  return participants.find((participant) => participant.id === participantId)?.displayNameSnapshot ?? "РґСЂСѓРіРѕРіРѕ СѓС‡Р°СЃС‚РЅРёРєР°";
 }
 
 function paymentMethodTitle(method) {
-  return `Карта ${method.maskedPan}`;
+  return `РљР°СЂС‚Р° ${method.maskedPan}`;
 }
 
 function labelizeCollectionType(type) {
   const labels = {
-    picnic: "пикник",
-    restaurant: "ужин",
-    gift: "подарок",
-    trip: "поездка",
-    office: "офис",
-    rent: "аренда",
-    kids: "дети",
-    dacha: "дача",
-    other: "сбор"
+    picnic: "РїРёРєРЅРёРє",
+    restaurant: "СѓР¶РёРЅ",
+    gift: "РїРѕРґР°СЂРѕРє",
+    trip: "РїРѕРµР·РґРєР°",
+    office: "РѕС„РёСЃ",
+    rent: "Р°СЂРµРЅРґР°",
+    kids: "РґРµС‚Рё",
+    dacha: "РґР°С‡Р°",
+    other: "СЃР±РѕСЂ"
   };
   return labels[type] ?? type;
 }
 
 function labelizeGroupType(type) {
   const labels = {
-    friends: "друзья",
-    family: "семья",
-    work: "работа",
-    trip: "поездка",
-    event: "ивент",
-    other: "другое"
+    friends: "РґСЂСѓР·СЊСЏ",
+    family: "СЃРµРјСЊСЏ",
+    work: "СЂР°Р±РѕС‚Р°",
+    trip: "РїРѕРµР·РґРєР°",
+    event: "РёРІРµРЅС‚",
+    other: "РґСЂСѓРіРѕРµ"
   };
   return labels[type] ?? type;
 }
@@ -3338,64 +3401,64 @@ function labelizeGroupType(type) {
 function labelizeCollectionStatus(status) {
   const labels = {
     draft: "draft",
-    participants_selected: "участники",
-    expenses_added: "расходы",
-    rules_configured: "правила",
-    review: "согласование",
-    dispute_pending: "спор",
-    finalized: "итог",
-    payment_pending: "к оплате",
-    partially_paid: "частично оплачено",
-    paid: "оплачено",
-    closed: "закрыт",
-    cancelled: "отменен",
-    blocked: "заблокировано"
+    participants_selected: "СѓС‡Р°СЃС‚РЅРёРєРё",
+    expenses_added: "СЂР°СЃС…РѕРґС‹",
+    rules_configured: "РїСЂР°РІРёР»Р°",
+    review: "СЃРѕРіР»Р°СЃРѕРІР°РЅРёРµ",
+    dispute_pending: "СЃРїРѕСЂ",
+    finalized: "РёС‚РѕРі",
+    payment_pending: "Рє РѕРїР»Р°С‚Рµ",
+    partially_paid: "С‡Р°СЃС‚РёС‡РЅРѕ РѕРїР»Р°С‡РµРЅРѕ",
+    paid: "РѕРїР»Р°С‡РµРЅРѕ",
+    closed: "Р·Р°РєСЂС‹С‚",
+    cancelled: "РѕС‚РјРµРЅРµРЅ",
+    blocked: "Р·Р°Р±Р»РѕРєРёСЂРѕРІР°РЅРѕ"
   };
   return labels[status] ?? status;
 }
 
 function labelizeDisputeType(type) {
   const labels = {
-    not_eat: "не ел",
-    not_drink: "не пил",
-    partial_time: "не все время",
-    already_paid: "уже платил",
-    bought_something: "купил отдельно",
-    absent: "отсутствовал",
-    guest_absent: "гость отсутствовал",
-    payer_changed: "другой плательщик",
-    other: "другое"
+    not_eat: "РЅРµ РµР»",
+    not_drink: "РЅРµ РїРёР»",
+    partial_time: "РЅРµ РІСЃРµ РІСЂРµРјСЏ",
+    already_paid: "СѓР¶Рµ РїР»Р°С‚РёР»",
+    bought_something: "РєСѓРїРёР» РѕС‚РґРµР»СЊРЅРѕ",
+    absent: "РѕС‚СЃСѓС‚СЃС‚РІРѕРІР°Р»",
+    guest_absent: "РіРѕСЃС‚СЊ РѕС‚СЃСѓС‚СЃС‚РІРѕРІР°Р»",
+    payer_changed: "РґСЂСѓРіРѕР№ РїР»Р°С‚РµР»СЊС‰РёРє",
+    other: "РґСЂСѓРіРѕРµ"
   };
   return labels[type] ?? type;
 }
 
 function disputeStatusLabel(status) {
   const labels = {
-    created: "создан",
-    under_review: "на рассмотрении",
-    accepted: "принят",
-    rejected: "отклонен",
-    resolved_by_recalculation: "решен пересчетом",
-    cancelled: "отменен"
+    created: "СЃРѕР·РґР°РЅ",
+    under_review: "РЅР° СЂР°СЃСЃРјРѕС‚СЂРµРЅРёРё",
+    accepted: "РїСЂРёРЅСЏС‚",
+    rejected: "РѕС‚РєР»РѕРЅРµРЅ",
+    resolved_by_recalculation: "СЂРµС€РµРЅ РїРµСЂРµСЃС‡РµС‚РѕРј",
+    cancelled: "РѕС‚РјРµРЅРµРЅ"
   };
   return labels[status] ?? status;
 }
 
 function manualPaymentMethodLabel(method) {
   const labels = {
-    sbp: "СБП",
-    cash: "Наличные",
-    card: "Карта",
-    other: "Другое"
+    sbp: "РЎР‘Рџ",
+    cash: "РќР°Р»РёС‡РЅС‹Рµ",
+    card: "РљР°СЂС‚Р°",
+    other: "Р”СЂСѓРіРѕРµ"
   };
   return labels[method] ?? method;
 }
 
 function manualPaymentStatusLabel(status) {
   const labels = {
-    submitted: "ждет подтверждения",
-    confirmed: "подтверждено",
-    rejected: "отклонено"
+    submitted: "Р¶РґРµС‚ РїРѕРґС‚РІРµСЂР¶РґРµРЅРёСЏ",
+    confirmed: "РїРѕРґС‚РІРµСЂР¶РґРµРЅРѕ",
+    rejected: "РѕС‚РєР»РѕРЅРµРЅРѕ"
   };
   return labels[status] ?? status;
 }
@@ -3414,7 +3477,7 @@ async function confirmCurrentParticipantReview() {
   await refreshAppData();
   renderAll();
   renderScreenDependents();
-  setStatus("Согласование подтверждено", true);
+  setStatus("РЎРѕРіР»Р°СЃРѕРІР°РЅРёРµ РїРѕРґС‚РІРµСЂР¶РґРµРЅРѕ", true);
 }
 
 function renderOrganizerExpenseCard(bundle, expense) {
@@ -3440,20 +3503,20 @@ function renderOrganizerExpenseCard(bundle, expense) {
                       .map(
                         (rule) => `
                           <div class="line-item muted">
-                            <span>${escapeHtml(displayNameByParticipantId(bundle.participants, rule.participantId))} · ${escapeHtml(rule.splitMode)}</span>
+                            <span>${escapeHtml(displayNameByParticipantId(bundle.participants, rule.participantId))} В· ${escapeHtml(rule.splitMode)}</span>
                             <em>${escapeHtml(describeShareRule(rule))}</em>
                           </div>
                         `
                       )
                       .join("")
-                  : '<div class="line-item muted"><span>Нет правил по позициям</span><em>готово</em></div>'
+                  : '<div class="line-item muted"><span>РќРµС‚ РїСЂР°РІРёР» РїРѕ РїРѕР·РёС†РёСЏРј</span><em>РіРѕС‚РѕРІРѕ</em></div>'
               }
-              <button class="mini-action" type="button" data-action="add-expense-rule" data-expense-id="${expense.id}" data-expense-item-id="${item.id}">Применить правило</button>
+              <button class="mini-action" type="button" data-action="add-expense-rule" data-expense-id="${expense.id}" data-expense-item-id="${item.id}">РџСЂРёРјРµРЅРёС‚СЊ РїСЂР°РІРёР»Рѕ</button>
             </div>
           `;
         })
         .join("")
-    : '<div class="line-item muted"><span>Позиции чека пока не добавлены</span><em>равное деление</em></div>';
+    : '<div class="line-item muted"><span>РџРѕР·РёС†РёРё С‡РµРєР° РїРѕРєР° РЅРµ РґРѕР±Р°РІР»РµРЅС‹</span><em>СЂР°РІРЅРѕРµ РґРµР»РµРЅРёРµ</em></div>';
 
   return `
     <article class="detail-panel bottom-gap">
@@ -3470,7 +3533,7 @@ function renderOrganizerExpenseCard(bundle, expense) {
         <input id="expense-item-title-${expense.id}" class="text-input" placeholder="For example, dessert" />
       </div>
       <div class="mini-section">
-        <label class="field-label" for="expense-item-amount-${expense.id}">Item amount, ₽</label>
+        <label class="field-label" for="expense-item-amount-${expense.id}">Item amount, в‚Ѕ</label>
         <input id="expense-item-amount-${expense.id}" class="text-input" inputmode="decimal" placeholder="300" />
       </div>
       <button class="secondary-button" type="button" data-action="add-expense-item" data-expense-id="${expense.id}">Add item</button>
@@ -3510,13 +3573,13 @@ function describeShareRule(rule) {
     return rule.reason ?? "excluded";
   }
   if (rule.splitMode === "fixed") {
-    return `${formatMoney(rule.fixedAmountMinor ?? 0)}${rule.reason ? ` · ${rule.reason}` : ""}`;
+    return `${formatMoney(rule.fixedAmountMinor ?? 0)}${rule.reason ? ` В· ${rule.reason}` : ""}`;
   }
   if (rule.splitMode === "percent") {
-    return `${rule.percent ?? 0}%${rule.reason ? ` · ${rule.reason}` : ""}`;
+    return `${rule.percent ?? 0}%${rule.reason ? ` В· ${rule.reason}` : ""}`;
   }
   if (rule.splitMode === "weights") {
-    return `weight ${rule.weight ?? 1}${rule.reason ? ` · ${rule.reason}` : ""}`;
+    return `weight ${rule.weight ?? 1}${rule.reason ? ` В· ${rule.reason}` : ""}`;
   }
   return rule.reason ?? rule.splitMode;
 }
@@ -3558,26 +3621,26 @@ async function addExpenseRuleForParticipant(source) {
   await refreshAppData();
   renderAll();
   renderScreenDependents();
-  setStatus(`Правило по позиции добавлено: ${splitMode}`, true);
+  setStatus(`РџСЂР°РІРёР»Рѕ РїРѕ РїРѕР·РёС†РёРё РґРѕР±Р°РІР»РµРЅРѕ: ${splitMode}`, true);
 }
 
 function paymentMethodStatusLabel(status) {
   const labels = {
-    pending_binding: "ожидает",
-    requires_confirmation: "нужно подтверждение",
-    active: "активна",
-    failed: "ошибка",
-    expired: "истекла",
-    revoked: "отвязана"
+    pending_binding: "РѕР¶РёРґР°РµС‚",
+    requires_confirmation: "РЅСѓР¶РЅРѕ РїРѕРґС‚РІРµСЂР¶РґРµРЅРёРµ",
+    active: "Р°РєС‚РёРІРЅР°",
+    failed: "РѕС€РёР±РєР°",
+    expired: "РёСЃС‚РµРєР»Р°",
+    revoked: "РѕС‚РІСЏР·Р°РЅР°"
   };
   return labels[status] ?? status;
 }
 
 function autoPaymentPreviewStatusLabel(status) {
   const labels = {
-    eligible: "готово",
-    blocked: "заблокировано",
-    already_exists: "уже создано"
+    eligible: "РіРѕС‚РѕРІРѕ",
+    blocked: "Р·Р°Р±Р»РѕРєРёСЂРѕРІР°РЅРѕ",
+    already_exists: "СѓР¶Рµ СЃРѕР·РґР°РЅРѕ"
   };
   return labels[status] ?? status;
 }
@@ -3594,31 +3657,31 @@ function autoPaymentPreviewPillClass(status) {
 
 function autoPaymentReasonLabel(reasonCode) {
   const labels = {
-    eligible: "Готово к списанию",
-    no_rule: "Нет правила",
-    rule_disabled: "Правило выключено",
-    missing_payment_method: "Нет активного метода",
-    objection_window_open: "Открыто окно возражений",
-    participant_type_not_allowed: "Тип участника не покрывается",
-    covered_participant_limit: "Превышен лимит участников",
-    collection_limit_exceeded: "Превышен лимит на сбор",
-    daily_limit_exceeded: "Превышен дневной лимит",
-    monthly_limit_exceeded: "Превышен месячный лимит",
-    existing_payment: "Платеж уже существует",
-    unlinked_responsible_user: "Нет связанного пользователя"
+    eligible: "Р“РѕС‚РѕРІРѕ Рє СЃРїРёСЃР°РЅРёСЋ",
+    no_rule: "РќРµС‚ РїСЂР°РІРёР»Р°",
+    rule_disabled: "РџСЂР°РІРёР»Рѕ РІС‹РєР»СЋС‡РµРЅРѕ",
+    missing_payment_method: "РќРµС‚ Р°РєС‚РёРІРЅРѕРіРѕ РјРµС‚РѕРґР°",
+    objection_window_open: "РћС‚РєСЂС‹С‚Рѕ РѕРєРЅРѕ РІРѕР·СЂР°Р¶РµРЅРёР№",
+    participant_type_not_allowed: "РўРёРї СѓС‡Р°СЃС‚РЅРёРєР° РЅРµ РїРѕРєСЂС‹РІР°РµС‚СЃСЏ",
+    covered_participant_limit: "РџСЂРµРІС‹С€РµРЅ Р»РёРјРёС‚ СѓС‡Р°СЃС‚РЅРёРєРѕРІ",
+    collection_limit_exceeded: "РџСЂРµРІС‹С€РµРЅ Р»РёРјРёС‚ РЅР° СЃР±РѕСЂ",
+    daily_limit_exceeded: "РџСЂРµРІС‹С€РµРЅ РґРЅРµРІРЅРѕР№ Р»РёРјРёС‚",
+    monthly_limit_exceeded: "РџСЂРµРІС‹С€РµРЅ РјРµСЃСЏС‡РЅС‹Р№ Р»РёРјРёС‚",
+    existing_payment: "РџР»Р°С‚РµР¶ СѓР¶Рµ СЃСѓС‰РµСЃС‚РІСѓРµС‚",
+    unlinked_responsible_user: "РќРµС‚ СЃРІСЏР·Р°РЅРЅРѕРіРѕ РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ"
   };
   return labels[reasonCode] ?? reasonCode;
 }
 
 function notificationTypeLabel(type) {
   const labels = {
-    collection_review_requested: "согласование",
-    participant_confirmed: "подтверждено",
-    dispute_created: "спор",
-    dispute_updated: "обновление",
-    manual_payment_submitted: "подтверждение",
-    manual_payment_confirmed: "ручная оплата",
-    manual_payment_rejected: "отклонено"
+    collection_review_requested: "СЃРѕРіР»Р°СЃРѕРІР°РЅРёРµ",
+    participant_confirmed: "РїРѕРґС‚РІРµСЂР¶РґРµРЅРѕ",
+    dispute_created: "СЃРїРѕСЂ",
+    dispute_updated: "РѕР±РЅРѕРІР»РµРЅРёРµ",
+    manual_payment_submitted: "РїРѕРґС‚РІРµСЂР¶РґРµРЅРёРµ",
+    manual_payment_confirmed: "СЂСѓС‡РЅР°СЏ РѕРїР»Р°С‚Р°",
+    manual_payment_rejected: "РѕС‚РєР»РѕРЅРµРЅРѕ"
   };
   return labels[type] ?? type;
 }
@@ -3635,11 +3698,11 @@ function notificationPillClass(type) {
 
 function paymentStatusLabel(status) {
   const labels = {
-    pending: "ждет оплаты",
-    paid: "оплачено",
-    partial: "частично",
-    disputed: "спор",
-    failed: "ошибка"
+    pending: "Р¶РґРµС‚ РѕРїР»Р°С‚С‹",
+    paid: "РѕРїР»Р°С‡РµРЅРѕ",
+    partial: "С‡Р°СЃС‚РёС‡РЅРѕ",
+    disputed: "СЃРїРѕСЂ",
+    failed: "РѕС€РёР±РєР°"
   };
   return labels[status] ?? status;
 }
@@ -3685,7 +3748,7 @@ function formatMoney(amountMinor) {
 function formatNotificationTime(value) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) {
-    return "сейчас";
+    return "СЃРµР№С‡Р°СЃ";
   }
   return new Intl.DateTimeFormat("ru-RU", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }).format(date);
 }
@@ -3718,7 +3781,7 @@ function setCollectionBalancePill(id, dueMinor) {
   if (!node) {
     return;
   }
-  node.textContent = dueMinor > 0 ? "Не оплачено" : "Оплачено";
+  node.textContent = dueMinor > 0 ? "РќРµ РѕРїР»Р°С‡РµРЅРѕ" : "РћРїР»Р°С‡РµРЅРѕ";
   node.classList.toggle("pill-warn", dueMinor > 0);
   node.classList.toggle("pill-success", dueMinor <= 0);
 }
@@ -3816,5 +3879,6 @@ bootstrap().catch((error) => {
   console.error(error);
   document.body.classList.remove("is-booting");
   haptic("warning");
-  setStatus(error instanceof Error ? error.message : "Фронтенд не запустился", false);
+  setStatus(error instanceof Error ? error.message : "Р¤СЂРѕРЅС‚РµРЅРґ РЅРµ Р·Р°РїСѓСЃС‚РёР»СЃСЏ", false);
 });
+

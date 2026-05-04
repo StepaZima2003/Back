@@ -1,9 +1,30 @@
 ﻿const DEMO = {
-  alex: { key: "alex", phone: "+79990030001", displayName: "РђР»РµРєСЃРµР№" },
-  sasha: { key: "sasha", phone: "+79990030002", displayName: "РЎР°С€Р°" },
-  dima: { key: "dima", phone: "+79990030003", displayName: "Р”РёРјР°" },
-  masha: { key: "masha", phone: "+79990030004", displayName: "РњР°С€Р°" }
+  alex: { key: "alex", phone: "+79990030001", displayName: "Алексей" },
+  sasha: { key: "sasha", phone: "+79990030002", displayName: "Саша" },
+  dima: { key: "dima", phone: "+79990030003", displayName: "Дима" },
+  masha: { key: "masha", phone: "+79990030004", displayName: "Маша" }
 };
+
+const BROKEN_TEXT_FIXUPS = new Map([
+  ["РђР»РµРєСЃРµР№", "Алексей"],
+  ["РЎР°С€Р°", "Саша"],
+  ["Р”РёРјР°", "Дима"],
+  ["РњР°С€Р°", "Маша"],
+  ["РСЂР°", "Ира"],
+  ["РР»СЊСЏ", "Илья"],
+  ["РљР°С‚СЏ", "Катя"],
+  ["РћР»РµРі", "Олег"],
+  ["РђРЅСЏ", "Аня"],
+  ["РЈС‡Р°СЃС‚РЅРёРє", "Участник"],
+  ["РЁР°С€Р»С‹РєРё РІ СЃСѓР±Р±РѕС‚Сѓ", "Шашлыки в субботу"],
+  ["Р”Р°С‡Р°", "Дача"],
+  ["Р”Р°С‡Р° РЅР° РјР°Р№СЃРєРёРµ", "Шашлыки на даче"],
+  ["РџРѕРґР°СЂРѕРє РСЂРµ", "Подарок Ире"],
+  ["РџСЂРѕРґСѓРєС‚С‹ Рё Р±РµСЃРµРґРєР°", "Продукты и беседка"],
+  ["РђСЂРµРЅРґР° РґРѕРјР°", "Мясо для шашлыка"],
+  ["РџРѕРґР°СЂРѕС‡РЅС‹Р№ СЃРµСЂС‚РёС„РёРєР°С‚", "Подарочный сертификат"],
+  ["РњРµРЅСЏ РЅРµ Р±С‹Р»Рѕ РЅР° СѓР¶РёРЅРµ Рё Р±Р°РЅРµ.", "Меня не было на ужине и в бане."]
+]);
 
 const state = {
   currentScreen: "home",
@@ -132,6 +153,210 @@ document.addEventListener("pointerdown", (event) => {
   });
 });
 
+function fixBrokenText(value) {
+  if (typeof value !== "string" || !value) {
+    return value;
+  }
+
+  let next = value;
+  for (const [broken, fixed] of BROKEN_TEXT_FIXUPS.entries()) {
+    next = next.split(broken).join(fixed);
+  }
+
+  const decoded = decodeUtf8Mojibake(next);
+  return decoded;
+}
+
+function decodeUtf8Mojibake(value) {
+  if (typeof value !== "string" || !value) {
+    return value;
+  }
+
+  let suspiciousPairs = 0;
+  for (let index = 0; index < value.length - 1; index += 1) {
+    const current = value[index];
+    const next = value[index + 1];
+    if ((current === "Р" || current === "С" || current === "В") && isCyrillicChar(next)) {
+      suspiciousPairs += 1;
+    }
+  }
+
+  if (!suspiciousPairs) {
+    return value;
+  }
+
+  const bytes = [];
+  for (const char of value) {
+    const byte = cp1251ByteFromChar(char);
+    if (byte === null) {
+      return value;
+    }
+    bytes.push(byte);
+  }
+
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(new Uint8Array(bytes));
+  } catch {
+    return value;
+  }
+}
+
+function cp1251ByteFromChar(char) {
+  const code = char.charCodeAt(0);
+  if (code <= 0x7f) {
+    return code;
+  }
+  if (code >= 0x0410 && code <= 0x044f) {
+    return code - 0x0350;
+  }
+
+  const specialMap = {
+    0x0401: 0xa8,
+    0x0402: 0x80,
+    0x0403: 0x81,
+    0x0404: 0xaa,
+    0x0405: 0xbd,
+    0x0406: 0xb2,
+    0x0407: 0xaf,
+    0x0408: 0xa3,
+    0x0409: 0x8a,
+    0x040a: 0x8c,
+    0x040b: 0x8e,
+    0x040c: 0x8d,
+    0x040e: 0xa1,
+    0x040f: 0x8f,
+    0x0451: 0xb8,
+    0x0452: 0x90,
+    0x0453: 0x83,
+    0x0454: 0xba,
+    0x0455: 0xbe,
+    0x0456: 0xb3,
+    0x0457: 0xbf,
+    0x0458: 0xbc,
+    0x0459: 0x9a,
+    0x045a: 0x9c,
+    0x045b: 0x9e,
+    0x045c: 0x9d,
+    0x045e: 0xa2,
+    0x045f: 0x9f,
+    0x0490: 0xa5,
+    0x0491: 0xb4,
+    0x00a0: 0xa0,
+    0x00a4: 0xa4,
+    0x00a6: 0xa6,
+    0x00a7: 0xa7,
+    0x00a9: 0xa9,
+    0x00ab: 0xab,
+    0x00ac: 0xac,
+    0x00ad: 0xad,
+    0x00ae: 0xae,
+    0x00b0: 0xb0,
+    0x00b1: 0xb1,
+    0x00b5: 0xb5,
+    0x00b6: 0xb6,
+    0x00b7: 0xb7,
+    0x00bb: 0xbb,
+    0x2013: 0x96,
+    0x2014: 0x97,
+    0x2018: 0x91,
+    0x2019: 0x92,
+    0x201a: 0x82,
+    0x201c: 0x93,
+    0x201d: 0x94,
+    0x201e: 0x84,
+    0x2020: 0x86,
+    0x2021: 0x87,
+    0x2022: 0x95,
+    0x2026: 0x85,
+    0x2030: 0x89,
+    0x2039: 0x8b,
+    0x203a: 0x9b,
+    0x20ac: 0x88,
+    0x2116: 0xb9,
+    0x2122: 0x99
+  };
+
+  return specialMap[code] ?? null;
+}
+
+function isCyrillicChar(char) {
+  const code = char.charCodeAt(0);
+  return (code >= 0x0400 && code <= 0x04ff) || code === 0x2116;
+}
+
+function repairVisibleText(root = document.body) {
+  if (!root) {
+    return;
+  }
+
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  let node = walker.nextNode();
+  while (node) {
+    if (node.parentElement?.tagName !== "SCRIPT" && node.parentElement?.tagName !== "STYLE") {
+      const fixed = fixBrokenText(node.textContent);
+      if (fixed !== node.textContent) {
+        node.textContent = fixed;
+      }
+    }
+    node = walker.nextNode();
+  }
+
+  root.querySelectorAll("[placeholder], [title], [aria-label], img[alt]").forEach((element) => {
+    ["placeholder", "title", "aria-label", "alt"].forEach((attribute) => {
+      const value = element.getAttribute(attribute);
+      if (!value) {
+        return;
+      }
+      const fixed = fixBrokenText(value);
+      if (fixed !== value) {
+        element.setAttribute(attribute, fixed);
+      }
+    });
+  });
+}
+
+function normalizeStateLabels() {
+  if (state.me) {
+    state.me.displayName = fixBrokenText(state.me.displayName);
+  }
+
+  state.collections.forEach((collection) => {
+    collection.title = fixBrokenText(collection.title);
+  });
+
+  state.notifications.forEach((notification) => {
+    notification.title = fixBrokenText(notification.title);
+    notification.body = fixBrokenText(notification.body);
+  });
+
+  state.friends.forEach((friend) => {
+    friend.displayName = fixBrokenText(friend.displayName);
+  });
+
+  state.groups.forEach((group) => {
+    group.title = fixBrokenText(group.title);
+  });
+
+  for (const user of state.userDirectory.values()) {
+    user.displayName = fixBrokenText(user.displayName);
+  }
+
+  state.collectionBundles.forEach((bundle) => {
+    bundle.collection.title = fixBrokenText(bundle.collection.title);
+    bundle.participants.forEach((participant) => {
+      participant.displayNameSnapshot = fixBrokenText(participant.displayNameSnapshot);
+    });
+    bundle.expenses.forEach((expense) => {
+      expense.title = fixBrokenText(expense.title);
+      (expense.items ?? []).forEach((item) => {
+        item.title = fixBrokenText(item.title);
+      });
+    });
+    bundle.disputes.forEach((dispute) => {
+      dispute.message = fixBrokenText(dispute.message);
+    });
+  });
+}
 function setActiveScreen(screenName, navName) {
   state.currentScreen = screenName;
   state.activeNav = navName;
@@ -678,6 +903,7 @@ async function refreshAppData() {
   state.dueBundles = state.collectionBundles.filter((bundle) => bundle.userDueMinor > 0 && bundle.collection.organizerId !== me.id);
   state.organizerBundles = state.collectionBundles.filter((bundle) => bundle.collection.organizerId === me.id);
   state.friends = await buildFriendDirectory();
+  normalizeStateLabels();
 
   const collectionIds = new Set(state.collectionBundles.map((bundle) => bundle.collection.id));
   if (!state.selectedCollectionId || !collectionIds.has(state.selectedCollectionId)) {
@@ -796,6 +1022,7 @@ function renderAll() {
   renderFriendsScreen();
   renderGroupsScreen();
   renderProfileScreen();
+  repairVisibleText();
 }
 
 function renderShowcase() {
@@ -825,33 +1052,33 @@ function renderShowcase() {
 
   text("showcase-collection-title", bundle.collection.title);
   text("showcase-collected-amount", formatMoney(bundle.collectedMinor));
-  text("showcase-collected-subtitle", `РёР· ${formatMoney(bundle.collection.totalAmountMinor)}`);
+  text("showcase-collected-subtitle", `из ${formatMoney(bundle.collection.totalAmountMinor)}`);
   text("showcase-progress-value", `${bundle.progressPercent}%`);
-  text("showcase-remaining-note", `РћСЃС‚Р°Р»РѕСЃСЊ СЃРѕР±СЂР°С‚СЊ ${formatMoney(remainingMinor)}`);
-  text("showcase-deadline-note", bundle.progressPercent >= 100 ? "Р’СЃРµ СѓС‡Р°СЃС‚РЅРёРєРё Р·Р°РєСЂС‹Р»Рё СЃРІРѕРё РґРѕР»Рё" : "РќР°РїРѕРјРёРЅР°РЅРёСЏ РјРѕР¶РЅРѕ РѕС‚РїСЂР°РІРёС‚СЊ РІ РѕРґРёРЅ С‚Р°Рї");
+  text("showcase-remaining-note", `Осталось собрать ${formatMoney(remainingMinor)}`);
+  text("showcase-deadline-note", bundle.progressPercent >= 100 ? "Все участники закрыли свои доли" : "Напоминания можно отправить в один тап");
   text("showcase-expenses-total", formatMoney(bundle.collection.totalAmountMinor));
-  text("showcase-expenses-count", `${expenseItemsCount} РїРѕР·РёС†РёР№`);
-  text("showcase-participants-total", `${bundle.participants.length} С‡РµР»РѕРІРµРє`);
+  text("showcase-expenses-count", `${expenseItemsCount} позиций`);
+  text("showcase-participants-total", `${bundle.participants.length} человек`);
   text("showcase-expenses-screen-total", formatMoney(bundle.collection.totalAmountMinor));
-  text("showcase-expenses-screen-count", `${expenseItemsCount} РїРѕР·РёС†РёР№`);
+  text("showcase-expenses-screen-count", `${expenseItemsCount} позиций`);
   text("showcase-settlement-total", formatMoney(remainingMinor));
   text(
     "showcase-reminder-note",
-    dueParticipants.some((item) => item.dueMinor > 0) ? "РќР°РїРѕРјРёРЅР°РЅРёСЏ РіРѕС‚РѕРІС‹ Рє РѕС‚РїСЂР°РІРєРµ" : "Р’СЃРµ РґРѕР»РіРё Р·Р°РєСЂС‹С‚С‹"
+    dueParticipants.some((item) => item.dueMinor > 0) ? "Напоминания готовы к отправке" : "Все долги закрыты"
   );
   text(
     "showcase-finish-title",
-    remainingMinor <= 0 || bundle.collection.status === "paid" || bundle.collection.status === "closed" ? "РЎР±РѕСЂ Р·Р°РІРµСЂС€РµРЅ!" : "РЎР±РѕСЂ РёРґРµС‚ РїРѕ РїР»Р°РЅСѓ"
+    remainingMinor <= 0 || bundle.collection.status === "paid" || bundle.collection.status === "closed" ? "Сбор завершен!" : "Сбор идет по плану"
   );
   text(
     "showcase-finish-subtitle",
     remainingMinor <= 0 || bundle.collection.status === "paid" || bundle.collection.status === "closed"
-      ? "Р’СЃРµ СЂР°СЃСЃС‡РёС‚Р°Р»РёСЃСЊ. Р”Рѕ РЅРѕРІС‹С… РІСЃС‚СЂРµС‡."
-      : `РћСЃС‚Р°Р»РѕСЃСЊ СЃРѕР±СЂР°С‚СЊ ${formatMoney(remainingMinor)}. Р’СЃСЏ РёСЃС‚РѕСЂРёСЏ СѓР¶Рµ РїРѕРґ РєРѕРЅС‚СЂРѕР»РµРј.`
+      ? "Все рассчитались. До новых встреч."
+      : `Осталось собрать ${formatMoney(remainingMinor)}. Вся история уже под контролем.`
   );
   text(
     "showcase-receipt-note",
-    bundle.expenses.length ? `РќР°Р№РґРµРЅРѕ ${expenseItemsCount} РїРѕР·РёС†РёР№. РџСЂРѕРІРµСЂСЊС‚Рµ СЃРѕСЃС‚Р°РІ Рё РїРѕРґС‚РІРµСЂРґРёС‚Рµ.` : "Р”РѕР±Р°РІСЊС‚Рµ РїРµСЂРІС‹Р№ СЂР°СЃС…РѕРґ Рё РїРѕРґС‚РІРµСЂРґРёС‚Рµ СЃРѕСЃС‚Р°РІ."
+    bundle.expenses.length ? `Найдено ${expenseItemsCount} позиций. Проверьте состав и подтвердите.` : "Добавьте первый расход и подтвердите состав."
   );
 
   const progressRing = document.getElementById("showcase-progress-ring");
@@ -886,7 +1113,7 @@ function renderShowcase() {
             .filter((payment) => payment.payerParticipantId === participant.id && payment.status === "confirmed")
             .reduce((sum, payment) => sum + payment.amountMinor, 0);
         const amountMinor = dueMinor > 0 ? dueMinor : paidMinor;
-        const statusLabel = dueMinor > 0 ? "Рє РѕРїР»Р°С‚Рµ" : paidMinor > 0 ? "РІРЅРµСЃРµРЅРѕ" : "РІ СЃР±РѕСЂРµ";
+        const statusLabel = dueMinor > 0 ? "к оплате" : paidMinor > 0 ? "внесено" : "в сборе";
         return `
           <article class="showcase-participant-card">
             <span class="showcase-avatar-chip" style="${showcaseAvatarStyle(index + 1)}">${escapeHtml(initials(participant.displayNameSnapshot))}</span>
@@ -901,7 +1128,7 @@ function renderShowcase() {
 
   const expenseChips = document.getElementById("showcase-expense-chips");
   if (expenseChips) {
-    const categories = ["Р’СЃРµ", ...new Set(bundle.expenses.map((expense) => inferExpenseCategory(expense.title)).filter(Boolean))].slice(0, 5);
+    const categories = ["Все", ...new Set(bundle.expenses.map((expense) => inferExpenseCategory(expense.title)).filter(Boolean))].slice(0, 5);
     expenseChips.innerHTML = categories
       .map((category, index) => `<button class="mock-chip${index === 0 ? " is-active" : ""}" type="button">${escapeHtml(category)}</button>`)
       .join("");
@@ -911,7 +1138,7 @@ function renderShowcase() {
   if (expensesList) {
     expensesList.innerHTML = bundle.expenses.length
       ? bundle.expenses.slice(0, 6).map((expense) => renderShowcaseExpenseRow(expense)).join("")
-      : renderShowcaseEmpty("Р”РѕР±Р°РІСЊС‚Рµ РїРµСЂРІС‹Р№ СЂР°СЃС…РѕРґ, Рё РѕРЅ РїРѕСЏРІРёС‚СЃСЏ Р·РґРµСЃСЊ.");
+      : renderShowcaseEmpty("Добавьте первый расход, и он появится здесь.");
   }
 
   const receiptPaper = document.getElementById("showcase-receipt-paper");
@@ -991,19 +1218,19 @@ function renderShowcase() {
                   <div class="showcase-person-name">${escapeHtml(item.participant.displayNameSnapshot)}</div>
                   <div class="showcase-person-meta">${formatMoney(item.dueMinor)}</div>
                 </div>
-                <button class="mock-remind-button" type="button" data-go="inbox" data-nav="home">РќР°РїРѕРјРЅРёС‚СЊ</button>
+                <button class="mock-remind-button" type="button" data-go="inbox" data-nav="home">Напомнить</button>
               </article>
             `
           )
           .join("")
-      : renderShowcaseEmpty("РќРёРєС‚Рѕ РЅРёС‡РµРіРѕ РЅРµ РґРѕР»Р¶РµРЅ. Р­С‚РѕС‚ СЃР±РѕСЂ СѓР¶Рµ Р·Р°РєСЂС‹С‚.");
+      : renderShowcaseEmpty("Никто ничего не должен. Этот сбор уже закрыт.");
   }
 
   const notificationsList = document.getElementById("showcase-notifications-list");
   if (notificationsList) {
     notificationsList.innerHTML = state.notifications.length
       ? state.notifications.slice(0, 3).map((notification, index) => renderShowcaseNotificationRow(notification, index)).join("")
-      : renderShowcaseEmpty("РќРѕРІС‹С… СѓРІРµРґРѕРјР»РµРЅРёР№ РїРѕРєР° РЅРµС‚.");
+      : renderShowcaseEmpty("Новых уведомлений пока нет.");
   }
 
   const paymentMethods = document.getElementById("showcase-payment-methods");
@@ -1015,7 +1242,7 @@ function renderShowcase() {
           <div class="mock-card-chip"></div>
           <div>
             <strong>${escapeHtml(method.maskedPan)}</strong>
-            <p>${escapeHtml(method.isDefault ? "РћСЃРЅРѕРІРЅР°СЏ РєР°СЂС‚Р°" : paymentMethodStatusLabel(method.status))}</p>
+            <p>${escapeHtml(method.isDefault ? "Основная карта" : paymentMethodStatusLabel(method.status))}</p>
           </div>
         </article>
       `
@@ -1023,7 +1250,7 @@ function renderShowcase() {
     cards.push(`
       <article class="mock-payment-card is-add">
         <div class="mock-add-icon" aria-hidden="true"></div>
-        <p>Р”РѕР±Р°РІРёС‚СЊ РєР°СЂС‚Сѓ</p>
+        <p>Добавить карту</p>
       </article>
     `);
     paymentMethods.innerHTML = cards.join("");
@@ -1049,7 +1276,7 @@ function renderShowcaseExpenseRow(expense) {
 
 function renderShowcaseNotificationRow(notification, index) {
   const badgeClass = index === 0 ? "" : index === 1 ? " is-warn" : " is-muted";
-  const badgeLabel = index === 0 ? "вњ“" : index === 1 ? "!" : "+";
+  const badgeLabel = index === 0 ? "✓" : index === 1 ? "!" : "+";
   return `
     <article class="mock-notification-row">
       <div class="mock-notification-main">
@@ -1080,30 +1307,30 @@ function showcaseAvatarStyle(index) {
 }
 
 function inferExpenseCategory(title) {
-  const value = String(title ?? "").toLowerCase();
-  if (value.includes("РјСЏСЃ") || value.includes("С€Р°С€Р»С‹Рє")) {
-    return "Р•РґР°";
+  const value = fixBrokenText(String(title ?? "")).toLowerCase();
+  if (value.includes("мяс") || value.includes("шашлык")) {
+    return "Еда";
   }
-  if (value.includes("РѕРІРѕС‰") || value.includes("Р·РµР»")) {
-    return "РћРІРѕС‰Рё";
+  if (value.includes("овощ") || value.includes("зел")) {
+    return "Овощи";
   }
-  if (value.includes("РЅР°РїРёС‚") || value.includes("СЃРѕРє") || value.includes("РІРѕРґР°")) {
-    return "РќР°РїРёС‚РєРё";
+  if (value.includes("напит") || value.includes("сок") || value.includes("вода")) {
+    return "Напитки";
   }
-  if (value.includes("СѓРіРѕР»СЊ") || value.includes("СЂРѕР·Р¶РёРі")) {
-    return "Р”Р»СЏ РјР°РЅРіР°Р»Р°";
+  if (value.includes("уголь") || value.includes("розжиг")) {
+    return "Для мангала";
   }
-  if (value.includes("СЃРѕСѓСЃ") || value.includes("СЃРїРµС†")) {
-    return "РЎРѕСѓСЃС‹";
+  if (value.includes("соус") || value.includes("спец")) {
+    return "Соусы";
   }
-  if (value.includes("С…Р»РµР±") || value.includes("Р»Р°РІР°С€")) {
-    return "Р’С‹РїРµС‡РєР°";
+  if (value.includes("хлеб") || value.includes("лаваш")) {
+    return "Выпечка";
   }
-  return "Р’СЃРµ";
+  return "Все";
 }
 
 function showcaseExpenseVisual(title) {
-  const value = String(title ?? "").toLowerCase();
+  const value = fixBrokenText(String(title ?? "")).toLowerCase();
   if (value.includes("мяс") || value.includes("шашлык")) {
     return { asset: "/assets/expense-steak.png", tone: "tone-steak" };
   }
@@ -1134,7 +1361,7 @@ function truncateText(value, length) {
 }
 
 function showcaseReceiptQuantity(title, index) {
-  const value = String(title ?? "").toLowerCase();
+  const value = fixBrokenText(String(title ?? "")).toLowerCase();
   if (value.includes("мяс") || value.includes("шашлык")) {
     return 2;
   }
@@ -1197,16 +1424,16 @@ function renderBootSkeletons() {
   const showcaseNotifications = document.getElementById("showcase-notifications-list");
   const showcasePayments = document.getElementById("showcase-payment-methods");
   if (showcaseExpenses) {
-    showcaseExpenses.innerHTML = `${renderShowcaseEmpty("Р—Р°РіСЂСѓР¶Р°РµРј СЂР°СЃС…РѕРґС‹...")}${renderShowcaseEmpty("Р—Р°РіСЂСѓР¶Р°РµРј СЂР°СЃС…РѕРґС‹...")}`;
+    showcaseExpenses.innerHTML = `${renderShowcaseEmpty("Загружаем расходы...")}${renderShowcaseEmpty("Загружаем расходы...")}`;
   }
   if (showcaseDebts) {
-    showcaseDebts.innerHTML = `${renderShowcaseEmpty("Р“РѕС‚РѕРІРёРј СЃРїРёСЃРѕРє РґРѕР»Р¶РЅРёРєРѕРІ...")}${renderShowcaseEmpty("Р“РѕС‚РѕРІРёРј СЃРїРёСЃРѕРє РґРѕР»Р¶РЅРёРєРѕРІ...")}`;
+    showcaseDebts.innerHTML = `${renderShowcaseEmpty("Готовим список должников...")}${renderShowcaseEmpty("Готовим список должников...")}`;
   }
   if (showcaseNotifications) {
-    showcaseNotifications.innerHTML = `${renderShowcaseEmpty("РџРѕРґС‚СЏРіРёРІР°РµРј СѓРІРµРґРѕРјР»РµРЅРёСЏ...")}`;
+    showcaseNotifications.innerHTML = `${renderShowcaseEmpty("Подтягиваем уведомления...")}`;
   }
   if (showcasePayments) {
-    showcasePayments.innerHTML = `${renderShowcaseEmpty("РџСЂРѕРІРµСЂСЏРµРј РјРµС‚РѕРґС‹ РѕРїР»Р°С‚С‹...")}`;
+    showcasePayments.innerHTML = `${renderShowcaseEmpty("Проверяем методы оплаты...")}`;
   }
 }
 
@@ -1226,6 +1453,7 @@ function renderScreenDependents() {
   if (state.currentScreen === "organizer") {
     renderOrganizerScreen();
   }
+  repairVisibleText();
 }
 
 function renderHome() {
@@ -1518,7 +1746,7 @@ function renderOrganizerScreen() {
     } else {
       items.push(`
         <div class="line-item">
-          <span>Р’СЃРµ СЃРїРѕРєРѕР№РЅРѕ, СЃРїРѕСЂРѕРІ Рё СЂСѓС‡РЅС‹С… РїРѕРґС‚РІРµСЂР¶РґРµРЅРёР№ РЅРµС‚.</span>
+          <span>Все СЃРїРѕРєРѕР№РЅРѕ, СЃРїРѕСЂРѕРІ Рё СЂСѓС‡РЅС‹С… РїРѕРґС‚РІРµСЂР¶РґРµРЅРёР№ РЅРµС‚.</span>
           <span class="pill pill-success">ok</span>
         </div>
       `);
@@ -1875,7 +2103,7 @@ function renderOrganizerExpenseCard(bundle, expense) {
       <div class="line-item">
         <div class="line-item-copy">
           <span>${escapeHtml(expense.title)}</span>
-          <div class="section-note">${expenseItems.length ? `${expenseItems.length} РїРѕР·РёС†РёР№` : "Р±РµР· itemization"}</div>
+          <div class="section-note">${expenseItems.length ? `${expenseItems.length} позиций` : "Р±РµР· itemization"}</div>
         </div>
         <strong>${formatMoney(expense.amountMinor)}</strong>
       </div>
@@ -1893,7 +2121,7 @@ function renderOrganizerExpenseCard(bundle, expense) {
         expenseItems.length
           ? `
             <div class="mini-section">
-              <label class="field-label" for="expense-rule-participant-${expense.id}">РСЃРєР»СЋС‡РёС‚СЊ СѓС‡Р°СЃС‚РЅРёРєР° РёР· РІС‹Р±СЂР°РЅРЅРѕР№ РїРѕР·РёС†РёРё</label>
+              <label class="field-label" for="expense-rule-participant-${expense.id}">РСЃРєР»СЋС‡РёС‚СЊ СѓС‡Р°СЃС‚РЅРёРєР° из РІС‹Р±СЂР°РЅРЅРѕР№ РїРѕР·РёС†РёРё</label>
               <select id="expense-rule-participant-${expense.id}" class="text-input">${participantOptions}</select>
             </div>
             <div class="mini-section">
@@ -2558,7 +2786,7 @@ async function excludeExpenseItemForParticipant(source) {
       participantId,
       expenseItemId,
       splitMode: "excluded",
-      reason: reasonInput?.value?.trim() || "РСЃРєР»СЋС‡РµРЅРѕ РёР· СЃС†РµРЅР°СЂРёСЏ С‡РµРєР° РїРѕ РїРѕР·РёС†РёСЏРј"
+      reason: reasonInput?.value?.trim() || "РСЃРєР»СЋС‡РµРЅРѕ из СЃС†РµРЅР°СЂРёСЏ С‡РµРєР° РїРѕ РїРѕР·РёС†РёСЏРј"
     }
   });
 
@@ -2712,7 +2940,7 @@ async function updatePaymentMethodSetup(source, action) {
       token: state.session.accessToken,
       body: {
         errorCode: "frontend_mock_failure",
-        reason: "РћС€РёР±РєР° РёР· СЃС†РµРЅР°СЂРёСЏ РїСЂРѕС„РёР»СЏ"
+        reason: "РћС€РёР±РєР° из СЃС†РµРЅР°СЂРёСЏ РїСЂРѕС„РёР»СЏ"
       }
     });
   }
@@ -2863,7 +3091,7 @@ function openNotification(notificationId) {
 
   const bundle = state.collectionBundles.find((item) => item.collection.id === notification.collectionId);
   if (!bundle) {
-    setStatus("РЎР±РѕСЂ РёР· СѓРІРµРґРѕРјР»РµРЅРёСЏ РЅРµ РЅР°Р№РґРµРЅ", false);
+    setStatus("РЎР±РѕСЂ из СѓРІРµРґРѕРјР»РµРЅРёСЏ РЅРµ РЅР°Р№РґРµРЅ", false);
     return;
   }
 
@@ -3158,7 +3386,7 @@ function renderExplanation(bundle) {
       const excluded = calc.explanation.excluded
         .map(
           (line) =>
-            `<div class="line-item muted"><span>${escapeHtml(line.expenseTitle)}</span><em>${escapeHtml(line.reason ?? "РёСЃРєР»СЋС‡РµРЅРѕ РёР· СЂР°СЃС‡РµС‚Р°")}</em></div>`
+            `<div class="line-item muted"><span>${escapeHtml(line.expenseTitle)}</span><em>${escapeHtml(line.reason ?? "РёСЃРєР»СЋС‡РµРЅРѕ из СЂР°СЃС‡РµС‚Р°")}</em></div>`
         )
         .join("");
 
@@ -3407,7 +3635,7 @@ function labelizeCollectionStatus(status) {
     review: "СЃРѕРіР»Р°СЃРѕРІР°РЅРёРµ",
     dispute_pending: "СЃРїРѕСЂ",
     finalized: "РёС‚РѕРі",
-    payment_pending: "Рє РѕРїР»Р°С‚Рµ",
+    payment_pending: "к оплате",
     partially_paid: "С‡Р°СЃС‚РёС‡РЅРѕ РѕРїР»Р°С‡РµРЅРѕ",
     paid: "РѕРїР»Р°С‡РµРЅРѕ",
     closed: "Р·Р°РєСЂС‹С‚",
@@ -3754,7 +3982,7 @@ function formatNotificationTime(value) {
 }
 
 function initials(value) {
-  return (value ?? "")
+  return fixBrokenText(value ?? "")
     .split(/\s+/)
     .filter(Boolean)
     .slice(0, 2)
@@ -3765,7 +3993,7 @@ function initials(value) {
 function text(id, value) {
   const node = document.getElementById(id);
   if (node) {
-    node.textContent = value;
+    node.textContent = fixBrokenText(value);
   }
 }
 
@@ -3781,7 +4009,7 @@ function setCollectionBalancePill(id, dueMinor) {
   if (!node) {
     return;
   }
-  node.textContent = dueMinor > 0 ? "РќРµ РѕРїР»Р°С‡РµРЅРѕ" : "РћРїР»Р°С‡РµРЅРѕ";
+  node.textContent = dueMinor > 0 ? "Не оплачено" : "Оплачено";
   node.classList.toggle("pill-warn", dueMinor > 0);
   node.classList.toggle("pill-success", dueMinor <= 0);
 }
@@ -3791,7 +4019,7 @@ function setStatus(message, ready) {
     statusDot.classList.toggle("is-ready", ready);
   }
   if (apiStatusText) {
-    apiStatusText.textContent = message;
+    apiStatusText.textContent = fixBrokenText(message);
   }
 }
 
@@ -3881,4 +4109,5 @@ bootstrap().catch((error) => {
   haptic("warning");
   setStatus(error instanceof Error ? error.message : "Р¤СЂРѕРЅС‚РµРЅРґ РЅРµ Р·Р°РїСѓСЃС‚РёР»СЃСЏ", false);
 });
+
 

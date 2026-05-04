@@ -3861,19 +3861,20 @@ body {
 .showcase-payment-grid {
   margin-top: 16px;
   display: grid;
-  grid-template-columns: minmax(0, 1.35fr) minmax(148px, 0.95fr);
+  grid-template-columns: 1fr;
   gap: 14px;
   align-items: stretch;
 }
 
 .mock-payment-card {
-  min-height: 166px;
+  min-height: 0;
   display: grid;
-  gap: 18px;
+  gap: 14px;
   align-content: space-between;
 }
 
 .mock-payment-card.is-primary {
+  min-height: 148px;
   background:
     radial-gradient(circle at top right, rgba(112, 235, 201, 0.14), transparent 38%),
     linear-gradient(180deg, rgba(32, 44, 77, 0.96) 0%, rgba(18, 28, 52, 0.98) 100%);
@@ -3912,22 +3913,29 @@ body {
 
 .mock-payment-card-copy {
   display: grid;
-  gap: 8px;
+  gap: 6px;
+  min-width: 0;
 }
 
 .mock-payment-card-number {
   color: #f6f8ff;
-  font-size: 22px;
+  font-size: 18px;
   line-height: 1.1;
   font-weight: 800;
-  letter-spacing: 0.03em;
+  letter-spacing: 0.02em;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .mock-payment-card.is-add {
+  min-height: 104px;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
   justify-items: start;
   align-content: center;
+  gap: 14px;
   color: rgba(192, 199, 219, 0.92);
   background:
     linear-gradient(180deg, rgba(32, 43, 75, 0.96) 0%, rgba(20, 29, 54, 0.98) 100%);
@@ -3964,6 +3972,15 @@ body {
 
 .mock-add-icon::after {
   transform: translate(-50%, -50%) rotate(90deg);
+}
+
+.mock-payment-card.is-add .mock-payment-card-copy strong {
+  font-size: 20px;
+  line-height: 1.1;
+}
+
+.mock-payment-card.is-add .mock-payment-card-copy p {
+  margin-top: 0;
 }
 
 .showcase-how-grid {

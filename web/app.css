@@ -2207,3 +2207,98 @@ body::before {
     animation: none !important;
   }
 }
+
+.confirmation-panel {
+  margin: 12px 0 18px;
+}
+
+.confirmation-grid {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.consent-card {
+  margin: 10px 0 0;
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.switch-copy {
+  min-width: 0;
+}
+
+.switch-copy .setting-title,
+.switch-copy .setting-sub {
+  overflow-wrap: anywhere;
+}
+
+.stacked-actions {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.stacked-actions .secondary-button {
+  margin-top: 0;
+}
+
+.timeline-list {
+  position: relative;
+  display: grid;
+  gap: 12px;
+}
+
+.timeline-item {
+  position: relative;
+  display: grid;
+  grid-template-columns: 18px 1fr;
+  gap: 12px;
+  min-width: 0;
+}
+
+.timeline-item:not(:last-child)::after {
+  content: "";
+  position: absolute;
+  left: 8px;
+  top: 20px;
+  bottom: -12px;
+  width: 1px;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.timeline-dot {
+  width: 16px;
+  height: 16px;
+  margin-top: 2px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #8d5cff, #24d4bc);
+  box-shadow: 0 0 0 4px rgba(141, 92, 255, 0.12);
+}
+
+.timeline-copy {
+  min-width: 0;
+}
+
+.timeline-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  color: #fff;
+  font-size: 13px;
+}
+
+.timeline-top strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.timeline-top span,
+.timeline-body {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}

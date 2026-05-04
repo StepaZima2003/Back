@@ -26,6 +26,9 @@ const state = {
   autopayRules: [],
   autopayPreviewByCollectionId: new Map(),
   autopayExecutionSummaryByCollectionId: new Map(),
+  auditLogByCollectionId: new Map(),
+  pendingPayConfirmationCollectionId: null,
+  pendingAutopayConfirmationCollectionId: null,
   friendships: [],
   friends: [],
   groups: [],
@@ -79,7 +82,7 @@ document.addEventListener("click", async (event) => {
   const paymentMethodId = target.getAttribute("data-payment-method-id");
   if (paymentMethodId) {
     state.selectedPaymentMethodId = paymentMethodId;
-    renderPayMethods();
+    renderPayScreen();
     return;
   }
 
@@ -133,6 +136,13 @@ function setActiveScreen(screenName, navName) {
   state.currentScreen = screenName;
   state.activeNav = navName;
 
+  if (screenName !== "pay") {
+    state.pendingPayConfirmationCollectionId = null;
+  }
+  if (screenName !== "organizer") {
+    state.pendingAutopayConfirmationCollectionId = null;
+  }
+
   screens.forEach((screen) => {
     const isActive = screen.dataset.screen === screenName;
     screen.classList.toggle("is-active", isActive);
@@ -153,16 +163,31 @@ function setActiveScreen(screenName, navName) {
   if (screenName === "paid" || screenName === "dispute-sent") {
     triggerCompletionFeedback();
   }
+
+  if (screenName === "collection" && state.selectedCollectionId) {
+    void ensureCollectionAuditLog(state.selectedCollectionId);
+  }
+  if (screenName === "organizer" && state.selectedOrganizerCollectionId) {
+    void ensureCollectionAuditLog(state.selectedOrganizerCollectionId);
+  }
 }
 
 async function runAction(action, source) {
   try {
     switch (action) {
       case "open-pay":
+        state.pendingPayConfirmationCollectionId = null;
         setActiveScreen("pay", "home");
         renderPayScreen();
         break;
-      case "pay-now":
+      case "open-pay-confirm":
+        armPaymentConfirmation();
+        break;
+      case "cancel-pay-confirm":
+        state.pendingPayConfirmationCollectionId = null;
+        renderPayScreen();
+        break;
+      case "confirm-pay-now":
         await submitPayment();
         break;
       case "submit-dispute":
@@ -253,9 +278,17 @@ async function runAction(action, source) {
         await saveAutopayRule();
         break;
       case "preview-autopay":
+        state.pendingAutopayConfirmationCollectionId = null;
         await syncOrganizerAutopayPreview();
         break;
-      case "execute-autopay":
+      case "open-autopay-confirm":
+        await armAutopayConfirmation();
+        break;
+      case "cancel-autopay-confirm":
+        state.pendingAutopayConfirmationCollectionId = null;
+        renderOrganizerScreen();
+        break;
+      case "confirm-execute-autopay":
         await executeOrganizerAutopay();
         break;
       default:
@@ -655,9 +688,36 @@ async function refreshAppData() {
     state.selectedOrganizerCollectionId = state.organizerBundles[0]?.collection.id ?? null;
   }
 
+  const auditTargets = [...new Set([state.selectedCollectionId, state.selectedOrganizerCollectionId].filter(Boolean))];
+  await Promise.all(auditTargets.map((collectionId) => ensureCollectionAuditLog(collectionId, { force: true })));
+
   if (state.selectedOrganizerCollectionId) {
     await syncOrganizerAutopayPreview({ collectionId: state.selectedOrganizerCollectionId, silent: true });
   }
+}
+
+async function ensureCollectionAuditLog(collectionId, options = {}) {
+  if (!collectionId || !state.session?.accessToken) {
+    return [];
+  }
+
+  if (!options.force && state.auditLogByCollectionId.has(collectionId)) {
+    return state.auditLogByCollectionId.get(collectionId) ?? [];
+  }
+
+  const auditLog = await fetchJson(`/collections/${collectionId}/audit-log`, {
+    token: state.session.accessToken
+  });
+  state.auditLogByCollectionId.set(collectionId, auditLog);
+
+  if (state.currentScreen === "collection" && state.selectedCollectionId === collectionId) {
+    renderCollectionScreen();
+  }
+  if (state.currentScreen === "organizer" && state.selectedOrganizerCollectionId === collectionId) {
+    renderOrganizerScreen();
+  }
+
+  return auditLog;
 }
 
 async function buildFriendDirectory() {
@@ -955,9 +1015,7 @@ function renderCollectionScreen() {
       bundle.currentParticipant &&
       bundle.currentParticipant.status !== "confirmed";
     reviewButton.hidden = !canConfirmReview;
-    reviewButton.textContent = canConfirmReview
-      ? `Подтвердить ${formatMoney(bundle.userDueMinor || 0)}`
-      : "Подтверждено";
+    reviewButton.textContent = canConfirmReview ? `Подтвердить ${formatMoney(bundle.userDueMinor || 0)}` : "Подтверждено";
   }
 
   const disputesList = document.getElementById("collection-disputes-list");
@@ -974,6 +1032,12 @@ function renderCollectionScreen() {
         })
         .join("")
     : renderEmptyCard("Споров по этому сбору пока нет.");
+
+  const auditNode = document.getElementById("collection-audit-log");
+  if (auditNode) {
+    const auditLog = state.auditLogByCollectionId.get(bundle.collection.id) ?? null;
+    auditNode.innerHTML = renderAuditTimeline(auditLog, bundle);
+  }
 }
 
 function renderPayScreen() {
@@ -985,9 +1049,17 @@ function renderPayScreen() {
   text("pay-subtitle", bundle.collection.title);
   text("pay-balance-main", formatMoney(bundle.userDueMinor));
   text("pay-balance-sub", coveredParticipantsLabel(bundle.coveredParticipants));
-  text("pay-submit-button", bundle.userDueMinor > 0 ? `Оплатить ${formatMoney(bundle.userDueMinor)}` : "Уже оплачено");
+  text(
+    "pay-submit-button",
+    bundle.userDueMinor > 0 ? `Продолжить к подтверждению ${formatMoney(bundle.userDueMinor)}` : "Уже оплачено"
+  );
   text("pay-manual-button", bundle.userDueMinor > 0 ? `Пометить ${formatMoney(bundle.userDueMinor)}` : "Ручная оплата не нужна");
   renderPayMethods();
+
+  const confirmNode = document.getElementById("pay-confirmation-panel");
+  if (confirmNode) {
+    confirmNode.innerHTML = renderPayConfirmationPanel(bundle);
+  }
 
   const manualList = document.getElementById("pay-manual-payments-list");
   const ownManualPayments = bundle.manualPayments.filter((payment) => payment.payerUserId === state.me.id);
@@ -1045,10 +1117,7 @@ function renderOrganizerScreen() {
     "organizer-calculate-button",
     bundle.expenses.length ? `Пересчитать (${bundle.expenses.length} расходов)` : "Пересчитать сбор"
   );
-  text(
-    "organizer-review-button",
-    bundle.calculation ? "Отправить на согласование" : "Сначала пересчитать"
-  );
+  text("organizer-review-button", bundle.calculation ? "Отправить на согласование" : "Сначала пересчитать");
 
   const attention = document.getElementById("organizer-attention-list");
   const items = [];
@@ -1089,15 +1158,16 @@ function renderOrganizerScreen() {
     ? bundle.disputes
         .map((dispute) => {
           const participant = bundle.participants.find((item) => item.id === dispute.participantId);
-          const actionButtons = dispute.status === "created" || dispute.status === "under_review"
-            ? `
-                <div class="inline-actions">
-                  <button class="mini-action primary" type="button" data-action="accept-dispute" data-dispute-id="${dispute.id}">Принять</button>
-                  <button class="mini-action" type="button" data-action="resolve-dispute" data-dispute-id="${dispute.id}">Пересчитать</button>
-                  <button class="mini-action danger" type="button" data-action="reject-dispute" data-dispute-id="${dispute.id}">Отклонить</button>
-                </div>
-              `
-            : "";
+          const actionButtons =
+            dispute.status === "created" || dispute.status === "under_review"
+              ? `
+                  <div class="inline-actions">
+                    <button class="mini-action primary" type="button" data-action="accept-dispute" data-dispute-id="${dispute.id}">Принять</button>
+                    <button class="mini-action" type="button" data-action="resolve-dispute" data-dispute-id="${dispute.id}">Пересчитать</button>
+                    <button class="mini-action danger" type="button" data-action="reject-dispute" data-dispute-id="${dispute.id}">Отклонить</button>
+                  </div>
+                `
+              : "";
           return `
             <div class="dispute-card">
               <div class="line-item">
@@ -1129,56 +1199,22 @@ function renderOrganizerScreen() {
   if (organizerChildResponsibleSelect) {
     const eligiblePayers = bundle.participants.filter((participant) => participant.participantType !== "child");
     organizerChildResponsibleSelect.innerHTML = eligiblePayers.length
-      ? eligiblePayers
-          .map((participant) => `<option value="${participant.id}">${escapeHtml(participant.displayNameSnapshot)}</option>`)
-          .join("")
+      ? eligiblePayers.map((participant) => `<option value="${participant.id}">${escapeHtml(participant.displayNameSnapshot)}</option>`).join("")
       : '<option value="">Сначала добавь взрослого участника</option>';
     organizerChildResponsibleSelect.disabled = !eligiblePayers.length;
   }
 
   const organizerParticipants = document.getElementById("organizer-participants-list");
   organizerParticipants.innerHTML = bundle.participants.length
-    ? bundle.participants
-        .map((participant) => {
-          const role = participant.linkedUserId === bundle.collection.organizerId
-            ? "организатор"
-            : participant.participantType === "guest"
-              ? "гость"
-              : participant.participantType === "child"
-                ? "ребенок"
-                : "участник";
-          return `
-            <div class="line-item">
-              <span>${escapeHtml(participant.displayNameSnapshot)} · ${escapeHtml(role)}</span>
-              <strong>${escapeHtml(paymentStatusLabel(participant.paymentStatus))}</strong>
-            </div>
-          `;
-        })
-        .join("")
-    : renderEmptyCard("Участников пока нет.");
-
-  organizerParticipants.innerHTML = bundle.participants.length
     ? bundle.participants.map((participant) => renderOrganizerParticipantCard(bundle, participant)).join("")
     : renderEmptyCard("Участников пока нет.");
 
   const organizerExpenses = document.getElementById("organizer-expenses-list");
   organizerExpenses.innerHTML = bundle.expenses.length
-    ? bundle.expenses
-        .map(
-          (expense) => `
-            <div class="line-item">
-              <span>${escapeHtml(expense.title)}</span>
-              <strong>${formatMoney(expense.amountMinor)}</strong>
-            </div>
-          `
-        )
-        .join("")
+    ? bundle.expenses.map((expense) => renderOrganizerExpenseCard(bundle, expense)).join("")
     : renderEmptyCard("Расходов пока нет.");
 
   renderOrganizerExpenseDraft();
-  organizerExpenses.innerHTML = bundle.expenses.length
-    ? bundle.expenses.map((expense) => renderOrganizerExpenseCard(bundle, expense)).join("")
-    : renderEmptyCard("Расходов пока нет.");
 
   const organizerTransferPlan = document.getElementById("organizer-transfer-plan");
   organizerTransferPlan.innerHTML = bundle.calculation?.result.transferPlan.length
@@ -1205,11 +1241,11 @@ function renderOrganizerScreen() {
           const actions =
             payment.status === "submitted"
               ? `
-                <div class="inline-actions">
-                  <button class="mini-action primary" type="button" data-action="confirm-manual-payment" data-manual-payment-id="${payment.id}">Подтвердить</button>
-                  <button class="mini-action danger" type="button" data-action="reject-manual-payment" data-manual-payment-id="${payment.id}">Отклонить</button>
-                </div>
-              `
+                  <div class="inline-actions">
+                    <button class="mini-action primary" type="button" data-action="confirm-manual-payment" data-manual-payment-id="${payment.id}">Подтвердить</button>
+                    <button class="mini-action danger" type="button" data-action="reject-manual-payment" data-manual-payment-id="${payment.id}">Отклонить</button>
+                  </div>
+                `
               : "";
           return `
             <div class="dispute-card">
@@ -1227,8 +1263,10 @@ function renderOrganizerScreen() {
         })
         .join("")
     : renderEmptyCard("Ручных оплат пока нет.");
+
   const autopaySummary = document.getElementById("organizer-autopay-summary");
   const autopayList = document.getElementById("organizer-autopay-list");
+  const autopayConfirm = document.getElementById("organizer-autopay-confirmation");
   const preview = state.autopayPreviewByCollectionId.get(bundle.collection.id) ?? [];
   const executionSummary = state.autopayExecutionSummaryByCollectionId.get(bundle.collection.id) ?? null;
   const eligibleCount = preview.filter((item) => item.status === "eligible").length;
@@ -1248,16 +1286,12 @@ function renderOrganizerScreen() {
       <span>Уже создано</span>
       <strong>${existingCount}</strong>
     </div>
-    ${
-      executionSummary
-        ? `
-          <div class="line-item">
-            <span>Последний запуск</span>
-            <strong>${executionSummary.createdCount} создано / ${executionSummary.skippedCount} пропущено</strong>
-          </div>
-        `
-        : ""
-    }
+    ${executionSummary ? `
+      <div class="line-item">
+        <span>Последний запуск</span>
+        <strong>${executionSummary.createdCount} создано / ${executionSummary.skippedCount} пропущено</strong>
+      </div>
+    ` : ""}
   `;
 
   autopayList.innerHTML = preview.length
@@ -1265,7 +1299,7 @@ function renderOrganizerScreen() {
         .map((item) => {
           const participantName = displayNameByParticipantId(bundle.participants, item.participantId);
           const responsibleName = displayNameByParticipantId(bundle.participants, item.responsibleParticipantId);
-          const availableAt = item.availableAt ? ` · c ${formatNotificationTime(item.availableAt)}` : "";
+          const availableAt = item.availableAt ? ` · с ${formatNotificationTime(item.availableAt)}` : "";
           const note =
             item.status === "eligible"
               ? `${item.category ? `${escapeHtml(item.category)} · ` : ""}${escapeHtml(responsibleName)}${availableAt}`
@@ -1288,9 +1322,20 @@ function renderOrganizerScreen() {
         })
         .join("")
     : renderEmptyCard("Предпросмотр автоплатежей появится после расчета и настройки правил.");
+
+  if (autopayConfirm) {
+    autopayConfirm.innerHTML = renderAutopayConfirmationPanel(bundle, preview);
+  }
+
+  const auditNode = document.getElementById("organizer-audit-log");
+  if (auditNode) {
+    const auditLog = state.auditLogByCollectionId.get(bundle.collection.id) ?? null;
+    auditNode.innerHTML = renderAuditTimeline(auditLog, bundle);
+  }
 }
 
 function renderOrganizerExpenseDraft() {
+
   const draftNode = document.getElementById("organizer-expense-items-draft");
   if (!draftNode) {
     return;
@@ -1570,33 +1615,49 @@ function renderProfileScreen() {
   if (autopayPanel) {
     const globalRule = getGlobalAutopayRule();
     autopayPanel.innerHTML = `
-      <div class="panel-title">Автоплата</div>
-      <div id="profile-autopay-rules-list">
-        ${renderProfileAutopayRules()}
-      </div>
-      <div class="setting-row">
-        <div>
-          <div class="setting-title">Включить правило</div>
-          <div class="setting-sub">Общее правило для новых сборов</div>
+        <div class="panel-title">Автоплата</div>
+        <div id="profile-autopay-rules-list">
+          ${renderProfileAutopayRules()}
         </div>
-        <button class="switch${globalRule?.enabled ? " is-on" : ""}" id="profile-autopay-enabled" type="button"><span></span></button>
-      </div>
-      <div class="form-block">
-        <label class="field-label" for="profile-autopay-limit">Лимит на сбор, ₽</label>
-        <input class="text-input" id="profile-autopay-limit" inputmode="decimal" value="${escapeHtml(String((globalRule?.singleCollectionLimitMinor ?? 150000) / 100))}" />
-      </div>
-      <div class="form-block">
-        <label class="field-label" for="profile-autopay-window">Окно возражений, часы</label>
-        <input class="text-input" id="profile-autopay-window" inputmode="numeric" value="${escapeHtml(String(globalRule?.objectionWindowHours ?? 24))}" />
-      </div>
-      <button class="secondary-button" type="button" data-action="save-autopay-rule">Сохранить правило</button>
-    `;
+        <div class="setting-row">
+          <div>
+            <div class="setting-title">Включить правило</div>
+            <div class="setting-sub">Общее правило для новых сборов</div>
+          </div>
+          <button class="switch${globalRule?.enabled ? " is-on" : ""}" id="profile-autopay-enabled" type="button"><span></span></button>
+        </div>
+        <div class="consent-card">
+          <div class="setting-row">
+            <div class="switch-copy">
+              <div class="setting-title">Согласие на автосписания</div>
+              <div class="setting-sub">Разрешаю запускать автоматические списания после окна возражений и в пределах лимита.</div>
+            </div>
+            <button class="switch${globalRule?.enabled ? " is-on" : ""}" id="profile-autopay-consent" type="button"><span></span></button>
+          </div>
+        </div>
+        <div class="form-block">
+          <label class="field-label" for="profile-autopay-limit">Лимит на сбор, ₽</label>
+          <input class="text-input" id="profile-autopay-limit" inputmode="decimal" value="${escapeHtml(String((globalRule?.singleCollectionLimitMinor ?? 150000) / 100))}" />
+        </div>
+        <div class="form-block">
+          <label class="field-label" for="profile-autopay-window">Окно возражений, часы</label>
+          <input class="text-input" id="profile-autopay-window" inputmode="numeric" value="${escapeHtml(String(globalRule?.objectionWindowHours ?? 24))}" />
+        </div>
+        <button class="secondary-button" type="button" data-action="save-autopay-rule">Сохранить правило</button>
+      `;
+    }
   }
-}
 
 async function submitPayment() {
   const bundle = getSelectedCollectionBundle();
   if (!bundle || !bundle.currentParticipant || bundle.userDueMinor <= 0) {
+    return;
+  }
+
+  const confirmed = document.getElementById("pay-confirm-switch")?.classList.contains("is-on") ?? false;
+  if (!confirmed) {
+    setStatus("Подтверди списание перед оплатой", false);
+    haptic("warning");
     return;
   }
 
@@ -1632,6 +1693,7 @@ async function submitPayment() {
     token: state.session.accessToken
   });
 
+  state.pendingPayConfirmationCollectionId = null;
   state.lastPaymentSummary = {
     collectionTitle: bundle.collection.title,
     amountMinor: bundle.userDueMinor
@@ -1652,6 +1714,7 @@ async function submitPayment() {
 }
 
 async function submitDispute() {
+
   const bundle = getSelectedCollectionBundle();
   const message = disputeCommentInput?.value?.trim();
   if (!bundle || !bundle.currentParticipant || !message) {
@@ -2305,8 +2368,15 @@ async function revokePaymentMethodFromAction(source) {
 async function saveAutopayRule() {
   const globalRule = getGlobalAutopayRule();
   const enabled = document.getElementById("profile-autopay-enabled")?.classList.contains("is-on") ?? false;
+  const consentEnabled = document.getElementById("profile-autopay-consent")?.classList.contains("is-on") ?? Boolean(globalRule?.enabled);
   const limitMinor = parseMoneyToMinor(document.getElementById("profile-autopay-limit")?.value ?? "");
   const objectionWindowHours = parseIntegerInput(document.getElementById("profile-autopay-window")?.value, 24);
+
+  if (enabled && !consentEnabled) {
+    setStatus("Для автоплатежей нужно явное согласие", false);
+    haptic("warning");
+    return;
+  }
 
   const payload = {
     enabled,
@@ -2338,10 +2408,11 @@ async function saveAutopayRule() {
 
   await refreshAppData();
   renderAll();
-  setStatus("Правило автоплатежей сохранено", true);
+  setStatus(enabled ? "Правило автоплатежей сохранено и активировано" : "Правило автоплатежей сохранено", true);
 }
 
 async function syncOrganizerAutopayPreview(options = {}) {
+
   const collectionId = options.collectionId ?? state.selectedOrganizerCollectionId;
   if (!collectionId) {
     return [];
@@ -2368,11 +2439,33 @@ async function executeOrganizerAutopay() {
     throw new Error("Organizer collection not selected");
   }
 
+  const rule = getGlobalAutopayRule();
+  const confirmed = document.getElementById("organizer-autopay-confirm-switch")?.classList.contains("is-on") ?? false;
+  const preview = state.autopayPreviewByCollectionId.get(bundle.collection.id) ?? [];
+  const eligibleCount = preview.filter((item) => item.status === "eligible").length;
+
+  if (!rule?.enabled) {
+    setStatus("Сначала включи и сохрани правило автоплатежей", false);
+    haptic("warning");
+    return;
+  }
+  if (!eligibleCount) {
+    setStatus("Нет готовых автоплатежей для запуска", false);
+    haptic("warning");
+    return;
+  }
+  if (!confirmed) {
+    setStatus("Подтверди массовый запуск автоплатежей", false);
+    haptic("warning");
+    return;
+  }
+
   const result = await fetchJson(`/collections/${bundle.collection.id}/autopay/execute`, {
     method: "POST",
     token: state.session.accessToken
   });
 
+  state.pendingAutopayConfirmationCollectionId = null;
   state.autopayExecutionSummaryByCollectionId.set(bundle.collection.id, {
     createdCount: result.createdPayments.length,
     skippedCount: result.skipped.length,
@@ -2387,6 +2480,7 @@ async function executeOrganizerAutopay() {
 }
 
 function openNotification(notificationId) {
+
   const notification = state.notifications.find((item) => item.id === notificationId);
   if (!notification?.collectionId) {
     setActiveScreen("inbox", "home");
@@ -2578,7 +2672,7 @@ function renderProfileAutopayRules() {
     .map(
       (rule) => `
         <div class="line-item">
-          <span>${rule.collectionId ? "collection" : rule.groupId ? "group" : "global"} · ${rule.enabled ? "enabled" : "disabled"}</span>
+          <span>${rule.collectionId ? "сбор" : rule.groupId ? "группа" : "общее правило"} · ${rule.enabled ? "включено" : "выключено"}</span>
           <strong>${formatMoney(rule.singleCollectionLimitMinor)}</strong>
         </div>
       `
@@ -2590,7 +2684,27 @@ function getGlobalAutopayRule() {
   return state.autopayRules.find((rule) => !rule.collectionId && !rule.groupId && !rule.category) ?? null;
 }
 
+function armPaymentConfirmation() {
+  const bundle = getSelectedCollectionBundle();
+  if (!bundle || bundle.userDueMinor <= 0) {
+    return;
+  }
+  state.pendingPayConfirmationCollectionId = bundle.collection.id;
+  renderPayScreen();
+}
+
+async function armAutopayConfirmation() {
+  const bundle = getSelectedOrganizerBundle();
+  if (!bundle) {
+    return;
+  }
+  await syncOrganizerAutopayPreview({ collectionId: bundle.collection.id, silent: true });
+  state.pendingAutopayConfirmationCollectionId = bundle.collection.id;
+  renderOrganizerScreen();
+}
+
 function renderCollectionSection(title, bundles, note) {
+
   if (!bundles.length) {
     return "";
   }
@@ -2700,7 +2814,173 @@ function renderEmptyCard(message) {
   `;
 }
 
+function renderPayConfirmationPanel(bundle) {
+  const selectedMethod = state.paymentMethods.find((method) => method.id === state.selectedPaymentMethodId) ?? null;
+  const isOpen = state.pendingPayConfirmationCollectionId === bundle.collection.id;
+
+  if (!isOpen) {
+    return renderEmptyCard("Перед списанием покажем итог, карту и последнее подтверждение.");
+  }
+
+  return `
+    <article class="detail-panel confirmation-panel">
+      <div class="panel-title">Финальное подтверждение</div>
+      <div class="confirmation-grid">
+        <div class="line-item">
+          <span>Сбор</span>
+          <strong>${escapeHtml(bundle.collection.title)}</strong>
+        </div>
+        <div class="line-item">
+          <span>Сумма</span>
+          <strong>${formatMoney(bundle.userDueMinor)}</strong>
+        </div>
+        <div class="line-item">
+          <span>Карта</span>
+          <strong>${escapeHtml(selectedMethod ? paymentMethodTitle(selectedMethod) : "Будет создана тестовая карта")}</strong>
+        </div>
+      </div>
+      <div class="consent-card">
+        <div class="setting-row">
+          <div class="switch-copy">
+            <div class="setting-title">Подтверждаю списание</div>
+            <div class="setting-sub">Сумма и получатели проверены, можно создавать платеж.</div>
+          </div>
+          <button class="switch" id="pay-confirm-switch" type="button" aria-label="Подтвердить списание"><span></span></button>
+        </div>
+      </div>
+      <div class="inline-actions stacked-actions">
+        <button class="primary-button" type="button" data-action="confirm-pay-now">Подтвердить оплату</button>
+        <button class="secondary-button" type="button" data-action="cancel-pay-confirm">Вернуться и проверить</button>
+      </div>
+    </article>
+  `;
+}
+
+function renderAutopayConfirmationPanel(bundle, preview) {
+  const rule = getGlobalAutopayRule();
+  const eligibleCount = preview.filter((item) => item.status === "eligible").length;
+  const totalMinor = preview.filter((item) => item.status === "eligible").reduce((sum, item) => sum + item.amountMinor, 0);
+  const isOpen = state.pendingAutopayConfirmationCollectionId === bundle.collection.id;
+
+  if (!isOpen) {
+    return renderEmptyCard("Здесь появится контрольный шаг перед массовым запуском автоплатежей.");
+  }
+
+  const consentState = rule?.enabled ? "Согласие активно" : "Сначала включи и сохрани правило автоплатежей";
+  const consentClass = rule?.enabled ? "pill-success" : "pill-danger";
+
+  return `
+    <article class="detail-panel confirmation-panel">
+      <div class="panel-title">Контроль перед запуском</div>
+      <div class="line-item">
+        <span>Готовых участников</span>
+        <strong>${eligibleCount}</strong>
+      </div>
+      <div class="line-item">
+        <span>Сумма к запуску</span>
+        <strong>${formatMoney(totalMinor)}</strong>
+      </div>
+      <div class="line-item">
+        <span>Лимит правила</span>
+        <strong>${formatMoney(rule?.singleCollectionLimitMinor ?? 0)}</strong>
+      </div>
+      <div class="line-item">
+        <span>Статус согласия</span>
+        <span class="pill ${consentClass}">${consentState}</span>
+      </div>
+      <div class="consent-card">
+        <div class="setting-row">
+          <div class="switch-copy">
+            <div class="setting-title">Запустить списания по готовым участникам</div>
+            <div class="setting-sub">Будут созданы только те платежи, которые уже прошли все ограничения и окно возражений.</div>
+          </div>
+          <button class="switch" id="organizer-autopay-confirm-switch" type="button" aria-label="Подтвердить запуск автоплатежей"><span></span></button>
+        </div>
+      </div>
+      <div class="inline-actions stacked-actions">
+        <button class="primary-button" type="button" data-action="confirm-execute-autopay">Подтвердить запуск</button>
+        <button class="secondary-button" type="button" data-action="cancel-autopay-confirm">Отмена</button>
+      </div>
+    </article>
+  `;
+}
+
+function renderAuditTimeline(auditLog, bundle) {
+  if (auditLog === null) {
+    return renderEmptyCard("Журнал действий загружается.");
+  }
+  if (!auditLog.length) {
+    return renderEmptyCard("По этому сбору еще нет событий.");
+  }
+
+  return `
+    <div class="timeline-list">
+      ${auditLog
+        .slice()
+        .reverse()
+        .map((entry) => {
+          const actor = entry.actorUserId ? state.userDirectory.get(entry.actorUserId)?.displayName ?? "Участник" : "Система";
+          const title = auditActionLabel(entry);
+          const details = auditMetaLabel(entry, bundle);
+          return `
+            <article class="timeline-item">
+              <div class="timeline-dot"></div>
+              <div class="timeline-copy">
+                <div class="timeline-top">
+                  <strong>${escapeHtml(title)}</strong>
+                  <span>${escapeHtml(formatNotificationTime(entry.createdAt))}</span>
+                </div>
+                <div class="timeline-body">${escapeHtml(actor)}${details ? ` · ${escapeHtml(details)}` : ""}</div>
+              </div>
+            </article>
+          `;
+        })
+        .join("")}
+    </div>
+  `;
+}
+
+function auditActionLabel(entry) {
+  const labels = {
+    "collection:created": "Сбор создан",
+    "collection:updated": "Сбор обновлен",
+    "collection:recalculated": "Сбор пересчитан",
+    "collection:sent_to_review": "Расчет отправлен на согласование",
+    "payment:created": "Платеж создан",
+    "payment:paid": "Платеж проведен",
+    "payment:updated": "Платеж обновлен",
+    "participant:confirmed": "Участник подтвердил расчет",
+    "dispute:disputed": "Создан спор",
+    "dispute:accepted": "Спор принят",
+    "dispute:rejected": "Спор отклонен",
+    "dispute:recalculated": "Спор закрыт пересчетом",
+    "manual_payment:paid": "Ручная оплата отмечена",
+    "manual_payment:confirmed": "Ручная оплата подтверждена",
+    "manual_payment:rejected": "Ручная оплата отклонена",
+    "notification:read": "Уведомление прочитано"
+  };
+  return labels[`${entry.entityType}:${entry.action}`] ?? `${entry.entityType} · ${entry.action}`;
+}
+
+function auditMetaLabel(entry, bundle) {
+  const metadata = entry.metadata ?? {};
+  if (typeof metadata.amountMinor === "number") {
+    return formatMoney(metadata.amountMinor);
+  }
+  if (metadata.status) {
+    return String(metadata.status);
+  }
+  if (metadata.participantId && bundle?.participants) {
+    return displayNameByParticipantId(bundle.participants, metadata.participantId);
+  }
+  if (metadata.reason) {
+    return String(metadata.reason);
+  }
+  return "";
+}
+
 function coveredParticipantsLabel(participants) {
+
   if (!participants.length) {
     return "Персональная доля";
   }

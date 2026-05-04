@@ -76,43 +76,43 @@ export class AppError extends Error {
 
 export const DEFAULT_COLLECTION_CATEGORIES: Record<Collection["type"], Array<Pick<ExpenseCategory, "title" | "emoji" | "requiresManualConfirmation" | "autopayAllowedByDefault">>> = {
   picnic: [
-    { title: "Food", emoji: "🍖", requiresManualConfirmation: false, autopayAllowedByDefault: true },
-    { title: "Drinks", emoji: "🥤", requiresManualConfirmation: false, autopayAllowedByDefault: true },
-    { title: "Alcohol", emoji: "🍺", requiresManualConfirmation: true, autopayAllowedByDefault: false }
+    { title: "Еда", emoji: "🍖", requiresManualConfirmation: false, autopayAllowedByDefault: true },
+    { title: "Напитки", emoji: "🥤", requiresManualConfirmation: false, autopayAllowedByDefault: true },
+    { title: "Алкоголь", emoji: "🍺", requiresManualConfirmation: true, autopayAllowedByDefault: false }
   ],
   restaurant: [
-    { title: "Food", emoji: "🍽️", requiresManualConfirmation: false, autopayAllowedByDefault: true },
-    { title: "Drinks", emoji: "🥤", requiresManualConfirmation: false, autopayAllowedByDefault: true },
-    { title: "Alcohol", emoji: "🍷", requiresManualConfirmation: true, autopayAllowedByDefault: false }
+    { title: "Еда", emoji: "🍽️", requiresManualConfirmation: false, autopayAllowedByDefault: true },
+    { title: "Напитки", emoji: "🥤", requiresManualConfirmation: false, autopayAllowedByDefault: true },
+    { title: "Алкоголь", emoji: "🍷", requiresManualConfirmation: true, autopayAllowedByDefault: false }
   ],
   gift: [
-    { title: "Gift", emoji: "🎁", requiresManualConfirmation: false, autopayAllowedByDefault: true },
-    { title: "Card", emoji: "✉️", requiresManualConfirmation: false, autopayAllowedByDefault: true }
+    { title: "Подарок", emoji: "🎁", requiresManualConfirmation: false, autopayAllowedByDefault: true },
+    { title: "Открытка", emoji: "✉️", requiresManualConfirmation: false, autopayAllowedByDefault: true }
   ],
   trip: [
-    { title: "Transport", emoji: "🚗", requiresManualConfirmation: false, autopayAllowedByDefault: true },
-    { title: "Stay", emoji: "🏨", requiresManualConfirmation: false, autopayAllowedByDefault: true },
-    { title: "Food", emoji: "🍜", requiresManualConfirmation: false, autopayAllowedByDefault: true },
-    { title: "Alcohol", emoji: "🍹", requiresManualConfirmation: true, autopayAllowedByDefault: false }
+    { title: "Транспорт", emoji: "🚗", requiresManualConfirmation: false, autopayAllowedByDefault: true },
+    { title: "Проживание", emoji: "🏨", requiresManualConfirmation: false, autopayAllowedByDefault: true },
+    { title: "Еда", emoji: "🍜", requiresManualConfirmation: false, autopayAllowedByDefault: true },
+    { title: "Алкоголь", emoji: "🍹", requiresManualConfirmation: true, autopayAllowedByDefault: false }
   ],
   office: [
-    { title: "Food", emoji: "🥐", requiresManualConfirmation: false, autopayAllowedByDefault: true },
-    { title: "Supplies", emoji: "🧻", requiresManualConfirmation: false, autopayAllowedByDefault: true }
+    { title: "Еда", emoji: "🥐", requiresManualConfirmation: false, autopayAllowedByDefault: true },
+    { title: "Расходники", emoji: "🧻", requiresManualConfirmation: false, autopayAllowedByDefault: true }
   ],
   rent: [
-    { title: "Rent", emoji: "🏠", requiresManualConfirmation: false, autopayAllowedByDefault: true },
-    { title: "Utilities", emoji: "💡", requiresManualConfirmation: false, autopayAllowedByDefault: true }
+    { title: "Аренда", emoji: "🏠", requiresManualConfirmation: false, autopayAllowedByDefault: true },
+    { title: "Коммунальные", emoji: "💡", requiresManualConfirmation: false, autopayAllowedByDefault: true }
   ],
   kids: [
-    { title: "Food", emoji: "🍼", requiresManualConfirmation: false, autopayAllowedByDefault: true },
-    { title: "Entertainment", emoji: "🎠", requiresManualConfirmation: false, autopayAllowedByDefault: true }
+    { title: "Еда", emoji: "🍼", requiresManualConfirmation: false, autopayAllowedByDefault: true },
+    { title: "Развлечения", emoji: "🎠", requiresManualConfirmation: false, autopayAllowedByDefault: true }
   ],
   dacha: [
-    { title: "Food", emoji: "🥗", requiresManualConfirmation: false, autopayAllowedByDefault: true },
-    { title: "Household", emoji: "🪵", requiresManualConfirmation: false, autopayAllowedByDefault: true },
-    { title: "Alcohol", emoji: "🍾", requiresManualConfirmation: true, autopayAllowedByDefault: false }
+    { title: "Еда", emoji: "🥗", requiresManualConfirmation: false, autopayAllowedByDefault: true },
+    { title: "Хозяйственное", emoji: "🪵", requiresManualConfirmation: false, autopayAllowedByDefault: true },
+    { title: "Алкоголь", emoji: "🍾", requiresManualConfirmation: true, autopayAllowedByDefault: false }
   ],
-  other: [{ title: "General", emoji: "🧾", requiresManualConfirmation: false, autopayAllowedByDefault: true }]
+  other: [{ title: "Общее", emoji: "🧾", requiresManualConfirmation: false, autopayAllowedByDefault: true }]
 };
 
 export class InMemoryStore {
@@ -460,7 +460,12 @@ export class InMemoryStore {
     this.addAudit(userId, "collection", collection.id, collectionId, action, { status });
 
     if (status === "review") {
-      this.notifyCollectionParticipants(collectionId, "collection_review_requested", "Calculation sent to review", "Organizer sent the collection calculation to review.");
+      this.notifyCollectionParticipants(
+        collectionId,
+        "collection_review_requested",
+        "Расчет отправлен на согласование",
+        "Организатор отправил расчет сбора на согласование."
+      );
     }
 
     return updated;
@@ -592,7 +597,7 @@ export class InMemoryStore {
       status: "failed",
       isDefault: false,
       lastSetupErrorCode: data.errorCode ?? "mock_setup_failed",
-      lastSetupErrorMessage: data.reason ?? "Mock provider setup failed.",
+      lastSetupErrorMessage: data.reason ?? "Не удалось выполнить тестовую привязку.",
       updatedAt: now()
     };
     this.paymentMethods.set(method.id, updated);
@@ -1179,7 +1184,7 @@ export class InMemoryStore {
     this.addAudit(userId, "participant", participant.id, collectionId, "confirmed", { participantId });
 
     const collection = this.getCollection(collectionId);
-    this.addNotification(collection.organizerId, collectionId, "participant_confirmed", "Participant confirmed calculation", `${updated.displayNameSnapshot} confirmed the calculation.`);
+    this.addNotification(collection.organizerId, collectionId, "participant_confirmed", "Расчет подтвержден", `${updated.displayNameSnapshot} подтвердил расчет.`);
 
     return updated;
   }
@@ -1217,7 +1222,7 @@ export class InMemoryStore {
     this.participants.set(participant.id, { ...participant, status: "disputed", paymentStatus: "disputed", updatedAt: now() });
     this.markCollectionStatus(collectionId, "dispute_pending");
     this.addAudit(userId, "dispute", dispute.id, collectionId, "disputed", { participantId: data.participantId, type: data.type });
-    this.addNotification(collection.organizerId, collectionId, "dispute_created", "New dispute", `${participant.displayNameSnapshot} disputed the calculation.`);
+    this.addNotification(collection.organizerId, collectionId, "dispute_created", "Новый спор", `${participant.displayNameSnapshot} оспорил расчет.`);
 
     return dispute;
   }
@@ -1232,7 +1237,7 @@ export class InMemoryStore {
     this.getOrganizerCollection(userId, dispute.collectionId);
     const updated = this.updateDispute(dispute, "accepted", resolutionComment ?? null);
     this.addAudit(userId, "dispute", dispute.id, dispute.collectionId, "accepted", { resolutionComment: updated.resolutionComment });
-    this.addNotification(dispute.createdByUserId, dispute.collectionId, "dispute_updated", "Dispute accepted", "Organizer accepted your dispute.");
+    this.addNotification(dispute.createdByUserId, dispute.collectionId, "dispute_updated", "Спор принят", "Организатор принял ваш спор.");
     return updated;
   }
 
@@ -1245,7 +1250,7 @@ export class InMemoryStore {
       this.participants.set(participant.id, { ...participant, status: "active", paymentStatus: "pending", updatedAt: now() });
     }
     this.addAudit(userId, "dispute", dispute.id, dispute.collectionId, "rejected", { resolutionComment: updated.resolutionComment });
-    this.addNotification(dispute.createdByUserId, dispute.collectionId, "dispute_updated", "Dispute rejected", "Organizer rejected your dispute.");
+    this.addNotification(dispute.createdByUserId, dispute.collectionId, "dispute_updated", "Спор отклонен", "Организатор отклонил ваш спор.");
     return updated;
   }
 
@@ -1255,7 +1260,13 @@ export class InMemoryStore {
     const updated = this.updateDispute(dispute, "resolved_by_recalculation", resolutionComment ?? null);
     const calculationVersion = this.calculateCollectionInternal(userId, dispute.collectionId, true);
     this.addAudit(userId, "dispute", dispute.id, dispute.collectionId, "recalculated", { calculationVersionId: calculationVersion.id });
-    this.addNotification(dispute.createdByUserId, dispute.collectionId, "dispute_updated", "Dispute resolved", "Organizer recalculated the collection after dispute review.");
+    this.addNotification(
+      dispute.createdByUserId,
+      dispute.collectionId,
+      "dispute_updated",
+      "Спор решен",
+      "Организатор пересчитал сбор после разбора спора."
+    );
     return { dispute: updated, calculationVersion };
   }
 
@@ -1315,7 +1326,13 @@ export class InMemoryStore {
 
     this.markCollectionStatus(collectionId, "partially_paid");
     this.addAudit(userId, "manual_payment", proof.id, collectionId, "paid", { amountMinor: data.amountMinor, method: data.method });
-    this.notifyManualPaymentReviewers(collectionId, proof, "manual_payment_submitted", "Manual payment submitted", "A participant marked a manual payment as paid.");
+    this.notifyManualPaymentReviewers(
+      collectionId,
+      proof,
+      "manual_payment_submitted",
+      "Ручная оплата отправлена",
+      "Участник отметил ручную оплату как выполненную."
+    );
 
     return proof;
   }
@@ -1351,7 +1368,7 @@ export class InMemoryStore {
     this.manualPaymentProofs.set(proof.id, updated);
     this.markCollectionStatus(proof.collectionId, this.hasOnlyConfirmedManualPayments(proof.collectionId) ? "paid" : "partially_paid");
     this.addAudit(userId, "manual_payment", proof.id, proof.collectionId, "confirmed", { amountMinor: proof.amountMinor });
-    this.addNotification(proof.payerUserId, proof.collectionId, "manual_payment_confirmed", "Manual payment confirmed", "Your manual payment was confirmed.");
+    this.addNotification(proof.payerUserId, proof.collectionId, "manual_payment_confirmed", "Ручная оплата подтверждена", "Ваша ручная оплата подтверждена.");
     return updated;
   }
 
@@ -1367,7 +1384,7 @@ export class InMemoryStore {
     this.manualPaymentProofs.set(proof.id, updated);
     this.markCollectionStatus(proof.collectionId, "payment_pending");
     this.addAudit(userId, "manual_payment", proof.id, proof.collectionId, "rejected", { amountMinor: proof.amountMinor });
-    this.addNotification(proof.payerUserId, proof.collectionId, "manual_payment_rejected", "Manual payment rejected", "Your manual payment proof was rejected.");
+    this.addNotification(proof.payerUserId, proof.collectionId, "manual_payment_rejected", "Ручная оплата отклонена", "Подтверждение ручной оплаты отклонено.");
     return updated;
   }
 
@@ -1934,7 +1951,7 @@ export class InMemoryStore {
           status: "failed",
           isDefault: false,
           lastSetupErrorCode: "provider_setup_failed",
-          lastSetupErrorMessage: event.reason ?? "Provider setup failed.",
+          lastSetupErrorMessage: event.reason ?? "Не удалось завершить привязку карты.",
           updatedAt: now()
         };
         this.paymentMethods.set(updated.id, updated);

@@ -19,11 +19,31 @@ const BROKEN_TEXT_FIXUPS = new Map([
   ["РЁР°С€Р»С‹РєРё РІ СЃСѓР±Р±РѕС‚Сѓ", "Шашлыки в субботу"],
   ["Р”Р°С‡Р°", "Дача"],
   ["Р”Р°С‡Р° РЅР° РјР°Р№СЃРєРёРµ", "Шашлыки на даче"],
+  ["Дача РЅР° РјР°Р№СЃРєРёРµ", "Шашлыки на даче"],
   ["РџРѕРґР°СЂРѕРє РСЂРµ", "Подарок Ире"],
   ["РџСЂРѕРґСѓРєС‚С‹ Рё Р±РµСЃРµРґРєР°", "Продукты и беседка"],
   ["РђСЂРµРЅРґР° РґРѕРјР°", "Мясо для шашлыка"],
   ["РџРѕРґР°СЂРѕС‡РЅС‹Р№ СЃРµСЂС‚РёС„РёРєР°С‚", "Подарочный сертификат"],
   ["РњРµРЅСЏ РЅРµ Р±С‹Р»Рѕ РЅР° СѓР¶РёРЅРµ Рё Р±Р°РЅРµ.", "Меня не было на ужине и в бане."]
+]);
+
+const ENGLISH_TEXT_FIXUPS = new Map([
+  ["New dispute", "Новый спор"],
+  ["Calculation sent to review", "Расчет отправлен на согласование"],
+  ["Participant confirmed calculation", "Расчет подтвержден"],
+  ["Dispute accepted", "Спор принят"],
+  ["Dispute rejected", "Спор отклонен"],
+  ["Dispute resolved", "Спор решен"],
+  ["Manual payment submitted", "Ручная оплата отправлена"],
+  ["Manual payment confirmed", "Ручная оплата подтверждена"],
+  ["Manual payment rejected", "Ручная оплата отклонена"],
+  ["Organizer sent the collection calculation to review.", "Организатор отправил расчет сбора на согласование."],
+  ["Organizer accepted your dispute.", "Организатор принял ваш спор."],
+  ["Organizer rejected your dispute.", "Организатор отклонил ваш спор."],
+  ["Organizer recalculated the collection after dispute review.", "Организатор пересчитал сбор после разбора спора."],
+  ["A participant marked a manual payment as paid.", "Участник отметил ручную оплату как выполненную."],
+  ["Your manual payment was confirmed.", "Ваша ручная оплата подтверждена."],
+  ["Your manual payment proof was rejected.", "Подтверждение ручной оплаты отклонено."]
 ]);
 
 const state = {
@@ -162,8 +182,13 @@ function fixBrokenText(value) {
   for (const [broken, fixed] of BROKEN_TEXT_FIXUPS.entries()) {
     next = next.split(broken).join(fixed);
   }
+  for (const [english, russian] of ENGLISH_TEXT_FIXUPS.entries()) {
+    next = next.split(english).join(russian);
+  }
 
-  const decoded = decodeUtf8Mojibake(next);
+  let decoded = decodeUtf8Mojibake(next);
+  decoded = decoded.replace(/(.+?) disputed the calculation\./g, (_, name) => `${name} оспорил расчет.`);
+  decoded = decoded.replace(/(.+?) confirmed the calculation\./g, (_, name) => `${name} подтвердил расчет.`);
   return decoded;
 }
 
@@ -595,18 +620,18 @@ async function authActor(phone, displayName) {
 
 async function ensureDemoData() {
   const alexCollections = await fetchJson("/collections", { token: state.actors.alex.accessToken });
-  const titleSet = new Set(alexCollections.map((collection) => collection.title));
+  const titleSet = new Set(alexCollections.map((collection) => fixBrokenText(collection.title)));
 
   if ((await fetchJson("/friends", { token: state.actors.alex.accessToken })).filter((item) => item.status === "accepted").length === 0) {
     await seedFriendships();
   }
 
-  let dachaGroup = (await fetchJson("/groups", { token: state.actors.alex.accessToken })).find((group) => group.title === "Р”Р°С‡Р°");
+  let dachaGroup = (await fetchJson("/groups", { token: state.actors.alex.accessToken })).find((group) => fixBrokenText(group.title) === "Дача");
   if (!dachaGroup) {
     dachaGroup = await fetchJson("/groups", {
       method: "POST",
       token: state.actors.alex.accessToken,
-      body: { title: "Р”Р°С‡Р°", groupType: "trip" }
+      body: { title: "Дача", groupType: "trip" }
     });
   }
 
@@ -624,15 +649,15 @@ async function ensureDemoData() {
     });
   }
 
-  if (!titleSet.has("РЁР°С€Р»С‹РєРё РІ СЃСѓР±Р±РѕС‚Сѓ")) {
+  if (!titleSet.has("Шашлыки в субботу")) {
     await seedPicnicCollection();
   }
 
-  if (!titleSet.has("Р”Р°С‡Р° РЅР° РјР°Р№СЃРєРёРµ")) {
+  if (!titleSet.has("Шашлыки на даче")) {
     await seedOrganizerCollection(dachaGroup.id);
   }
 
-  if (!titleSet.has("РџРѕРґР°СЂРѕРє РСЂРµ")) {
+  if (!titleSet.has("Подарок Ире")) {
     await seedGiftCollection();
   }
 }
@@ -673,7 +698,7 @@ async function seedPicnicCollection() {
   const created = await fetchJson("/collections", {
     method: "POST",
     token: state.actors.sasha.accessToken,
-    body: { title: "РЁР°С€Р»С‹РєРё РІ СЃСѓР±Р±РѕС‚Сѓ", type: "picnic" }
+    body: { title: "Шашлыки в субботу", type: "picnic" }
   });
 
   const collectionId = created.collection.id;
@@ -683,7 +708,7 @@ async function seedPicnicCollection() {
     token: state.actors.sasha.accessToken,
     body: {
       linkedUserId: state.actors.alex.user.id,
-      displayName: "РђР»РµРєСЃРµР№"
+      displayName: "Алексей"
     }
   });
 
@@ -692,7 +717,7 @@ async function seedPicnicCollection() {
     token: state.actors.sasha.accessToken,
     body: {
       linkedUserId: state.actors.dima.user.id,
-      displayName: "Р”РёРјР°"
+      displayName: "Дима"
     }
   });
 
@@ -700,12 +725,12 @@ async function seedPicnicCollection() {
     method: "POST",
     token: state.actors.sasha.accessToken,
     body: {
-      displayName: "РђРЅСЏ",
+      displayName: "Аня",
       responsiblePayerParticipantId: alexParticipant.id
     }
   });
 
-  const invitedNames = ["РњР°С€Р°", "РР»СЊСЏ", "РљР°С‚СЏ", "РћР»РµРі"];
+  const invitedNames = ["Маша", "Илья", "Катя", "Олег"];
   const seededParticipants = [alexParticipant, dimaParticipant, guest];
   for (const [index, name] of invitedNames.entries()) {
     const participant = await fetchJson(`/collections/${collectionId}/participants`, {
@@ -723,7 +748,7 @@ async function seedPicnicCollection() {
     method: "POST",
     token: state.actors.sasha.accessToken,
     body: {
-      title: "РџСЂРѕРґСѓРєС‚С‹ Рё Р±РµСЃРµРґРєР°",
+      title: "Продукты и беседка",
       amountMinor: 14000,
       payments: [{ paidByParticipantId: organizerParticipant.id, amountMinor: 14000, paymentSource: "card" }]
     }
@@ -738,7 +763,7 @@ async function seedPicnicCollection() {
     token: state.actors.sasha.accessToken
   });
 
-  const autoPaidNames = new Set(["РњР°С€Р°", "РР»СЊСЏ", "РљР°С‚СЏ"]);
+  const autoPaidNames = new Set(["Маша", "Илья", "Катя"]);
   for (const participant of seededParticipants.filter((item) => autoPaidNames.has(item.displayNameSnapshot))) {
     const payment = await fetchJson(`/collections/${collectionId}/payments/mock-intents`, {
       method: "POST",
@@ -762,7 +787,7 @@ async function seedOrganizerCollection(groupId) {
   const created = await fetchJson("/collections", {
     method: "POST",
     token: state.actors.alex.accessToken,
-    body: { title: "Р”Р°С‡Р° РЅР° РјР°Р№СЃРєРёРµ", type: "trip", groupId }
+    body: { title: "Шашлыки на даче", type: "trip", groupId }
   });
 
   const collectionId = created.collection.id;
@@ -772,7 +797,7 @@ async function seedOrganizerCollection(groupId) {
     token: state.actors.alex.accessToken,
     body: {
       linkedUserId: state.actors.dima.user.id,
-      displayName: "Р”РёРјР°"
+      displayName: "Дима"
     }
   });
 
@@ -781,7 +806,7 @@ async function seedOrganizerCollection(groupId) {
     token: state.actors.alex.accessToken,
     body: {
       linkedUserId: state.actors.sasha.user.id,
-      displayName: "РЎР°С€Р°"
+      displayName: "Саша"
     }
   });
 
@@ -789,7 +814,7 @@ async function seedOrganizerCollection(groupId) {
     method: "POST",
     token: state.actors.alex.accessToken,
     body: {
-      title: "РђСЂРµРЅРґР° РґРѕРјР°",
+      title: "Мясо для шашлыка",
       amountMinor: 15000,
       payments: [{ paidByParticipantId: organizerParticipant.id, amountMinor: 15000, paymentSource: "card" }]
     }
@@ -810,7 +835,7 @@ async function seedOrganizerCollection(groupId) {
     body: {
       participantId: dimaParticipant.id,
       type: "partial_time",
-      message: "РњРµРЅСЏ РЅРµ Р±С‹Р»Рѕ РЅР° СѓР¶РёРЅРµ Рё Р±Р°РЅРµ."
+      message: "Меня не было на ужине и в бане."
     }
   });
 }
@@ -819,7 +844,7 @@ async function seedGiftCollection() {
   const created = await fetchJson("/collections", {
     method: "POST",
     token: state.actors.alex.accessToken,
-    body: { title: "РџРѕРґР°СЂРѕРє РСЂРµ", type: "gift" }
+    body: { title: "Подарок Ире", type: "gift" }
   });
 
   const collectionId = created.collection.id;
@@ -829,7 +854,7 @@ async function seedGiftCollection() {
     token: state.actors.alex.accessToken,
     body: {
       linkedUserId: state.actors.sasha.user.id,
-      displayName: "РЎР°С€Р°"
+      displayName: "Саша"
     }
   });
   await fetchJson(`/collections/${collectionId}/participants`, {
@@ -837,14 +862,14 @@ async function seedGiftCollection() {
     token: state.actors.alex.accessToken,
     body: {
       linkedUserId: state.actors.masha.user.id,
-      displayName: "РњР°С€Р°"
+      displayName: "Маша"
     }
   });
   await fetchJson(`/collections/${collectionId}/expenses`, {
     method: "POST",
     token: state.actors.alex.accessToken,
     body: {
-      title: "РџРѕРґР°СЂРѕС‡РЅС‹Р№ СЃРµСЂС‚РёС„РёРєР°С‚",
+      title: "Подарочный сертификат",
       amountMinor: 10000,
       payments: [{ paidByParticipantId: organizerParticipant.id, amountMinor: 10000, paymentSource: "card" }]
     }
@@ -2103,7 +2128,7 @@ function renderOrganizerExpenseCard(bundle, expense) {
       <div class="line-item">
         <div class="line-item-copy">
           <span>${escapeHtml(expense.title)}</span>
-          <div class="section-note">${expenseItems.length ? `${expenseItems.length} позиций` : "Р±РµР· itemization"}</div>
+          <div class="section-note">${expenseItems.length ? `${expenseItems.length} позиций` : "без детализации"}</div>
         </div>
         <strong>${formatMoney(expense.amountMinor)}</strong>
       </div>
@@ -2121,7 +2146,7 @@ function renderOrganizerExpenseCard(bundle, expense) {
         expenseItems.length
           ? `
             <div class="mini-section">
-              <label class="field-label" for="expense-rule-participant-${expense.id}">РСЃРєР»СЋС‡РёС‚СЊ СѓС‡Р°СЃС‚РЅРёРєР° из РІС‹Р±СЂР°РЅРЅРѕР№ РїРѕР·РёС†РёРё</label>
+              <label class="field-label" for="expense-rule-participant-${expense.id}">Исключить участника из выбранной позиции</label>
               <select id="expense-rule-participant-${expense.id}" class="text-input">${participantOptions}</select>
             </div>
             <div class="mini-section">
@@ -2853,10 +2878,10 @@ async function updateDisputeFromAction(source, action) {
     body: {
       resolutionComment:
         action === "accept"
-          ? "Organizer accepted from frontend"
+          ? "Принято организатором из интерфейса"
           : action === "reject"
-            ? "Organizer rejected from frontend"
-            : "Organizer recalculated from frontend"
+            ? "Отклонено организатором из интерфейса"
+            : "Пересчитано организатором из интерфейса"
     }
   });
 
@@ -3037,7 +3062,7 @@ async function syncOrganizerAutopayPreview(options = {}) {
 async function executeOrganizerAutopay() {
   const bundle = getSelectedOrganizerBundle();
   if (!bundle) {
-    throw new Error("Organizer collection not selected");
+    throw new Error("Сбор организатора не выбран");
   }
 
   const rule = getGlobalAutopayRule();
@@ -3628,7 +3653,7 @@ function labelizeGroupType(type) {
 
 function labelizeCollectionStatus(status) {
   const labels = {
-    draft: "draft",
+    draft: "черновик",
     participants_selected: "СѓС‡Р°СЃС‚РЅРёРєРё",
     expenses_added: "СЂР°СЃС…РѕРґС‹",
     rules_configured: "РїСЂР°РІРёР»Р°",
@@ -3731,7 +3756,7 @@ function renderOrganizerExpenseCard(bundle, expense) {
                       .map(
                         (rule) => `
                           <div class="line-item muted">
-                            <span>${escapeHtml(displayNameByParticipantId(bundle.participants, rule.participantId))} В· ${escapeHtml(rule.splitMode)}</span>
+                            <span>${escapeHtml(displayNameByParticipantId(bundle.participants, rule.participantId))} В· ${escapeHtml(shareRuleModeLabel(rule.splitMode))}</span>
                             <em>${escapeHtml(describeShareRule(rule))}</em>
                           </div>
                         `
@@ -3751,43 +3776,43 @@ function renderOrganizerExpenseCard(bundle, expense) {
       <div class="line-item">
         <div class="line-item-copy">
           <span>${escapeHtml(expense.title)}</span>
-          <div class="section-note">${expenseItems.length ? `${expenseItems.length} items` : "no itemization"}</div>
+          <div class="section-note">${expenseItems.length ? `${expenseItems.length} позиций` : "без детализации"}</div>
         </div>
         <strong>${formatMoney(expense.amountMinor)}</strong>
       </div>
       ${itemsMarkup}
       <div class="mini-section">
-        <label class="field-label" for="expense-item-title-${expense.id}">New item</label>
-        <input id="expense-item-title-${expense.id}" class="text-input" placeholder="For example, dessert" />
+        <label class="field-label" for="expense-item-title-${expense.id}">Новая позиция</label>
+        <input id="expense-item-title-${expense.id}" class="text-input" placeholder="Например, десерт" />
       </div>
       <div class="mini-section">
-        <label class="field-label" for="expense-item-amount-${expense.id}">Item amount, в‚Ѕ</label>
+        <label class="field-label" for="expense-item-amount-${expense.id}">Сумма позиции, ₽</label>
         <input id="expense-item-amount-${expense.id}" class="text-input" inputmode="decimal" placeholder="300" />
       </div>
-      <button class="secondary-button" type="button" data-action="add-expense-item" data-expense-id="${expense.id}">Add item</button>
+      <button class="secondary-button" type="button" data-action="add-expense-item" data-expense-id="${expense.id}">Добавить позицию</button>
       ${
         expenseItems.length
           ? `
             <div class="mini-section">
-              <label class="field-label" for="expense-rule-participant-${expense.id}">Participant</label>
+              <label class="field-label" for="expense-rule-participant-${expense.id}">Участник</label>
               <select id="expense-rule-participant-${expense.id}" class="text-input">${participantOptions}</select>
             </div>
             <div class="mini-section">
-              <label class="field-label" for="expense-rule-mode-${expense.id}">Rule mode</label>
+              <label class="field-label" for="expense-rule-mode-${expense.id}">Режим правила</label>
               <select id="expense-rule-mode-${expense.id}" class="text-input">
-                <option value="excluded">excluded</option>
-                <option value="weights">weights</option>
-                <option value="fixed">fixed</option>
-                <option value="percent">percent</option>
+                <option value="excluded">исключить</option>
+                <option value="weights">веса</option>
+                <option value="fixed">фиксированно</option>
+                <option value="percent">процент</option>
               </select>
             </div>
             <div class="mini-section">
-              <label class="field-label" for="expense-rule-value-${expense.id}">Rule value</label>
-              <input id="expense-rule-value-${expense.id}" class="text-input" inputmode="decimal" placeholder="For fixed / percent / weights" />
+              <label class="field-label" for="expense-rule-value-${expense.id}">Значение правила</label>
+              <input id="expense-rule-value-${expense.id}" class="text-input" inputmode="decimal" placeholder="Для фиксированной суммы, процента или веса" />
             </div>
             <div class="mini-section">
-              <label class="field-label" for="expense-rule-reason-${expense.id}">Comment</label>
-              <input id="expense-rule-reason-${expense.id}" class="text-input" placeholder="For example, did not drink wine" />
+              <label class="field-label" for="expense-rule-reason-${expense.id}">Комментарий</label>
+              <input id="expense-rule-reason-${expense.id}" class="text-input" placeholder="Например, не пил напитки" />
             </div>
           `
           : ""
@@ -3798,7 +3823,7 @@ function renderOrganizerExpenseCard(bundle, expense) {
 
 function describeShareRule(rule) {
   if (rule.splitMode === "excluded") {
-    return rule.reason ?? "excluded";
+    return rule.reason ?? "исключено";
   }
   if (rule.splitMode === "fixed") {
     return `${formatMoney(rule.fixedAmountMinor ?? 0)}${rule.reason ? ` В· ${rule.reason}` : ""}`;
@@ -3807,9 +3832,24 @@ function describeShareRule(rule) {
     return `${rule.percent ?? 0}%${rule.reason ? ` В· ${rule.reason}` : ""}`;
   }
   if (rule.splitMode === "weights") {
-    return `weight ${rule.weight ?? 1}${rule.reason ? ` В· ${rule.reason}` : ""}`;
+    return `вес ${rule.weight ?? 1}${rule.reason ? ` В· ${rule.reason}` : ""}`;
   }
-  return rule.reason ?? rule.splitMode;
+  return rule.reason ?? shareRuleModeLabel(rule.splitMode);
+}
+
+function shareRuleModeLabel(mode) {
+  switch (mode) {
+    case "excluded":
+      return "исключить";
+    case "weights":
+      return "веса";
+    case "fixed":
+      return "фиксированно";
+    case "percent":
+      return "процент";
+    default:
+      return mode;
+  }
 }
 
 async function addExpenseRuleForParticipant(source) {
@@ -3826,7 +3866,7 @@ async function addExpenseRuleForParticipant(source) {
   const participantId = participantSelect?.value;
   const splitMode = modeSelect?.value ?? "excluded";
   if (!participantId) {
-    setStatus("Select a participant for item-level rule", false);
+    setStatus("Выберите участника для правила на уровне позиции", false);
     return;
   }
 

@@ -1153,8 +1153,8 @@ describe.each<ProviderName>(["memory", "prisma"])("api provider parity: %s", (pr
       headers: { authorization: organizer.authorization }
     });
     const categories = categoriesResponse.json();
-    const foodCategory = categories.find((category: { title: string }) => category.title === "Food");
-    const alcoholCategory = categories.find((category: { title: string }) => category.title === "Alcohol");
+    const foodCategory = categories.find((category: { title: string }) => category.title === "Еда");
+    const alcoholCategory = categories.find((category: { title: string }) => category.title === "Алкоголь");
     expect(foodCategory).toBeTruthy();
     expect(alcoholCategory).toBeTruthy();
 
@@ -1192,7 +1192,7 @@ describe.each<ProviderName>(["memory", "prisma"])("api provider parity: %s", (pr
       headers: { authorization: participantUser.authorization },
       payload: {
         collectionId: collection.id,
-        category: "Food",
+        category: "Еда",
         requiresObjectionWindow: false
       }
     });
@@ -1215,8 +1215,8 @@ describe.each<ProviderName>(["memory", "prisma"])("api provider parity: %s", (pr
     expect(previewResponse.statusCode).toBe(200);
     const preview = previewResponse.json().filter((item: { participantId: string }) => item.participantId === participant.id);
     expect(preview).toHaveLength(2);
-    expect(preview.some((item: { category: string; status: string; amountMinor: number }) => item.category === "food" && item.status === "eligible" && item.amountMinor === 2000)).toBe(true);
-    expect(preview.some((item: { category: string; reasonCode: string; amountMinor: number }) => item.category === "alcohol" && item.reasonCode === "collection_limit_exceeded" && item.amountMinor === 1000)).toBe(true);
+    expect(preview.some((item: { category: string; status: string; amountMinor: number }) => item.category === "еда" && item.status === "eligible" && item.amountMinor === 2000)).toBe(true);
+    expect(preview.some((item: { category: string; reasonCode: string; amountMinor: number }) => item.category === "алкоголь" && item.reasonCode === "collection_limit_exceeded" && item.amountMinor === 1000)).toBe(true);
 
     const dryRunResponse = await app.inject({
       method: "POST",

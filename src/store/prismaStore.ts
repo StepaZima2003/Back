@@ -518,8 +518,8 @@ export class PrismaStore implements AppStore {
             userId: targetUserId,
             collectionId,
             type: "collection_review_requested",
-            title: "Calculation sent to review",
-            body: "Organizer sent the collection calculation to review.",
+            title: "Расчет отправлен на согласование",
+            body: "Организатор отправил расчет сбора на согласование.",
             status: "unread",
             createdAt: new Date(),
             readAt: null
@@ -685,14 +685,14 @@ export class PrismaStore implements AppStore {
         status: "failed",
         isDefault: false,
         lastSetupErrorCode: data.errorCode ?? "mock_setup_failed",
-        lastSetupErrorMessage: data.reason ?? "Mock provider setup failed.",
+        lastSetupErrorMessage: data.reason ?? "Не удалось выполнить тестовую привязку.",
         updatedAt
       },
       create: paymentMethodCreateInputFromRecord(method, {
         status: "failed",
         isDefault: false,
         lastSetupErrorCode: data.errorCode ?? "mock_setup_failed",
-        lastSetupErrorMessage: data.reason ?? "Mock provider setup failed.",
+        lastSetupErrorMessage: data.reason ?? "Не удалось выполнить тестовую привязку.",
         updatedAt
       })
     });
@@ -1492,8 +1492,8 @@ export class PrismaStore implements AppStore {
       collection.organizerId,
       collectionId,
       "participant_confirmed",
-      "Participant confirmed calculation",
-      `${updated.displayNameSnapshot} confirmed the calculation.`
+      "Расчет подтвержден",
+      `${updated.displayNameSnapshot} подтвердил расчет.`
     );
 
     return mapParticipantRecord(updated);
@@ -1554,8 +1554,8 @@ export class PrismaStore implements AppStore {
       collection.organizerId,
       collectionId,
       "dispute_created",
-      "New dispute",
-      `${participant.displayNameSnapshot} disputed the calculation.`
+      "Новый спор",
+      `${participant.displayNameSnapshot} оспорил расчет.`
     );
 
     return mapDisputeRecord(dispute);
@@ -1580,8 +1580,8 @@ export class PrismaStore implements AppStore {
       dispute.createdByUserId,
       dispute.collectionId,
       "dispute_updated",
-      "Dispute accepted",
-      "Organizer accepted your dispute."
+      "Спор принят",
+      "Организатор принял ваш спор."
     );
     return updated;
   }
@@ -1612,8 +1612,8 @@ export class PrismaStore implements AppStore {
       dispute.createdByUserId,
       dispute.collectionId,
       "dispute_updated",
-      "Dispute rejected",
-      "Organizer rejected your dispute."
+      "Спор отклонен",
+      "Организатор отклонил ваш спор."
     );
     return updated;
   }
@@ -1636,8 +1636,8 @@ export class PrismaStore implements AppStore {
       dispute.createdByUserId,
       dispute.collectionId,
       "dispute_updated",
-      "Dispute resolved",
-      "Organizer recalculated the collection after dispute review."
+      "Спор решен",
+      "Организатор пересчитал сбор после разбора спора."
     );
     return { dispute: updated, calculationVersion };
   }
@@ -1722,8 +1722,8 @@ export class PrismaStore implements AppStore {
       collectionId,
       mapManualPaymentProofRecord(proof),
       "manual_payment_submitted",
-      "Manual payment submitted",
-      "A participant marked a manual payment as paid."
+      "Ручная оплата отправлена",
+      "Участник отметил ручную оплату как выполненную."
     );
 
     return mapManualPaymentProofRecord(proof);
@@ -1804,8 +1804,8 @@ export class PrismaStore implements AppStore {
       proof.payerUserId,
       proof.collectionId,
       "manual_payment_confirmed",
-      "Manual payment confirmed",
-      "Your manual payment was confirmed."
+      "Ручная оплата подтверждена",
+      "Ваша ручная оплата подтверждена."
     );
     return mapManualPaymentProofRecord(updated);
   }
@@ -1843,8 +1843,8 @@ export class PrismaStore implements AppStore {
       proof.payerUserId,
       proof.collectionId,
       "manual_payment_rejected",
-      "Manual payment rejected",
-      "Your manual payment proof was rejected."
+      "Ручная оплата отклонена",
+      "Подтверждение ручной оплаты отклонено."
     );
     return mapManualPaymentProofRecord(updated);
   }
@@ -2579,7 +2579,7 @@ export class PrismaStore implements AppStore {
             status: "failed",
             isDefault: false,
             lastSetupErrorCode: "provider_setup_failed",
-            lastSetupErrorMessage: event.reason ?? "Provider setup failed.",
+            lastSetupErrorMessage: event.reason ?? "Не удалось завершить привязку карты.",
             updatedAt
           },
           create: paymentMethodCreateInputFromRecord(method, {
@@ -2592,7 +2592,7 @@ export class PrismaStore implements AppStore {
             status: "failed",
             isDefault: false,
             lastSetupErrorCode: "provider_setup_failed",
-            lastSetupErrorMessage: event.reason ?? "Provider setup failed.",
+            lastSetupErrorMessage: event.reason ?? "Не удалось завершить привязку карты.",
             updatedAt
           })
         });

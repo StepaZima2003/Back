@@ -786,6 +786,7 @@ async function loadCollectionBundle(collection) {
 }
 
 function renderAll() {
+  renderShowcase();
   renderHome();
   renderInboxScreen();
   renderCollectionsScreen();
@@ -795,6 +796,298 @@ function renderAll() {
   renderFriendsScreen();
   renderGroupsScreen();
   renderProfileScreen();
+}
+
+function renderShowcase() {
+  const bundle = getSelectedOrganizerBundle() ?? state.organizerBundles[0] ?? state.collectionBundles[0] ?? null;
+  if (!bundle) {
+    return;
+  }
+
+  const transfers = bundle.calculation?.result?.transferPlan ?? [];
+  const remainingMinor = Math.max(bundle.collection.totalAmountMinor - bundle.collectedMinor, 0);
+  const expenseItemsCount = bundle.expenses.reduce((sum, expense) => sum + (expense.items?.length ?? 0), 0) || bundle.expenses.length;
+  const dueParticipants = bundle.participants
+    .map((participant) => ({
+      participant,
+      dueMinor: transfers
+        .filter((transfer) => transfer.fromResponsiblePayerId === participant.id)
+        .reduce((sum, transfer) => sum + transfer.amountMinor, 0),
+      paidMinor:
+        bundle.payments
+          .filter((payment) => payment.payerParticipantId === participant.id && payment.status === "succeeded")
+          .reduce((sum, payment) => sum + payment.amountMinor, 0) +
+        bundle.manualPayments
+          .filter((payment) => payment.payerParticipantId === participant.id && payment.status === "confirmed")
+          .reduce((sum, payment) => sum + payment.amountMinor, 0)
+    }))
+    .sort((left, right) => right.dueMinor - left.dueMinor || right.paidMinor - left.paidMinor);
+
+  text("showcase-collection-title", bundle.collection.title);
+  text("showcase-collected-amount", formatMoney(bundle.collectedMinor));
+  text("showcase-collected-subtitle", `из ${formatMoney(bundle.collection.totalAmountMinor)}`);
+  text("showcase-progress-value", `${bundle.progressPercent}%`);
+  text("showcase-remaining-note", `Осталось собрать ${formatMoney(remainingMinor)}`);
+  text("showcase-deadline-note", bundle.progressPercent >= 100 ? "Все участники закрыли свои доли" : "Напоминания можно отправить в один тап");
+  text("showcase-expenses-total", formatMoney(bundle.collection.totalAmountMinor));
+  text("showcase-expenses-count", `${expenseItemsCount} позиций`);
+  text("showcase-participants-total", `${bundle.participants.length} человек`);
+  text("showcase-expenses-screen-total", formatMoney(bundle.collection.totalAmountMinor));
+  text("showcase-expenses-screen-count", `${expenseItemsCount} позиций`);
+  text("showcase-settlement-total", formatMoney(remainingMinor));
+  text(
+    "showcase-reminder-note",
+    dueParticipants.some((item) => item.dueMinor > 0) ? "Напоминания готовы к отправке" : "Все долги закрыты"
+  );
+  text(
+    "showcase-finish-title",
+    remainingMinor <= 0 || bundle.collection.status === "paid" || bundle.collection.status === "closed" ? "Сбор завершен!" : "Сбор идет по плану"
+  );
+  text(
+    "showcase-finish-subtitle",
+    remainingMinor <= 0 || bundle.collection.status === "paid" || bundle.collection.status === "closed"
+      ? "Все рассчитались. До новых встреч."
+      : `Осталось собрать ${formatMoney(remainingMinor)}. Вся история уже под контролем.`
+  );
+  text(
+    "showcase-receipt-note",
+    bundle.expenses.length ? `Найдено ${expenseItemsCount} позиций. Проверьте состав и подтвердите.` : "Добавьте первый расход и подтвердите состав."
+  );
+
+  const progressRing = document.getElementById("showcase-progress-ring");
+  progressRing?.style.setProperty("--progress", String(bundle.progressPercent));
+
+  const heroAvatars = document.getElementById("showcase-hero-avatars");
+  if (heroAvatars) {
+    const topParticipants = bundle.participants.slice(0, 3);
+    const extraCount = Math.max(bundle.participants.length - topParticipants.length, 0);
+    heroAvatars.innerHTML =
+      topParticipants
+        .map(
+          (participant, index) =>
+            `<span class="showcase-avatar-chip" style="${showcaseAvatarStyle(index)}">${escapeHtml(initials(participant.displayNameSnapshot))}</span>`
+        )
+        .join("") + (extraCount ? `<span class="showcase-avatar-chip more">+${extraCount}</span>` : "");
+  }
+
+  const participantsGrid = document.getElementById("showcase-participants-grid");
+  if (participantsGrid) {
+    participantsGrid.innerHTML = bundle.participants
+      .slice(0, 4)
+      .map((participant, index) => {
+        const dueMinor = transfers
+          .filter((transfer) => transfer.fromResponsiblePayerId === participant.id)
+          .reduce((sum, transfer) => sum + transfer.amountMinor, 0);
+        const paidMinor =
+          bundle.payments
+            .filter((payment) => payment.payerParticipantId === participant.id && payment.status === "succeeded")
+            .reduce((sum, payment) => sum + payment.amountMinor, 0) +
+          bundle.manualPayments
+            .filter((payment) => payment.payerParticipantId === participant.id && payment.status === "confirmed")
+            .reduce((sum, payment) => sum + payment.amountMinor, 0);
+        const amountMinor = dueMinor > 0 ? dueMinor : paidMinor;
+        const statusLabel = dueMinor > 0 ? "к оплате" : paidMinor > 0 ? "внесено" : "в сборе";
+        return `
+          <article class="showcase-participant-card">
+            <span class="showcase-avatar-chip" style="${showcaseAvatarStyle(index + 1)}">${escapeHtml(initials(participant.displayNameSnapshot))}</span>
+            <div class="showcase-person-name">${escapeHtml(participant.displayNameSnapshot)}</div>
+            <strong>${formatMoney(amountMinor)}</strong>
+            <div class="showcase-person-meta">${escapeHtml(statusLabel)}</div>
+          </article>
+        `;
+      })
+      .join("");
+  }
+
+  const expenseChips = document.getElementById("showcase-expense-chips");
+  if (expenseChips) {
+    const categories = ["Все", ...new Set(bundle.expenses.map((expense) => inferExpenseCategory(expense.title)).filter(Boolean))].slice(0, 5);
+    expenseChips.innerHTML = categories
+      .map((category, index) => `<button class="mock-chip${index === 0 ? " is-active" : ""}" type="button">${escapeHtml(category)}</button>`)
+      .join("");
+  }
+
+  const expensesList = document.getElementById("showcase-expenses-list");
+  if (expensesList) {
+    expensesList.innerHTML = bundle.expenses.length
+      ? bundle.expenses.slice(0, 6).map((expense) => renderShowcaseExpenseRow(expense)).join("")
+      : renderShowcaseEmpty("Добавьте первый расход, и он появится здесь.");
+  }
+
+  const receiptPaper = document.getElementById("showcase-receipt-paper");
+  if (receiptPaper) {
+    const receiptLines = bundle.expenses.length
+      ? bundle.expenses
+          .slice(0, 6)
+          .map(
+            (expense) => `
+              <div class="receipt-line">
+                <span>${escapeHtml(truncateText(expense.title, 18))}</span>
+                <span>${formatMoney(expense.amountMinor)}</span>
+              </div>
+            `
+          )
+          .join("")
+      : '<div class="receipt-line"><span>Нет распознанных позиций</span><span>0 ₽</span></div>';
+    receiptPaper.innerHTML = `
+      <div class="receipt-store">ООО "Вместе"</div>
+      <div class="receipt-date">${escapeHtml(formatNotificationTime(bundle.collection.updatedAt ?? bundle.collection.createdAt ?? new Date().toISOString()))}</div>
+      ${receiptLines}
+      <div class="receipt-total">ИТОГО ${formatMoney(bundle.collection.totalAmountMinor)}</div>
+    `;
+  }
+
+  const debtList = document.getElementById("showcase-debt-list");
+  if (debtList) {
+    const debtors = dueParticipants.filter((item) => item.dueMinor > 0).slice(0, 4);
+    debtList.innerHTML = debtors.length
+      ? debtors
+          .map(
+            (item, index) => `
+              <article class="showcase-debt-row">
+                <span class="showcase-avatar-chip" style="${showcaseAvatarStyle(index + 2)}">${escapeHtml(initials(item.participant.displayNameSnapshot))}</span>
+                <div class="showcase-debt-copy">
+                  <div class="showcase-person-name">${escapeHtml(item.participant.displayNameSnapshot)}</div>
+                  <div class="showcase-person-meta">${formatMoney(item.dueMinor)}</div>
+                </div>
+                <button class="mock-remind-button" type="button" data-go="inbox" data-nav="home">Напомнить</button>
+              </article>
+            `
+          )
+          .join("")
+      : renderShowcaseEmpty("Никто ничего не должен. Этот сбор уже закрыт.");
+  }
+
+  const notificationsList = document.getElementById("showcase-notifications-list");
+  if (notificationsList) {
+    notificationsList.innerHTML = state.notifications.length
+      ? state.notifications.slice(0, 3).map((notification, index) => renderShowcaseNotificationRow(notification, index)).join("")
+      : renderShowcaseEmpty("Новых уведомлений пока нет.");
+  }
+
+  const paymentMethods = document.getElementById("showcase-payment-methods");
+  if (paymentMethods) {
+    const activeMethods = state.paymentMethods.filter((method) => method.status === "active").slice(0, 2);
+    const cards = activeMethods.map(
+      (method) => `
+        <article class="mock-payment-card">
+          <div class="mock-card-chip"></div>
+          <div>
+            <strong>${escapeHtml(method.maskedPan)}</strong>
+            <p>${escapeHtml(method.isDefault ? "Основная карта" : paymentMethodStatusLabel(method.status))}</p>
+          </div>
+        </article>
+      `
+    );
+    cards.push(`
+      <article class="mock-payment-card is-add">
+        <div class="mock-add-icon" aria-hidden="true"></div>
+        <p>Добавить карту</p>
+      </article>
+    `);
+    paymentMethods.innerHTML = cards.join("");
+  }
+}
+
+function renderShowcaseExpenseRow(expense) {
+  const category = inferExpenseCategory(expense.title);
+  const { icon, tone } = showcaseExpenseVisual(expense.title);
+  return `
+    <article class="showcase-expense-row">
+      <span class="showcase-expense-icon ${tone}">${icon}</span>
+      <div>
+        <div class="showcase-expense-row-title">${escapeHtml(expense.title)}</div>
+        <div class="showcase-expense-row-subtitle">${escapeHtml(category)}</div>
+      </div>
+      <strong>${formatMoney(expense.amountMinor)}</strong>
+    </article>
+  `;
+}
+
+function renderShowcaseNotificationRow(notification, index) {
+  const badgeClass = index === 0 ? "" : index === 1 ? " is-warn" : " is-muted";
+  const badgeLabel = index === 0 ? "✓" : index === 1 ? "!" : "+";
+  return `
+    <article class="mock-notification-row">
+      <div class="mock-notification-main">
+        <span class="showcase-avatar-chip" style="${showcaseAvatarStyle(index + 4)}">${escapeHtml(initials(notification.title))}</span>
+        <div class="mock-notification-meta">
+          <strong>${escapeHtml(notification.title)}</strong>
+          <p>${escapeHtml(formatNotificationTime(notification.createdAt))}</p>
+        </div>
+      </div>
+      <span class="mock-status-badge${badgeClass}">${badgeLabel}</span>
+    </article>
+  `;
+}
+
+function renderShowcaseEmpty(copy) {
+  return `<article class="showcase-expense-row"><div class="showcase-expense-row-subtitle">${escapeHtml(copy)}</div></article>`;
+}
+
+function showcaseAvatarStyle(index) {
+  const gradients = [
+    "background: linear-gradient(145deg, #ffcb9c, #79c9ff);",
+    "background: linear-gradient(145deg, #f8a3a3, #f7d38a);",
+    "background: linear-gradient(145deg, #92f3ba, #5db8ff);",
+    "background: linear-gradient(145deg, #f2b680, #bd8dff);",
+    "background: linear-gradient(145deg, #ffc5d2, #8cc8ff);"
+  ];
+  return gradients[index % gradients.length];
+}
+
+function inferExpenseCategory(title) {
+  const value = String(title ?? "").toLowerCase();
+  if (value.includes("мяс") || value.includes("шашлык")) {
+    return "Еда";
+  }
+  if (value.includes("овощ") || value.includes("зел")) {
+    return "Овощи";
+  }
+  if (value.includes("напит") || value.includes("сок") || value.includes("вода")) {
+    return "Напитки";
+  }
+  if (value.includes("уголь") || value.includes("розжиг")) {
+    return "Для мангала";
+  }
+  if (value.includes("соус") || value.includes("спец")) {
+    return "Соусы";
+  }
+  if (value.includes("хлеб") || value.includes("лаваш")) {
+    return "Выпечка";
+  }
+  return "Все";
+}
+
+function showcaseExpenseVisual(title) {
+  const value = String(title ?? "").toLowerCase();
+  if (value.includes("мяс") || value.includes("шашлык")) {
+    return { icon: "🥩", tone: "" };
+  }
+  if (value.includes("овощ") || value.includes("зел")) {
+    return { icon: "🥬", tone: "fresh" };
+  }
+  if (value.includes("напит") || value.includes("сок") || value.includes("вода")) {
+    return { icon: "🥤", tone: "drink" };
+  }
+  if (value.includes("уголь") || value.includes("розжиг")) {
+    return { icon: "🔥", tone: "fire" };
+  }
+  if (value.includes("соус") || value.includes("спец")) {
+    return { icon: "🥫", tone: "sauce" };
+  }
+  if (value.includes("хлеб") || value.includes("лаваш")) {
+    return { icon: "🥖", tone: "bread" };
+  }
+  return { icon: "•", tone: "" };
+}
+
+function truncateText(value, length) {
+  const source = String(value ?? "");
+  if (source.length <= length) {
+    return source;
+  }
+  return `${source.slice(0, Math.max(0, length - 1))}…`;
 }
 
 function renderBootSkeletons() {
@@ -834,6 +1127,23 @@ function renderBootSkeletons() {
         <div class="skeleton-line skeleton-line-copy"></div>
       </article>
     `;
+  }
+
+  const showcaseExpenses = document.getElementById("showcase-expenses-list");
+  const showcaseDebts = document.getElementById("showcase-debt-list");
+  const showcaseNotifications = document.getElementById("showcase-notifications-list");
+  const showcasePayments = document.getElementById("showcase-payment-methods");
+  if (showcaseExpenses) {
+    showcaseExpenses.innerHTML = `${renderShowcaseEmpty("Загружаем расходы...")}${renderShowcaseEmpty("Загружаем расходы...")}`;
+  }
+  if (showcaseDebts) {
+    showcaseDebts.innerHTML = `${renderShowcaseEmpty("Готовим список должников...")}${renderShowcaseEmpty("Готовим список должников...")}`;
+  }
+  if (showcaseNotifications) {
+    showcaseNotifications.innerHTML = `${renderShowcaseEmpty("Подтягиваем уведомления...")}`;
+  }
+  if (showcasePayments) {
+    showcasePayments.innerHTML = `${renderShowcaseEmpty("Проверяем методы оплаты...")}`;
   }
 }
 

@@ -11,8 +11,258 @@
   </head>
   <body>
     <main class="app-shell">
-      <section class="device-frame">
-        <div class="phone">
+      <section class="vmeste-showcase" aria-label="Витрина продукта Вместе">
+        <aside class="showcase-brand-panel">
+          <div class="showcase-brand-lockup">
+            <div class="vmeste-logo" aria-hidden="true">
+              <span class="vmeste-logo-cell vmeste-logo-cell-a"></span>
+              <span class="vmeste-logo-cell vmeste-logo-cell-b"></span>
+              <span class="vmeste-logo-cell vmeste-logo-cell-c"></span>
+              <span class="vmeste-logo-cell vmeste-logo-cell-d"></span>
+            </div>
+            <div class="showcase-brand-copy">
+              <p class="showcase-brand-name">вместе</p>
+              <h1 class="showcase-brand-title">Совместные расходы без неловкости</h1>
+            </div>
+          </div>
+
+          <div class="showcase-feature-list">
+            <article class="showcase-feature-card">
+              <div class="showcase-feature-icon showcase-feature-icon-receipt"></div>
+              <div>
+                <h2>Автоматический разбор чеков</h2>
+                <p>Загружай чек, а Вместе сам соберет позиции и подготовит черновик расходов.</p>
+              </div>
+            </article>
+            <article class="showcase-feature-card">
+              <div class="showcase-feature-icon showcase-feature-icon-brain"></div>
+              <div>
+                <h2>Умное распределение</h2>
+                <p>Приложение учитывает, кто что брал, кто уже платил и кто платит за гостя.</p>
+              </div>
+            </article>
+            <article class="showcase-feature-card">
+              <div class="showcase-feature-icon showcase-feature-icon-eye"></div>
+              <div>
+                <h2>Прозрачно для всех</h2>
+                <p>Участники видят общий итог, свои доли и статус оплаты без спорных сюрпризов.</p>
+              </div>
+            </article>
+          </div>
+        </aside>
+
+        <section class="showcase-stage">
+          <div class="showcase-grid">
+            <article class="mock-phone mock-phone-main">
+              <div class="mock-status-bar">
+                <span>9:41</span>
+                <div class="mock-status-meta">
+                  <span class="mock-signal"></span>
+                  <span class="mock-battery"></span>
+                </div>
+              </div>
+              <div class="mock-phone-scroll">
+                <div class="mock-phone-topline">
+                  <button class="mock-icon-button" type="button" aria-label="Назад"></button>
+                  <button class="mock-icon-button is-gear" type="button" aria-label="Настройки"></button>
+                </div>
+                <header class="mock-phone-header">
+                  <h2 id="showcase-collection-title">Шашлыки на даче</h2>
+                  <div class="showcase-avatar-stack" id="showcase-hero-avatars"></div>
+                </header>
+
+                <section class="mock-summary-card">
+                  <div>
+                    <p class="mock-label">Собрано</p>
+                    <strong id="showcase-collected-amount">0 ₽</strong>
+                    <p class="mock-subtle" id="showcase-collected-subtitle">из 0 ₽</p>
+                  </div>
+                  <div class="mock-progress-ring" id="showcase-progress-ring">
+                    <span id="showcase-progress-value">0%</span>
+                  </div>
+                </section>
+
+                <section class="mock-inline-note">
+                  <span class="mock-inline-note-dot"></span>
+                  <div>
+                    <strong id="showcase-remaining-note">Осталось собрать 0 ₽</strong>
+                    <p id="showcase-deadline-note">До 25 мая</p>
+                  </div>
+                </section>
+
+                <section class="mock-info-card">
+                  <div class="mock-info-head">
+                    <div>
+                      <p class="mock-label">Расходы</p>
+                      <strong id="showcase-expenses-total">0 ₽</strong>
+                      <p class="mock-subtle" id="showcase-expenses-count">0 позиций</p>
+                    </div>
+                    <button class="mock-pill-button" type="button" data-go="organizer" data-nav="collections">Посмотреть</button>
+                  </div>
+                </section>
+
+                <section class="mock-info-card">
+                  <div class="mock-info-head">
+                    <div>
+                      <p class="mock-label">Участники</p>
+                      <strong id="showcase-participants-total">0 человек</strong>
+                    </div>
+                    <button class="mock-pill-button" type="button" data-go="friends" data-nav="friends">Список</button>
+                  </div>
+                  <div class="showcase-participant-grid" id="showcase-participants-grid"></div>
+                </section>
+
+                <button class="mock-primary-button" type="button" data-go="organizer" data-nav="collections">Пригласить в сбор</button>
+              </div>
+            </article>
+
+            <article class="mock-phone mock-phone-expenses">
+              <div class="mock-status-bar">
+                <span>9:41</span>
+                <div class="mock-status-meta">
+                  <span class="mock-signal"></span>
+                  <span class="mock-battery"></span>
+                </div>
+              </div>
+              <div class="mock-phone-scroll">
+                <div class="mock-phone-topline">
+                  <button class="mock-icon-button" type="button" aria-label="Назад"></button>
+                  <button class="mock-icon-button is-bookmark" type="button" aria-label="Сохранить"></button>
+                </div>
+                <header class="mock-phone-header">
+                  <h2>Расходы</h2>
+                  <p class="mock-subtle"><span id="showcase-expenses-screen-total">0 ₽</span> · <span id="showcase-expenses-screen-count">0 позиций</span></p>
+                </header>
+                <div class="mock-chip-row" id="showcase-expense-chips">
+                  <button class="mock-chip is-active" type="button">Все</button>
+                </div>
+                <div class="showcase-expense-list" id="showcase-expenses-list"></div>
+                <button class="mock-primary-button" type="button" data-go="organizer" data-nav="collections">Добавить расход</button>
+              </div>
+            </article>
+
+            <article class="mock-phone mock-phone-receipt">
+              <div class="mock-status-bar">
+                <span>9:41</span>
+                <div class="mock-status-meta">
+                  <span class="mock-signal"></span>
+                  <span class="mock-battery"></span>
+                </div>
+              </div>
+              <div class="mock-phone-scroll">
+                <div class="mock-phone-topline">
+                  <button class="mock-icon-button" type="button" aria-label="Назад"></button>
+                </div>
+                <header class="mock-phone-header centered">
+                  <h2>Загрузка чека</h2>
+                </header>
+                <div class="mock-receipt-stage">
+                  <div class="mock-receipt-paper" id="showcase-receipt-paper"></div>
+                </div>
+                <div class="mock-footer-copy">
+                  <strong>Чек распознан</strong>
+                  <p id="showcase-receipt-note">Проверьте позиции и подтвердите состав.</p>
+                </div>
+                <button class="mock-primary-button" type="button" data-go="organizer" data-nav="collections">Подтвердить</button>
+              </div>
+            </article>
+
+            <article class="mock-phone mock-phone-settlement">
+              <div class="mock-status-bar">
+                <span>9:41</span>
+                <div class="mock-status-meta">
+                  <span class="mock-signal"></span>
+                  <span class="mock-battery"></span>
+                </div>
+              </div>
+              <div class="mock-phone-scroll">
+                <div class="mock-phone-topline">
+                  <button class="mock-icon-button" type="button" aria-label="Назад"></button>
+                </div>
+                <header class="mock-phone-header">
+                  <h2>Расчеты</h2>
+                </header>
+                <div class="mock-segmented">
+                  <button class="mock-segment is-active" type="button">Кто должен</button>
+                  <button class="mock-segment" type="button">Кто заплатил</button>
+                </div>
+                <div class="mock-metric-block">
+                  <p class="mock-label">Нужно собрать</p>
+                  <strong id="showcase-settlement-total">0 ₽</strong>
+                </div>
+                <div class="showcase-debt-list" id="showcase-debt-list"></div>
+                <p class="mock-success-note" id="showcase-reminder-note">Всем напоминания отправлены</p>
+              </div>
+            </article>
+
+            <div class="showcase-side-stack">
+              <section class="mock-panel mock-panel-notifications">
+                <header class="mock-panel-header">
+                  <h2>Уведомления</h2>
+                </header>
+                <div id="showcase-notifications-list"></div>
+              </section>
+
+              <section class="mock-panel mock-panel-finish">
+                <div class="mock-finish-illustration" aria-hidden="true">
+                  <div class="mock-stars"></div>
+                  <div class="mock-trees mock-tree-left"></div>
+                  <div class="mock-trees mock-tree-right"></div>
+                  <div class="mock-campfire"></div>
+                </div>
+                <div class="mock-finish-copy">
+                  <h2 id="showcase-finish-title">Сбор завершен!</h2>
+                  <p id="showcase-finish-subtitle">Все рассчитались. До новых встреч.</p>
+                </div>
+                <button class="mock-primary-button" type="button" data-go="home" data-nav="home">Отлично</button>
+              </section>
+            </div>
+
+            <section class="mock-panel mock-panel-payments">
+              <header class="mock-panel-header">
+                <div>
+                  <h2>Способы оплаты</h2>
+                  <p>Подключите карту для быстрых переводов</p>
+                </div>
+              </header>
+              <div class="showcase-payment-grid" id="showcase-payment-methods"></div>
+            </section>
+
+            <section class="mock-panel mock-panel-how">
+              <header class="mock-panel-header">
+                <div>
+                  <h2>Как это работает?</h2>
+                </div>
+              </header>
+              <div class="showcase-how-grid">
+                <article class="showcase-step-card">
+                  <div class="showcase-step-icon step-icon-collect"></div>
+                  <strong>1. Создайте сбор</strong>
+                  <p>Добавьте название и участников.</p>
+                </article>
+                <article class="showcase-step-card">
+                  <div class="showcase-step-icon step-icon-receipt"></div>
+                  <strong>2. Загрузите чек</strong>
+                  <p>Мы распознаем позиции автоматически.</p>
+                </article>
+                <article class="showcase-step-card">
+                  <div class="showcase-step-icon step-icon-approve"></div>
+                  <strong>3. Подтвердите</strong>
+                  <p>Проверьте состав и распределение.</p>
+                </article>
+                <article class="showcase-step-card">
+                  <div class="showcase-step-icon step-icon-money"></div>
+                  <strong>4. Соберите деньги</strong>
+                  <p>Мы напомним участникам и учтем оплату.</p>
+                </article>
+              </div>
+            </section>
+          </div>
+        </section>
+      </section>
+
+      <section class="device-frame legacy-shell">
+        <div class="phone legacy-phone">
           <header class="status-bar">
             <span class="status-time">9:41</span>
             <div class="status-meta">

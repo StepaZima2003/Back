@@ -2812,3 +2812,1197 @@ body::before {
   font-size: 12px;
   line-height: 1.45;
 }
+
+body {
+  background:
+    radial-gradient(circle at 18% 78%, rgba(43, 188, 170, 0.26), transparent 26%),
+    radial-gradient(circle at 78% 16%, rgba(70, 98, 225, 0.18), transparent 22%),
+    linear-gradient(180deg, #0d1528 0%, #101a2f 48%, #0f1a31 100%);
+  color: #f4f7ff;
+}
+
+.app-shell {
+  display: block;
+  padding: 0;
+}
+
+.legacy-shell {
+  display: none;
+}
+
+.vmeste-showcase {
+  min-height: 100vh;
+  max-width: 1540px;
+  margin: 0 auto;
+  padding: 42px 34px 48px;
+  display: grid;
+  grid-template-columns: 300px minmax(0, 1fr);
+  gap: 34px;
+}
+
+.showcase-brand-panel {
+  padding: 26px 8px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 34px;
+}
+
+.showcase-brand-lockup {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
+.vmeste-logo {
+  width: 104px;
+  height: 96px;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 6px;
+}
+
+.vmeste-logo-cell {
+  display: block;
+  background: linear-gradient(160deg, #90ed74 0%, #59d9bf 52%, #6da9ff 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.26),
+    0 16px 36px rgba(62, 205, 175, 0.18);
+}
+
+.vmeste-logo-cell-a,
+.vmeste-logo-cell-c {
+  border-radius: 999px 999px 999px 18px;
+}
+
+.vmeste-logo-cell-b,
+.vmeste-logo-cell-d {
+  border-radius: 999px 999px 18px 999px;
+}
+
+.showcase-brand-name {
+  margin: 0 0 6px;
+  color: #f4f6ff;
+  font-size: 58px;
+  font-weight: 800;
+  line-height: 0.92;
+  text-transform: lowercase;
+}
+
+.showcase-brand-title {
+  margin: 0;
+  max-width: 220px;
+  color: rgba(226, 232, 248, 0.84);
+  font-size: 22px;
+  line-height: 1.28;
+  font-weight: 600;
+}
+
+.showcase-feature-list {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.showcase-feature-card {
+  display: grid;
+  grid-template-columns: 50px minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.showcase-feature-card h2,
+.mock-panel-header h2,
+.mock-phone-header h2 {
+  margin: 0;
+  color: #f5f7ff;
+  font-size: 16px;
+  line-height: 1.2;
+  font-weight: 700;
+}
+
+.showcase-feature-card p,
+.mock-panel-header p,
+.mock-subtle,
+.mock-footer-copy p,
+.showcase-step-card p {
+  margin: 6px 0 0;
+  color: rgba(182, 190, 214, 0.9);
+  font-size: 14px;
+  line-height: 1.48;
+}
+
+.showcase-feature-icon {
+  width: 50px;
+  height: 50px;
+  border-radius: 16px;
+  position: relative;
+  background: rgba(168, 192, 255, 0.12);
+  border: 1px solid rgba(179, 201, 255, 0.14);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+.showcase-feature-icon::before,
+.showcase-feature-icon::after {
+  content: "";
+  position: absolute;
+}
+
+.showcase-feature-icon-receipt::before {
+  width: 18px;
+  height: 22px;
+  left: 16px;
+  top: 13px;
+  border-radius: 5px;
+  border: 2px solid #cbe1ff;
+}
+
+.showcase-feature-icon-receipt::after {
+  width: 10px;
+  height: 2px;
+  left: 20px;
+  top: 22px;
+  background: #cbe1ff;
+  box-shadow: 0 6px 0 #cbe1ff;
+}
+
+.showcase-feature-icon-brain::before {
+  inset: 12px;
+  border-radius: 999px;
+  border: 2px solid #cbe1ff;
+}
+
+.showcase-feature-icon-brain::after {
+  width: 18px;
+  height: 18px;
+  left: 16px;
+  top: 16px;
+  border-radius: 999px;
+  box-shadow:
+    -8px 0 0 -4px #cbe1ff,
+    8px 0 0 -4px #cbe1ff,
+    0 -8px 0 -4px #cbe1ff,
+    0 8px 0 -4px #cbe1ff;
+}
+
+.showcase-feature-icon-eye::before {
+  width: 24px;
+  height: 16px;
+  left: 13px;
+  top: 17px;
+  border-radius: 999px;
+  border: 2px solid #cbe1ff;
+}
+
+.showcase-feature-icon-eye::after {
+  width: 8px;
+  height: 8px;
+  left: 21px;
+  top: 21px;
+  border-radius: 999px;
+  background: #cbe1ff;
+}
+
+.showcase-stage {
+  position: relative;
+}
+
+.showcase-grid {
+  display: grid;
+  grid-template-columns: minmax(250px, 308px) minmax(250px, 308px) minmax(290px, 332px);
+  grid-template-areas:
+    "main expenses side"
+    "receipt settlement side"
+    "payments how how";
+  align-items: start;
+  gap: 24px;
+}
+
+.mock-phone,
+.mock-panel {
+  background:
+    linear-gradient(180deg, rgba(19, 27, 49, 0.98) 0%, rgba(12, 20, 38, 0.98) 100%);
+  border: 1px solid rgba(175, 187, 224, 0.13);
+  box-shadow:
+    0 18px 42px rgba(1, 7, 18, 0.5),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.mock-phone {
+  position: relative;
+  border-radius: 38px;
+  min-height: 640px;
+  padding: 18px 14px 16px;
+}
+
+.mock-phone::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 12px;
+  width: 124px;
+  height: 28px;
+  border-radius: 999px;
+  transform: translateX(-50%);
+  background: #070b15;
+  box-shadow: inset 0 -1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.mock-phone::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: 10px;
+  width: 138px;
+  height: 5px;
+  border-radius: 999px;
+  transform: translateX(-50%);
+  background: rgba(214, 223, 248, 0.16);
+}
+
+.mock-phone-main {
+  grid-area: main;
+}
+
+.mock-phone-expenses {
+  grid-area: expenses;
+}
+
+.mock-phone-receipt {
+  grid-area: receipt;
+  min-height: 548px;
+}
+
+.mock-phone-settlement {
+  grid-area: settlement;
+  min-height: 548px;
+}
+
+.showcase-side-stack {
+  grid-area: side;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
+.mock-panel {
+  border-radius: 32px;
+  padding: 26px 24px;
+}
+
+.mock-panel-payments {
+  grid-area: payments;
+  min-height: 260px;
+}
+
+.mock-panel-how {
+  grid-area: how;
+  min-height: 260px;
+}
+
+.mock-status-bar,
+.mock-phone-topline,
+.mock-info-head,
+.mock-panel-header,
+.mock-notification-row,
+.mock-payment-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.mock-status-bar {
+  padding: 0 10px 14px;
+  color: #f5f7ff;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.mock-status-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.mock-signal,
+.mock-battery {
+  display: inline-block;
+}
+
+.mock-signal {
+  width: 18px;
+  height: 11px;
+  border-radius: 999px;
+  border: 2px solid rgba(240, 244, 255, 0.84);
+  border-left-color: transparent;
+  border-bottom-color: transparent;
+  transform: rotate(45deg);
+}
+
+.mock-battery {
+  width: 22px;
+  height: 11px;
+  border-radius: 4px;
+  border: 2px solid rgba(240, 244, 255, 0.84);
+  position: relative;
+}
+
+.mock-battery::after {
+  content: "";
+  position: absolute;
+  right: -5px;
+  top: 2px;
+  width: 3px;
+  height: 5px;
+  border-radius: 0 2px 2px 0;
+  background: rgba(240, 244, 255, 0.84);
+}
+
+.mock-phone-scroll {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 0 4px 16px;
+}
+
+.mock-phone-topline {
+  padding: 4px 4px 2px;
+}
+
+.mock-icon-button {
+  width: 28px;
+  height: 28px;
+  position: relative;
+  border-radius: 50%;
+  color: #fff;
+}
+
+.mock-icon-button::before,
+.mock-icon-button::after {
+  content: "";
+  position: absolute;
+}
+
+.mock-icon-button::before {
+  width: 9px;
+  height: 9px;
+  left: 11px;
+  top: 9px;
+  border-left: 2px solid rgba(255, 255, 255, 0.92);
+  border-bottom: 2px solid rgba(255, 255, 255, 0.92);
+  transform: rotate(45deg);
+}
+
+.mock-icon-button.is-gear::before,
+.mock-icon-button.is-gear::after,
+.mock-icon-button.is-bookmark::before,
+.mock-icon-button.is-bookmark::after {
+  transform: none;
+  border: 0;
+}
+
+.mock-icon-button.is-gear::before {
+  width: 14px;
+  height: 14px;
+  left: 7px;
+  top: 7px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.9);
+}
+
+.mock-icon-button.is-gear::after {
+  width: 4px;
+  height: 4px;
+  left: 12px;
+  top: 12px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow:
+    -7px 0 0 -1px rgba(255, 255, 255, 0.9),
+    7px 0 0 -1px rgba(255, 255, 255, 0.9),
+    0 -7px 0 -1px rgba(255, 255, 255, 0.9),
+    0 7px 0 -1px rgba(255, 255, 255, 0.9);
+}
+
+.mock-icon-button.is-bookmark::before {
+  width: 12px;
+  height: 14px;
+  left: 8px;
+  top: 7px;
+  border-radius: 5px 5px 8px 8px;
+  border: 2px solid rgba(255, 255, 255, 0.9);
+  clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 76%, 0 100%);
+}
+
+.mock-phone-header {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.mock-phone-header.centered,
+.mock-footer-copy,
+.mock-finish-copy {
+  text-align: center;
+}
+
+.mock-phone-header h2 {
+  font-size: 22px;
+  line-height: 1.15;
+}
+
+.showcase-avatar-stack {
+  display: flex;
+  align-items: center;
+}
+
+.showcase-avatar-chip {
+  width: 38px;
+  height: 38px;
+  margin-right: -8px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid rgba(14, 21, 37, 0.92);
+  background: linear-gradient(145deg, #ffbd8f, #7cc7ff);
+  color: #11203a;
+  font-size: 12px;
+  font-weight: 800;
+  box-shadow: 0 10px 24px rgba(4, 10, 22, 0.3);
+}
+
+.showcase-avatar-chip.more {
+  background: rgba(125, 137, 171, 0.26);
+  color: #f4f7ff;
+}
+
+.mock-summary-card,
+.mock-info-card,
+.mock-inline-note,
+.mock-notification-row,
+.mock-payment-card,
+.showcase-step-card,
+.showcase-debt-row,
+.showcase-participant-card,
+.showcase-expense-row {
+  border: 1px solid rgba(176, 191, 231, 0.1);
+  background: linear-gradient(180deg, rgba(28, 38, 67, 0.92) 0%, rgba(18, 27, 48, 0.96) 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+}
+
+.mock-summary-card,
+.mock-info-card,
+.mock-inline-note {
+  border-radius: 24px;
+  padding: 18px;
+}
+
+.mock-summary-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.mock-label {
+  margin: 0 0 6px;
+  color: rgba(184, 193, 219, 0.82);
+  font-size: 13px;
+  line-height: 1.2;
+}
+
+.mock-summary-card strong,
+.mock-info-card strong,
+.mock-metric-block strong {
+  color: #f6f8ff;
+  font-size: 24px;
+  line-height: 1;
+}
+
+.mock-progress-ring {
+  --progress: 50;
+  width: 92px;
+  height: 92px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background:
+    radial-gradient(circle at center, #131d35 58%, transparent 59%),
+    conic-gradient(#69e6cf calc(var(--progress) * 1%), rgba(107, 122, 160, 0.24) 0);
+}
+
+.mock-progress-ring span {
+  color: #78f0d4;
+  font-size: 22px;
+  font-weight: 800;
+}
+
+.mock-inline-note {
+  display: grid;
+  grid-template-columns: 14px minmax(0, 1fr);
+  gap: 12px;
+}
+
+.mock-inline-note-dot {
+  width: 14px;
+  height: 14px;
+  margin-top: 2px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 35%, #89ffb1 0%, #65db9f 58%, #47b37f 100%);
+  box-shadow: 0 0 18px rgba(104, 242, 172, 0.4);
+}
+
+.mock-inline-note strong,
+.mock-footer-copy strong,
+.showcase-step-card strong {
+  color: #f6f8ff;
+  font-size: 16px;
+}
+
+.mock-inline-note p,
+.mock-footer-copy p,
+.mock-finish-copy p {
+  margin: 4px 0 0;
+  color: rgba(175, 185, 210, 0.84);
+  font-size: 14px;
+}
+
+.mock-pill-button,
+.mock-remind-button {
+  min-height: 38px;
+  padding: 0 16px;
+  border-radius: 999px;
+  border: 1px solid rgba(177, 191, 228, 0.14);
+  background: rgba(20, 29, 52, 0.92);
+  color: #eef2ff;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.showcase-participant-grid {
+  margin-top: 14px;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.showcase-participant-card {
+  min-height: 122px;
+  padding: 12px 10px;
+  border-radius: 20px;
+}
+
+.showcase-participant-card .showcase-avatar-chip {
+  margin: 0 0 12px;
+}
+
+.showcase-participant-card strong,
+.showcase-expense-row strong,
+.showcase-debt-row strong,
+.mock-notification-row strong,
+.mock-payment-card strong {
+  color: #f6f8ff;
+  font-size: 15px;
+}
+
+.showcase-person-name,
+.showcase-expense-row-title {
+  color: #f6f8ff;
+  font-size: 15px;
+  line-height: 1.3;
+  font-weight: 700;
+}
+
+.showcase-person-meta,
+.showcase-expense-row-subtitle,
+.mock-notification-row p,
+.mock-payment-card p {
+  margin-top: 4px;
+  color: rgba(155, 166, 195, 0.84);
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.mock-primary-button {
+  min-height: 52px;
+  width: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #8af07f 0%, #63e5c7 100%);
+  color: #102034;
+  font-size: 17px;
+  font-weight: 800;
+  box-shadow: 0 14px 30px rgba(92, 231, 186, 0.22);
+}
+
+.mock-chip-row {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.mock-chip {
+  min-height: 38px;
+  padding: 0 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(173, 188, 230, 0.12);
+  background: rgba(20, 28, 50, 0.78);
+  color: rgba(202, 209, 230, 0.78);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.mock-chip.is-active {
+  background: linear-gradient(90deg, #8cf17f 0%, #63e6b3 100%);
+  color: #102034;
+  border-color: transparent;
+}
+
+.showcase-expense-list,
+.showcase-debt-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.showcase-expense-row,
+.showcase-debt-row,
+.mock-notification-row,
+.mock-payment-card {
+  border-radius: 18px;
+  padding: 14px 16px;
+}
+
+.showcase-expense-row {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+}
+
+.showcase-expense-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 14px;
+  display: grid;
+  place-items: center;
+  color: #fff;
+  font-size: 18px;
+  background: linear-gradient(140deg, rgba(255, 140, 108, 0.9), rgba(135, 78, 255, 0.9));
+}
+
+.showcase-expense-icon.fresh {
+  background: linear-gradient(140deg, rgba(117, 238, 117, 0.92), rgba(28, 138, 90, 0.92));
+}
+
+.showcase-expense-icon.drink {
+  background: linear-gradient(140deg, rgba(255, 125, 104, 0.92), rgba(192, 72, 91, 0.92));
+}
+
+.showcase-expense-icon.fire {
+  background: linear-gradient(140deg, rgba(255, 176, 77, 0.92), rgba(155, 73, 31, 0.92));
+}
+
+.showcase-expense-icon.sauce {
+  background: linear-gradient(140deg, rgba(101, 221, 145, 0.92), rgba(69, 121, 88, 0.92));
+}
+
+.showcase-expense-icon.bread {
+  background: linear-gradient(140deg, rgba(247, 188, 115, 0.92), rgba(177, 117, 55, 0.92));
+}
+
+.mock-receipt-stage {
+  flex: 1 1 auto;
+  min-height: 320px;
+  display: grid;
+  place-items: center;
+  padding: 12px 0;
+  border-radius: 30px;
+  background:
+    linear-gradient(180deg, rgba(102, 74, 42, 0.95), rgba(67, 43, 24, 0.98)),
+    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.02) 0 6px, transparent 6px 18px);
+}
+
+.mock-receipt-paper {
+  width: min(100%, 196px);
+  min-height: 292px;
+  padding: 20px 18px;
+  border-radius: 4px;
+  background: linear-gradient(180deg, #fffaf2 0%, #f2eadb 100%);
+  color: #29241d;
+  box-shadow: 0 18px 36px rgba(8, 5, 2, 0.26);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.mock-receipt-paper .receipt-store,
+.mock-receipt-paper .receipt-total {
+  text-align: center;
+  font-weight: 800;
+}
+
+.mock-receipt-paper .receipt-date {
+  margin: 6px 0 16px;
+  text-align: center;
+  font-size: 11px;
+}
+
+.mock-receipt-paper .receipt-line {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.mock-receipt-paper .receipt-total {
+  margin-top: 18px;
+  padding-top: 12px;
+  border-top: 1px dashed rgba(54, 45, 35, 0.4);
+}
+
+.mock-segmented {
+  display: inline-grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 4px;
+  padding: 4px;
+  border-radius: 999px;
+  background: rgba(18, 27, 48, 0.92);
+  border: 1px solid rgba(176, 191, 231, 0.1);
+}
+
+.mock-segment {
+  min-height: 40px;
+  min-width: 118px;
+  padding: 0 18px;
+  border-radius: 999px;
+  color: rgba(183, 191, 213, 0.82);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.mock-segment.is-active {
+  background: rgba(44, 222, 169, 0.1);
+  color: #f6f8ff;
+  box-shadow: inset 0 -2px 0 #74ebce;
+}
+
+.mock-metric-block {
+  padding-top: 4px;
+}
+
+.showcase-debt-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.showcase-debt-row .showcase-avatar-chip {
+  margin-right: 0;
+  flex: 0 0 auto;
+}
+
+.showcase-debt-copy {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.mock-success-note {
+  margin: 6px 2px 0;
+  color: #7eebb4;
+  font-size: 14px;
+  text-align: center;
+}
+
+.mock-panel-notifications {
+  min-height: 246px;
+}
+
+.mock-panel-finish {
+  min-height: 338px;
+}
+
+.mock-notification-row {
+  gap: 12px;
+}
+
+.mock-notification-row + .mock-notification-row {
+  margin-top: 10px;
+}
+
+.mock-notification-main {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.mock-notification-meta {
+  min-width: 0;
+}
+
+.mock-status-badge {
+  width: 28px;
+  height: 28px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  display: inline-grid;
+  place-items: center;
+  color: #0f2237;
+  font-size: 14px;
+  font-weight: 900;
+  background: linear-gradient(145deg, #8bf285, #60e5c8);
+}
+
+.mock-status-badge.is-warn {
+  background: linear-gradient(145deg, #ffbc70, #ff8a6c);
+}
+
+.mock-status-badge.is-muted {
+  background: linear-gradient(145deg, #b4bfd8, #8893b2);
+}
+
+.mock-finish-illustration {
+  position: relative;
+  height: 172px;
+  margin-bottom: 20px;
+  overflow: hidden;
+  border-radius: 24px;
+  background:
+    radial-gradient(circle at 52% 18%, rgba(117, 96, 255, 0.36), transparent 26%),
+    linear-gradient(180deg, #1d2157 0%, #171b45 54%, #10142e 100%);
+}
+
+.mock-stars,
+.mock-stars::before,
+.mock-stars::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at 22% 24%, rgba(255, 227, 147, 0.82) 0 2px, transparent 3px),
+    radial-gradient(circle at 67% 19%, rgba(176, 233, 255, 0.8) 0 1.5px, transparent 2.5px),
+    radial-gradient(circle at 78% 31%, rgba(255, 189, 123, 0.74) 0 1.5px, transparent 2.5px),
+    radial-gradient(circle at 58% 44%, rgba(154, 255, 212, 0.7) 0 1px, transparent 2px);
+}
+
+.mock-stars::before {
+  transform: translateY(12px);
+  opacity: 0.6;
+}
+
+.mock-stars::after {
+  transform: translateY(-12px);
+  opacity: 0.35;
+}
+
+.mock-trees {
+  position: absolute;
+  bottom: 18px;
+  width: 70px;
+  height: 98px;
+  background:
+    linear-gradient(180deg, transparent 0 20%, #29305f 20% 100%);
+  clip-path: polygon(50% 0, 100% 58%, 72% 58%, 100% 100%, 0 100%, 28% 58%, 0 58%);
+}
+
+.mock-tree-left {
+  left: 20px;
+}
+
+.mock-tree-right {
+  right: 22px;
+}
+
+.mock-campfire {
+  position: absolute;
+  left: 50%;
+  bottom: 24px;
+  width: 110px;
+  height: 68px;
+  transform: translateX(-50%);
+}
+
+.mock-campfire::before,
+.mock-campfire::after {
+  content: "";
+  position: absolute;
+}
+
+.mock-campfire::before {
+  left: 34px;
+  bottom: 12px;
+  width: 42px;
+  height: 42px;
+  border-radius: 50% 50% 45% 45%;
+  background: radial-gradient(circle at 50% 38%, #fff5b2 0 14%, #ffb85d 35%, #eb5e2d 72%, transparent 74%);
+  filter: blur(0.5px);
+  box-shadow: 0 0 28px rgba(255, 143, 55, 0.34);
+}
+
+.mock-campfire::after {
+  inset: auto 22px 0;
+  height: 18px;
+  background:
+    linear-gradient(35deg, transparent 45%, #7e5331 46% 54%, transparent 55%),
+    linear-gradient(-35deg, transparent 45%, #7e5331 46% 54%, transparent 55%);
+}
+
+.mock-finish-copy h2 {
+  margin: 0;
+  font-size: 22px;
+}
+
+.showcase-payment-grid {
+  margin-top: 16px;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.mock-payment-card {
+  min-height: 132px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.mock-card-chip {
+  width: 44px;
+  height: 30px;
+  border-radius: 10px;
+  background: linear-gradient(145deg, #ffb440, #ff5f5f);
+}
+
+.mock-payment-card.is-add {
+  display: grid;
+  place-items: center;
+  color: rgba(192, 199, 219, 0.82);
+}
+
+.mock-add-icon {
+  width: 36px;
+  height: 36px;
+  position: relative;
+}
+
+.mock-add-icon::before,
+.mock-add-icon::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 18px;
+  height: 2px;
+  border-radius: 999px;
+  background: currentColor;
+  transform: translate(-50%, -50%);
+}
+
+.mock-add-icon::after {
+  transform: translate(-50%, -50%) rotate(90deg);
+}
+
+.showcase-how-grid {
+  margin-top: 16px;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.showcase-step-card {
+  min-height: 148px;
+  padding: 16px;
+  border-radius: 22px;
+}
+
+.showcase-step-icon {
+  width: 54px;
+  height: 54px;
+  margin-bottom: 16px;
+  border-radius: 18px;
+  background: linear-gradient(145deg, rgba(138, 113, 255, 0.92), rgba(77, 223, 207, 0.92));
+  position: relative;
+}
+
+.showcase-step-icon::before,
+.showcase-step-icon::after {
+  content: "";
+  position: absolute;
+}
+
+.step-icon-collect::before {
+  width: 22px;
+  height: 16px;
+  left: 16px;
+  top: 19px;
+  border-radius: 8px;
+  border: 2px solid rgba(255, 255, 255, 0.92);
+}
+
+.step-icon-collect::after {
+  width: 12px;
+  height: 12px;
+  left: 20px;
+  top: 14px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.92);
+}
+
+.step-icon-receipt::before {
+  width: 18px;
+  height: 22px;
+  left: 18px;
+  top: 15px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.92);
+}
+
+.step-icon-receipt::after {
+  width: 10px;
+  height: 2px;
+  left: 22px;
+  top: 24px;
+  background: rgba(111, 93, 231, 0.8);
+  box-shadow: 0 6px 0 rgba(111, 93, 231, 0.8);
+}
+
+.step-icon-approve::before {
+  width: 24px;
+  height: 24px;
+  left: 15px;
+  top: 15px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.9);
+}
+
+.step-icon-approve::after {
+  width: 12px;
+  height: 6px;
+  left: 21px;
+  top: 23px;
+  border-left: 3px solid #37b982;
+  border-bottom: 3px solid #37b982;
+  transform: rotate(-45deg);
+}
+
+.step-icon-money::before {
+  width: 22px;
+  height: 22px;
+  left: 16px;
+  top: 16px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.92);
+}
+
+.step-icon-money::after {
+  width: 8px;
+  height: 8px;
+  left: 31px;
+  top: 12px;
+  border-radius: 50%;
+  background: #86f09f;
+  box-shadow:
+    -20px 18px 0 -2px #6de6c8,
+    -6px 26px 0 -2px #6ea6ff;
+}
+
+.is-booting .mock-summary-card,
+.is-booting .mock-info-card,
+.is-booting .showcase-expense-row,
+.is-booting .showcase-debt-row,
+.is-booting .mock-notification-row,
+.is-booting .mock-payment-card,
+.is-booting .showcase-step-card {
+  position: relative;
+  overflow: hidden;
+}
+
+.is-booting .mock-summary-card::after,
+.is-booting .mock-info-card::after,
+.is-booting .showcase-expense-row::after,
+.is-booting .showcase-debt-row::after,
+.is-booting .mock-notification-row::after,
+.is-booting .mock-payment-card::after,
+.is-booting .showcase-step-card::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.06) 50%, transparent 100%);
+  animation: showcaseSkeleton 1.5s linear infinite;
+}
+
+@keyframes showcaseSkeleton {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(100%);
+  }
+}
+
+@media (max-width: 1320px) {
+  .vmeste-showcase {
+    grid-template-columns: 1fr;
+  }
+
+  .showcase-brand-panel {
+    padding: 0;
+    max-width: 720px;
+  }
+}
+
+@media (max-width: 1180px) {
+  .showcase-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-areas:
+      "main expenses"
+      "receipt settlement"
+      "side side"
+      "payments payments"
+      "how how";
+  }
+
+  .showcase-payment-grid,
+  .showcase-how-grid,
+  .showcase-participant-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .vmeste-showcase {
+    padding: 22px 14px 30px;
+    gap: 24px;
+  }
+
+  .showcase-brand-name {
+    font-size: 44px;
+  }
+
+  .showcase-brand-title {
+    max-width: none;
+    font-size: 18px;
+  }
+
+  .showcase-grid {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "main"
+      "expenses"
+      "receipt"
+      "settlement"
+      "side"
+      "payments"
+      "how";
+  }
+
+  .mock-phone,
+  .mock-panel {
+    min-height: auto;
+  }
+
+  .showcase-payment-grid,
+  .showcase-how-grid,
+  .showcase-participant-grid {
+    grid-template-columns: 1fr;
+  }
+}

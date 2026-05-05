@@ -112,7 +112,7 @@ body.has-intro-splash .app-shell {
   position: relative;
   z-index: 1;
   width: min(88vw, 1040px);
-  aspect-ratio: 16 / 9;
+  height: min(72vh, 640px);
   display: grid;
   place-items: center;
 }
@@ -120,17 +120,21 @@ body.has-intro-splash .app-shell {
 .intro-splash__glow,
 .intro-splash__frame {
   position: absolute;
-  width: min(72vw, 860px);
-  max-width: 100%;
-  height: auto;
+  inset: 0;
+  margin: auto;
+  width: auto;
+  height: min(64vh, 560px);
+  max-width: min(76vw, 860px);
+  max-height: 100%;
   display: block;
   object-fit: contain;
+  object-position: center;
 }
 
 .intro-splash__glow {
   opacity: 0.56;
   filter: blur(56px);
-  transform: scale(1.04);
+  transform: translateY(12px) scale(1.04);
   mix-blend-mode: screen;
 }
 
@@ -4294,11 +4298,13 @@ body {
 
   .intro-splash__stage {
     width: min(100vw - 36px, 700px);
+    height: min(58vh, 420px);
   }
 
   .intro-splash__glow,
   .intro-splash__frame {
-    width: min(88vw, 620px);
+    height: min(48vh, 360px);
+    max-width: min(88vw, 620px);
   }
 
   .intro-splash__glow {

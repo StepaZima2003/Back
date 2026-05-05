@@ -100,7 +100,7 @@ const payManualCommentInput = document.getElementById("pay-manual-comment");
 const collectionFilterTabs = [...document.querySelectorAll('[data-screen="collections"] .tab-row .chip')];
 const INTERACTIVE_SELECTOR =
   "[data-go], [data-action], [data-collection-id], [data-organizer-collection-id], [data-payment-method-id], [data-notification-id], .chip, .switch";
-const INTRO_FRAME_START = 60;
+const INTRO_FRAME_START = 90;
 const INTRO_FRAME_END = 144;
 const INTRO_FRAME_RATE = 30;
 const INTRO_FRAME_HOLD_MS = 220;

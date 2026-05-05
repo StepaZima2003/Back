@@ -2850,27 +2850,27 @@ body {
 .showcase-brand-lockup {
   display: flex;
   flex-direction: column;
-  gap: 22px;
+  gap: 18px;
   position: relative;
 }
 
 .showcase-brand-lockup::before {
   content: "";
   position: absolute;
-  left: -88px;
-  top: -96px;
-  width: 380px;
-  height: 380px;
-  background: url("/assets/logo-aura.png") center/contain no-repeat;
-  opacity: 0.38;
-  filter: blur(6px);
+  left: -62px;
+  top: -70px;
+  width: 310px;
+  height: 310px;
+  background: url("/assets/vmeste-logo-mark.png") center/contain no-repeat;
+  opacity: 0.22;
+  filter: blur(20px);
   pointer-events: none;
 }
 
 .vmeste-logo-wrap {
   position: relative;
-  width: 124px;
-  height: 124px;
+  width: 108px;
+  height: 108px;
 }
 
 .vmeste-logo-aura,
@@ -2884,30 +2884,31 @@ body {
 }
 
 .vmeste-logo-aura {
-  transform: scale(1.85);
-  opacity: 0.52;
-  filter: blur(12px);
+  transform: scale(1.72);
+  opacity: 0.44;
+  filter: blur(16px);
 }
 
 .vmeste-logo {
-  filter: drop-shadow(0 18px 38px rgba(82, 219, 199, 0.28));
+  filter: drop-shadow(0 16px 34px rgba(82, 219, 199, 0.18));
 }
 
 .showcase-brand-name {
-  margin: 0 0 6px;
+  margin: 0 0 8px;
   color: #f4f6ff;
-  font-size: 58px;
-  font-weight: 800;
-  line-height: 0.92;
+  font-size: 64px;
+  font-weight: 900;
+  line-height: 0.9;
+  letter-spacing: 0;
   text-transform: lowercase;
 }
 
 .showcase-brand-title {
   margin: 0;
-  max-width: 220px;
+  max-width: 240px;
   color: rgba(226, 232, 248, 0.84);
-  font-size: 22px;
-  line-height: 1.28;
+  font-size: 21px;
+  line-height: 1.24;
   font-weight: 600;
 }
 

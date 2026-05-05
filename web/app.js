@@ -1138,13 +1138,20 @@ function renderShowcase() {
             .filter((payment) => payment.payerParticipantId === participant.id && payment.status === "confirmed")
             .reduce((sum, payment) => sum + payment.amountMinor, 0);
         const amountMinor = dueMinor > 0 ? dueMinor : paidMinor;
-        const statusLabel = dueMinor > 0 ? "к оплате" : paidMinor > 0 ? "внесено" : "в сборе";
+        const statusLabel = dueMinor > 0 ? "К оплате" : paidMinor > 0 ? "Внес" : "Ожидает";
+        const statusClass = dueMinor > 0 ? "is-due" : paidMinor > 0 ? "is-paid" : "is-waiting";
         return `
           <article class="showcase-participant-card">
             <span class="showcase-avatar-chip" style="${showcaseAvatarStyle(index + 1)}">${escapeHtml(initials(participant.displayNameSnapshot))}</span>
-            <div class="showcase-person-name">${escapeHtml(participant.displayNameSnapshot)}</div>
-            <strong>${formatMoney(amountMinor)}</strong>
-            <div class="showcase-person-meta">${escapeHtml(statusLabel)}</div>
+            <div class="showcase-participant-main">
+              <div class="showcase-person-name">${escapeHtml(participant.displayNameSnapshot)}</div>
+              <div class="showcase-person-meta">
+                <span class="showcase-status-pill ${statusClass}">${escapeHtml(statusLabel)}</span>
+              </div>
+            </div>
+            <div class="showcase-participant-amount">
+              <strong>${formatMoney(amountMinor)}</strong>
+            </div>
           </article>
         `;
       })

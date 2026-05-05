@@ -3393,21 +3393,35 @@ body {
   font-weight: 700;
 }
 
+.mock-info-head .mock-pill-button {
+  min-height: 34px;
+  padding: 0 14px;
+  background: rgba(255, 255, 255, 0.03);
+  color: rgba(228, 235, 255, 0.92);
+}
+
 .showcase-participant-grid {
   margin-top: 14px;
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: 1fr;
   gap: 10px;
 }
 
 .showcase-participant-card {
-  min-height: 122px;
-  padding: 12px 10px;
+  min-height: 0;
+  padding: 12px 14px;
   border-radius: 20px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
 }
 
 .showcase-participant-card .showcase-avatar-chip {
-  margin: 0 0 12px;
+  margin: 0;
+  width: 42px;
+  height: 42px;
+  font-size: 13px;
 }
 
 .showcase-participant-card strong,
@@ -3427,6 +3441,12 @@ body {
   font-weight: 700;
 }
 
+.showcase-participant-main {
+  min-width: 0;
+  display: grid;
+  gap: 6px;
+}
+
 .showcase-person-meta,
 .showcase-expense-row-subtitle,
 .mock-notification-row p,
@@ -3435,6 +3455,46 @@ body {
   color: rgba(155, 166, 195, 0.84);
   font-size: 13px;
   line-height: 1.35;
+}
+
+.showcase-person-name {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.showcase-participant-amount {
+  text-align: right;
+}
+
+.showcase-status-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  border: 1px solid transparent;
+}
+
+.showcase-status-pill.is-due {
+  background: rgba(255, 163, 122, 0.14);
+  border-color: rgba(255, 163, 122, 0.24);
+  color: #ffbe97;
+}
+
+.showcase-status-pill.is-paid {
+  background: rgba(126, 235, 180, 0.14);
+  border-color: rgba(126, 235, 180, 0.24);
+  color: #8df0ba;
+}
+
+.showcase-status-pill.is-waiting {
+  background: rgba(176, 191, 231, 0.1);
+  border-color: rgba(176, 191, 231, 0.18);
+  color: #c9d3f1;
 }
 
 .mock-primary-button {

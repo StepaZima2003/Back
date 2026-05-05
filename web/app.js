@@ -100,12 +100,13 @@ const payManualCommentInput = document.getElementById("pay-manual-comment");
 const collectionFilterTabs = [...document.querySelectorAll('[data-screen="collections"] .tab-row .chip')];
 const INTERACTIVE_SELECTOR =
   "[data-go], [data-action], [data-collection-id], [data-organizer-collection-id], [data-payment-method-id], [data-notification-id], .chip, .switch";
-const INTRO_FRAME_TOTAL = 144;
+const INTRO_FRAME_START = 60;
+const INTRO_FRAME_END = 144;
 const INTRO_FRAME_RATE = 30;
 const INTRO_FRAME_HOLD_MS = 220;
 const INTRO_FRAME_URLS = Array.from(
-  { length: INTRO_FRAME_TOTAL },
-  (_, index) => `/assets/vmeste-intro-${String(index + 1).padStart(4, "0")}.gif`
+  { length: INTRO_FRAME_END - INTRO_FRAME_START + 1 },
+  (_, index) => `/assets/vmeste-intro-${String(INTRO_FRAME_START + index).padStart(4, "0")}.gif`
 );
 
 collectionFilterTabs[0]?.setAttribute("data-collection-filter", "active");

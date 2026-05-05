@@ -80,6 +80,9 @@ const screens = [...document.querySelectorAll(".screen")];
 const navItems = [...document.querySelectorAll(".nav-item")];
 const statusDot = document.querySelector(".status-dot");
 const apiStatusText = document.getElementById("api-status-text");
+const introSplash = document.getElementById("intro-splash");
+const introSplashFrame = document.getElementById("intro-splash-frame");
+const introSplashGlow = document.getElementById("intro-splash-glow");
 const disputeCommentInput = document.getElementById("dispute-comment");
 const collectionNameInput = document.getElementById("collection-name");
 const friendPhoneInput = document.getElementById("friend-phone");
@@ -97,6 +100,13 @@ const payManualCommentInput = document.getElementById("pay-manual-comment");
 const collectionFilterTabs = [...document.querySelectorAll('[data-screen="collections"] .tab-row .chip')];
 const INTERACTIVE_SELECTOR =
   "[data-go], [data-action], [data-collection-id], [data-organizer-collection-id], [data-payment-method-id], [data-notification-id], .chip, .switch";
+const INTRO_FRAME_TOTAL = 144;
+const INTRO_FRAME_RATE = 30;
+const INTRO_FRAME_HOLD_MS = 220;
+const INTRO_FRAME_URLS = Array.from(
+  { length: INTRO_FRAME_TOTAL },
+  (_, index) => `/assets/vmeste-intro-${String(index + 1).padStart(4, "0")}.gif`
+);
 
 collectionFilterTabs[0]?.setAttribute("data-collection-filter", "active");
 collectionFilterTabs[1]?.setAttribute("data-collection-filter", "history");
@@ -420,6 +430,90 @@ function setActiveScreen(screenName, navName) {
   if (screenName === "organizer" && state.selectedOrganizerCollectionId) {
     void ensureCollectionAuditLog(state.selectedOrganizerCollectionId);
   }
+}
+
+function initIntroSplash() {
+  if (!introSplash || !introSplashFrame || !introSplashGlow) {
+    return;
+  }
+
+  document.documentElement.classList.add("has-intro-splash");
+  document.body.classList.add("has-intro-splash");
+
+  void preloadIntroFrames(INTRO_FRAME_URLS)
+    .then(() => playIntroSplash(INTRO_FRAME_URLS))
+    .catch(() => {
+      window.setTimeout(hideIntroSplash, 1400);
+    });
+}
+
+function preloadIntroFrames(frameUrls) {
+  return Promise.all(frameUrls.map((url) => preloadIntroFrame(url)));
+}
+
+function preloadIntroFrame(url) {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.decoding = "async";
+    image.onload = () => resolve(url);
+    image.onerror = () => reject(new Error(`Unable to load intro frame: ${url}`));
+    image.src = url;
+  });
+}
+
+function playIntroSplash(frameUrls) {
+  if (!introSplashFrame || !introSplashGlow) {
+    hideIntroSplash();
+    return;
+  }
+
+  const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const effectiveRate = prefersReducedMotion ? 14 : INTRO_FRAME_RATE;
+  const frameStepMs = 1000 / effectiveRate;
+  let frameIndex = 0;
+  let lastFrameTime = performance.now();
+
+  setIntroSplashFrame(frameUrls[0]);
+
+  const tick = (timestamp) => {
+    if (timestamp - lastFrameTime >= frameStepMs) {
+      frameIndex += 1;
+      lastFrameTime = timestamp;
+
+      if (frameIndex < frameUrls.length) {
+        setIntroSplashFrame(frameUrls[frameIndex]);
+      }
+    }
+
+    if (frameIndex < frameUrls.length - 1) {
+      window.requestAnimationFrame(tick);
+      return;
+    }
+
+    window.setTimeout(hideIntroSplash, INTRO_FRAME_HOLD_MS);
+  };
+
+  window.requestAnimationFrame(tick);
+}
+
+function setIntroSplashFrame(source) {
+  if (introSplashFrame) {
+    introSplashFrame.src = source;
+  }
+  if (introSplashGlow) {
+    introSplashGlow.src = source;
+  }
+}
+
+function hideIntroSplash() {
+  if (!introSplash || introSplash.classList.contains("is-leaving")) {
+    return;
+  }
+
+  introSplash.classList.add("is-leaving");
+  document.documentElement.classList.remove("has-intro-splash");
+  document.body.classList.remove("has-intro-splash");
+  window.setTimeout(() => introSplash.remove(), 560);
 }
 
 async function runAction(action, source) {
@@ -4175,6 +4269,8 @@ function escapeHtml(value) {
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#39;");
 }
+
+initIntroSplash();
 
 bootstrap().catch((error) => {
   console.error(error);

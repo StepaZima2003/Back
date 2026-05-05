@@ -91,6 +91,7 @@ export async function buildApp(options: BuildAppOptions = {}) {
     const asset = await readFile(join(process.cwd(), "web", "assets", file));
     const extension = extname(file).toLowerCase();
     const mimeTypes: Record<string, string> = {
+      ".gif": "image/gif",
       ".png": "image/png",
       ".jpg": "image/jpeg",
       ".jpeg": "image/jpeg",
